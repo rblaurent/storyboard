@@ -130,10 +130,10 @@ export async function run(args) {
   }
   const nativeWorkspace=await call('/api/entities/'+encodeURIComponent(plan.workspaceSlug))
   validateIntent(plan,inventory,leafOwner,nativeWorkspace)
-  const configRows = (await list('storyboard-config')).items
-  if (configRows.length !== 1) throw Error('Provision Storyboard before apply/verify')
-  const config = configRows[0], settings = dataOf(config)
-  if (settings.owner_id !== ownerId) throw Error('Extension owner mismatch')
+  // The confidential config is intentionally absent from generic entity lists.
+  // Reaching owner-only management status proves both provisioning and ownership.
+  const settings = await call('/api/apps/storyboard/manage/status')
+  if (!settings || !uuid(settings.installation) || !uuid(settings.ownerAgentId)) throw Error('Provision Storyboard before apply/verify')
   const connection = {
    call, status: async () => {
     const response = await fetch('https://shinsekai.minititine.cc/storyboard-status', { redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(30000) })
@@ -148,7 +148,7 @@ export async function run(args) {
   }
   if (mode === 'apply') await applyPlan(plan, inventory, connection)
   await verifyPlan(plan, inventory, connection)
-  console.log(JSON.stringify({ mode, run: plan.run, verifiedAccounts: plan.accounts.length, verifiedCharacters: plan.characters.length, portraitRecordsPreserved: plan.preserved.portraits, sourceRecordsChanged: 0, transcriptWrites: 0, writesRemainFenced: Boolean(settings.writes_fenced) }))
+  console.log(JSON.stringify({ mode, run: plan.run, verifiedAccounts: plan.accounts.length, verifiedCharacters: plan.characters.length, portraitRecordsPreserved: plan.preserved.portraits, sourceRecordsChanged: 0, transcriptWrites: 0, writesRemainFenced: Boolean(settings.writesFenced) }))
 }
 
 const manage = '/api/apps/storyboard/manage'
