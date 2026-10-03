@@ -8,6 +8,7 @@
 .storyboard-admin { container-type: inline-size; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; background: var(--background); color: var(--foreground); padding: 32px 24px; }
 .storyboard-admin-inner { max-width: 1152px; margin: 0 auto; display: grid; gap: 24px; }
 .storyboard-admin-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.storyboard-admin-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .storyboard-admin-title { display: flex; align-items: center; gap: 12px; }
 .storyboard-admin-title h1 { margin: 0; font-size: 24px; line-height: 1.3; font-weight: 600; }
 .storyboard-admin-title p { margin: 4px 0 0; color: var(--muted-foreground); font-size: 14px; }
@@ -50,7 +51,7 @@
 @container (width < 640px) {
  .storyboard-admin-heading { flex-wrap: wrap; align-items: flex-start; }
  .storyboard-admin-title,.storyboard-admin-title > div { min-width: 0; }
- .storyboard-admin-heading > [data-slot="button"] { margin-left: auto; }
+ .storyboard-admin-heading-actions { width: 100%; justify-content: flex-end; }
  .storyboard-admin [data-slot="tabs-list"] { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; gap: 4px; }
  .storyboard-admin [data-slot="tabs-trigger"] { width: 100%; min-width: 0; padding: 8px 6px; font-size: 13px; }
  .storyboard-setup-actions > [data-slot="button"] { flex: 1 1 auto; }

@@ -45,7 +45,10 @@ export function Management() {
     <div className="storyboard-admin-inner">
       <header className="storyboard-admin-heading">
         <div className="storyboard-admin-title"><span className="storyboard-admin-mark"><Icon name="ph-bold ph-film-strip" aria-hidden="true" /></span><div><h1>Storyboard</h1><p>Manage your service and the tables it brings together.</p></div></div>
-        <Button variant="outline" disabled={busy} onClick={() => setVersion(v => v + 1)}><Icon name="ph-bold ph-arrow-clockwise" aria-hidden="true" />Refresh</Button>
+        <div className="storyboard-admin-heading-actions">
+          {data?.status.publicUrl && <Button nativeButton={false} render={<a href={data.status.publicUrl} target="_blank" rel="noreferrer" />}><Icon name="ph-bold ph-arrow-square-out" aria-hidden="true" />Open Storyboard</Button>}
+          <Button variant="outline" disabled={busy} onClick={() => setVersion(v => v + 1)}><Icon name="ph-bold ph-arrow-clockwise" aria-hidden="true" />Refresh</Button>
+        </div>
       </header>
       {error && <div role="alert" className="storyboard-admin-error"><Icon name="ph-bold ph-warning-circle" aria-hidden="true" /><span>{error}</span></div>}
       {prepare && <SectionCard title="Prepare installation" description="Create the private workspace before configuring access.">
