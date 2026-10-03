@@ -47,9 +47,24 @@
 .storyboard-agent-field { display: grid; gap: 8px; margin: 16px 0; font-size: 14px; }
 .storyboard-agent-field select { min-height: 44px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); padding: 8px 12px; }
 @container (width < 720px) { .storyboard-overview { grid-template-columns: minmax(0,1fr); } }
+@container (width < 640px) {
+ .storyboard-admin-heading { flex-wrap: wrap; align-items: flex-start; }
+ .storyboard-admin-title,.storyboard-admin-title > div { min-width: 0; }
+ .storyboard-admin-heading > [data-slot="button"] { margin-left: auto; }
+ .storyboard-admin [data-slot="tabs-list"] { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; gap: 4px; }
+ .storyboard-admin [data-slot="tabs-trigger"] { width: 100%; min-width: 0; padding: 8px 6px; font-size: 13px; }
+ .storyboard-setup-actions > [data-slot="button"] { flex: 1 1 auto; }
+ .storyboard-installation > div { align-items: flex-start; flex-direction: column; gap: 6px; }
+ .storyboard-admin [data-slot="table-container"] { overflow: visible; }
+ .storyboard-admin :is([data-slot="table"],[data-slot="table-body"],[data-slot="table-row"],[data-slot="table-cell"]) { display: block; width: 100%; }
+ .storyboard-admin [data-slot="table-header"] { display: none; }
+ .storyboard-admin [data-slot="table-row"] { padding: 8px 0; }
+ .storyboard-admin [data-slot="table-cell"] { box-sizing: border-box; display: grid; grid-template-columns: minmax(92px,35%) minmax(0,1fr); gap: 12px; padding: 7px 8px; }
+ .storyboard-admin [data-slot="table-cell"]::before { content: attr(data-label); color: var(--muted-foreground); font-size: 12px; font-weight: 500; }
+ .storyboard-admin [data-slot="table-cell"] > .storyboard-admin-help { grid-column: 2; margin-top: -8px; }
+}
 @media (max-width: 640px) {
  .storyboard-admin { padding: 20px 12px; }
- .storyboard-admin-heading { align-items: flex-start; }
  .storyboard-admin-title h1 { font-size: 20px; }
  .storyboard-admin-mark { display: none; }
  .storyboard-checklist li { grid-template-columns: 20px minmax(0,1fr); }

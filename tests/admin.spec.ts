@@ -35,6 +35,25 @@ for (const theme of ['light', 'dark']) test(`shared Leaf components fixture scre
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message)); await harness(page); await page.goto(`/admin.fixture.html?surface=manage&theme=${theme}`); await expect(page.getByRole('heading', { name: 'Your service is configured' })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-management-${theme}.png`), fullPage: true }); await page.goto(`/admin.fixture.html?surface=settings&theme=${theme}`); await expect(page.getByLabel('Public website', { exact: true })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-settings-${theme}.png`), fullPage: true }); expect(errors).toEqual([])
 })
 
+test('management dashboard stays usable at phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await harness(page)
+  await page.goto('/admin.fixture.html?surface=manage')
+  await expect(page.getByRole('heading', { name: 'Your service is configured' })).toBeVisible()
+  await page.screenshot({ path: path.join(evidence, 'fixture-management-phone-overview.png'), fullPage: true })
+  for (const name of [/^Overview/, /^Accounts/, /^Campaigns/, /^Activity/]) {
+    const tab = page.getByRole('tab', { name })
+    await expect(tab).toBeVisible()
+    await tab.click()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+    const tableOverflow = await page.locator('[data-slot="table-container"]').evaluateAll(tables => tables.map(table => table.scrollWidth - table.clientWidth))
+    expect(Math.max(0, ...tableOverflow)).toBeLessThanOrEqual(1)
+  }
+  await expect(page.getByRole('heading', { name: 'Recent audit activity' })).toBeVisible()
+  await page.screenshot({ path: path.join(evidence, 'fixture-management-phone-activity.png'), fullPage: true })
+})
+
 test('admin fixture: ambiguous owning Agent is selected explicitly before retrying preparation', async ({ page }) => {
  const s = await harness(page); s.unconfigured = true; s.requireAgent = true; await page.goto('/admin.fixture.html?surface=manage'); await page.getByRole('button', { name: 'Prepare Storyboard' }).click(); await expect(page.getByRole('alert')).toContainText('Select the Agent'); await page.getByLabel('Owning Agent', { exact: true }).selectOption(aid); await page.getByRole('button', { name: 'Prepare Storyboard' }).click(); await expect(page.getByRole('heading', { name: 'Your service is configured' })).toBeVisible(); expect(s.requests.filter(r => r.path.endsWith('/provision')).at(-1)?.body).toEqual({ ownerAgentId: aid })
 })
