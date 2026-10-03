@@ -45,7 +45,6 @@ try{
  }finally{$env:STORYBOARD_PLUGIN_OUTPUT=$previousPlugin;$env:STORYBOARD_SITE_OUTPUT=$previousSite}
  Copy-Item -LiteralPath (Join-Path $root 'plugin.json') -Destination $package
  Copy-Item -LiteralPath (Join-Path $root 'seeds') -Destination $package -Recurse
- Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $package
  # Operator code is deliberately outside the runtime package; private plans and
  # exports never enter an artifact. Nova executes it separately after approval.
  foreach($file in @('backend/Leaf.Plugins.Storyboard.dll','backend/site/index.html','web/dist/plugin.js','web/dist/plugin.css','web/dist/remoteEntry.js','seeds/entity-types.json','seeds/field-definitions.json')){
@@ -67,3 +66,4 @@ try{
  $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $scratch 'latest-stage.json') -Encoding utf8
  [ordered]@{receipt=$receiptPath;package=$pkg;sha256=$hash;activation='staged, not activated'} | ConvertTo-Json
 }finally{Pop-Location}
+
