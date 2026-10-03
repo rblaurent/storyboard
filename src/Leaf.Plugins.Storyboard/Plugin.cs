@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text.Json.Nodes;
 namespace Leaf.Plugins.Storyboard;
 public sealed class StoryboardPlugin:ILeafPlugin,ILeafPublicApi {
+ private string siteRoot="";
  public PluginManifest Manifest{get;}=Load();
  private static PluginManifest Load(){using var stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("plugin.json")!;using var reader=new StreamReader(stream);return PluginManifest.Parse(reader.ReadToEnd());}
  public IReadOnlyList<PluginPublicEndpoint> PublicEndpoints=>[
@@ -16,6 +17,7 @@ public sealed class StoryboardPlugin:ILeafPlugin,ILeafPublicApi {
   new("POST","/campaigns/{id}/archive","Archive"),new("POST","/campaigns/{id}/restore","Restore"),new("GET","/campaigns/{id}/players","Roster"),new("POST","/campaigns/{id}/players","Add/update member"),new("POST","/campaigns/{id}/players/{member}/remove","Remove membership"),
   new("GET","/campaigns/{id}/accounts","Exact GM account lookup"),new("POST","/campaigns/{id}/generate","Generate artwork or summary"),new("GET","/campaigns/{id}/operations/{operation}","Authorized operation"),new("GET","/campaigns/{id}/media/cover","Private cover"),new("GET","/campaigns/{id}/media/characters/{character}","Private portrait")];
  public void ConfigureServices(IServiceCollection s,PluginContext ctx) {
+  siteRoot=StorySite.ResolveRoot(ctx.PluginDirectory);
   s.AddSingleton(TimeProvider.System);s.AddSingleton(sp=>new StoryStore(sp.GetRequiredKeyedService<IEntityStore>(Manifest.Id),sp.GetRequiredKeyedService<IRecordStreams>(Manifest.Id)));
   s.AddSingleton<StoryCampaigns>();s.AddSingleton<StoryPortals>();s.AddSingleton<StoryAdministration>();s.AddSingleton<StorySettings>();s.AddSingleton<IPluginSettingsProvider>(sp=>sp.GetRequiredService<StorySettings>());
   s.AddSingleton<IGoogleIdentity>(_=>new GoogleIdentity(new HttpClient(new SocketsHttpHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromSeconds(30)}));s.AddSingleton<StoryAccess>();s.AddSingleton<StoryGeneration>();s.AddHostedService(sp=>sp.GetRequiredService<StoryGeneration>());
@@ -77,6 +79,6 @@ public sealed class StoryboardPlugin:ILeafPlugin,ILeafPublicApi {
  }
  private static string Actor(HttpContext h)=>(string)h.Items["storyboard-account"]!;
  private static async Task<IResult> Media(IAssets a,string id,CancellationToken ct){if(string.IsNullOrWhiteSpace(id))return Results.NotFound();var file=await a.ReadAsync(id,ct);return file is null?Results.NotFound():Results.Bytes(file.Bytes,file.ContentType);}
- private static IResult Site(string? path)=>StorySite.Serve(Path.Combine(Path.GetDirectoryName(typeof(StoryboardPlugin).Assembly.Location)!,"site"),path);
+ private IResult Site(string? path)=>StorySite.Serve(siteRoot,path);
 
 }

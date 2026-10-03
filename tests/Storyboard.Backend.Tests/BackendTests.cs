@@ -6,6 +6,11 @@ using System.Text.Json.Nodes;
 using Xunit;
 namespace Storyboard.Testing;
 public sealed class BackendTests {
+ [Fact] public void SiteRootComesFromPluginContextInsteadOfAssemblyLocation(){
+  var root=Path.Combine(Path.GetTempPath(),"storyboard-site-root-"+Guid.NewGuid().ToString("N"));
+  try{Directory.CreateDirectory(Path.Combine(root,"backend"));Assert.Equal(Path.Combine(root,"backend","site"),StorySite.ResolveRoot(root));}
+  finally{if(Directory.Exists(root))Directory.Delete(root,true);}
+ }
  private static async Task Error(string code,Func<Task> action){var e=await Assert.ThrowsAsync<StoryException>(action);Assert.Equal(code,e.Code);}
  [Fact] public async Task NullRoleAndMissingRevisionProduce400BeforeDomainConflicts(){await using var f=await Fixture.Create();using var client=await f.Host();var requests=new[]{("/campaigns/"+f.Campaign.Id+"/players","POST","{\"accountId\":\""+f.Gm.Id+"\",\"role\":null}"),("/campaigns/"+f.Campaign.Id,"PUT","{\"name\":\"Fixture\",\"description\":\"\",\"summary\":\"\"}")};foreach(var (path,method,json) in requests){using var req=await f.PublicRequest(path,method,json,f.Gm);Assert.Equal(HttpStatusCode.BadRequest,(await client.SendAsync(req)).StatusCode);}}
  [Fact] public async Task ProvisioningRequiresRealAgentAndPropagatesItsImmutableBinding(){var entities=new TestEntities();var store=new StoryStore(entities,new TestRecords());var owner=Guid.NewGuid().ToString();await Error("owning_agent_required",()=>store.ProvisionAsync(owner));var first=await entities.CreateAsync("agent","First fixture Agent",new JsonObject());await entities.CreateAsync("agent","Second fixture Agent",new JsonObject());await Error("owning_agent_required",()=>store.ProvisionAsync(owner));await store.ProvisionAsync(owner,ownerAgentId:first.Id.ToString());var c=(await store.ConfigAsync())!;Assert.Equal(first.Id.ToString(),c.Data.Text("owner_agent_id"));await Error("invalid_entity_protection",()=>store.ChangeAsync(c.TypeSlug,c.Slug,c.Name,old=>{var data=old!.Data.DeepClone().AsObject();data["owner_agent_id"]=Guid.NewGuid().ToString();return data;}));await Error("leaf_administrator_required",()=>store.ProvisionAsync("local-user"));}
