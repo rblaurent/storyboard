@@ -35,6 +35,9 @@ function roleName(role: string) { return role === 'gm' ? 'Game Master' : 'Player
 function Link({ href, navigate, children, ...props }: { href: string; navigate: (p: string) => void; children: React.ReactNode } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   return <a {...props} href={href} onClick={e => { if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.button === 0) { e.preventDefault(); navigate(href) } }}>{children}</a>
 }
+function AccountMenu({ me, signingOut, signout }: { me: Account; signingOut: boolean; signout: () => Promise<void> }) {
+  return <details className="account-menu"><summary aria-label={`Account menu for ${me.name}`}><Avatar person={me} /><span>{me.name}</span><SiteIcon name="chevron" className="menu-chevron" /></summary><div><button onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></div></details>
+}
 export function App() {
   const [me, setMe] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,14 +66,15 @@ export function App() {
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
   const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players)$/i.exec(path)
-  return <div className="storyboard-site">
+  const campaignDashboard = !!(me && !loading && match)
+  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
-    <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
-      {me && <details className="account-menu"><summary aria-label={`Account menu for ${me.name}`}><Avatar person={me} /><span>{me.name}</span><SiteIcon name="chevron" className="menu-chevron" /></summary><div><button onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></div></details>}
-    </header>
-    <main id="main" tabIndex={-1}>
+    {!campaignDashboard && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
+      {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} />}
+    </header>}
+    <main id="main" className={campaignDashboard ? 'campaign-main' : undefined} tabIndex={-1}>
       {error && <ErrorMessage error={error} />}
-      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
+      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
     <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>
   </div>
@@ -116,7 +120,7 @@ type Receipt = { command: GenerationCommand; id?: string }
 function readReceipt(key: string): Receipt | null {
   try { const r = JSON.parse(sessionStorage.getItem(key) || 'null'); return r && typeof r.command?.operationId === 'string' && ['image', 'summary'].includes(r.command.kind) && typeof r.command.prompt === 'string' && Number.isSafeInteger(r.command.expectedRevision) && (!r.id || /^[0-9a-f-]{36}$/i.test(r.id)) ? r : null } catch { return null }
 }
-function CampaignView({ id, tab, me, navigate }: { id: string; tab: string; me: Account; navigate: (p: string) => void }) {
+function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: string; tab: string; me: Account; navigate: (p: string) => void; signingOut: boolean; signout: () => Promise<void> }) {
   const base = `/campaigns/${id}`
   const receiptKey = `storyboard:operation:${me.id}:${id}`
   const [campaign, setCampaign] = useState<Campaign | null>(null)
@@ -181,9 +185,17 @@ function CampaignView({ id, tab, me, navigate }: { id: string; tab: string; me: 
   function reviewLatest() { if (campaign) { updateDraft({ ...draftRef.current!, expectedRevision: campaign.revision }); setNotice('Your draft is kept and now uses the latest revision. Compare it with the saved version below before saving.') } }
   if (!campaign || !draft) return <section className="empty"><Link href="/" navigate={navigate}><SiteIcon name="back" />Back to campaigns</Link><ErrorMessage error={error} />{error ? <button onClick={() => void refresh().catch(c => setError(explain(c)))}>Try again</button> : <p role="status">Opening campaign…</p>}</section>
   return <section>
-    <Link className="back-link" href="/" navigate={navigate}><SiteIcon name="back" />Back to campaigns</Link>
-    <div className="campaign-heading"><div><span className="eyebrow">CAMPAIGN NOTEBOOK · {roleName(campaign.role).toUpperCase()}</span><h1>{campaign.name}</h1>{campaign.archived && <span className="badge"><SiteIcon name="archive" size={16} />Archived · available to your table</span>}</div>{gm && <details className="campaign-menu"><summary>Campaign actions <SiteIcon name="chevron" className="menu-chevron" /></summary><div><p>Archive hides this campaign from the default picker. Your table keeps access.</p><button disabled={busy || active} onClick={() => void perform(async () => { const value = await api<Campaign>(base + (campaign.archived ? '/restore' : '/archive'), me.csrfToken, 'POST', {}); if (mounted.current) { accept(value); setNotice(campaign.archived ? 'Campaign restored.' : 'Campaign archived. Your table can still open this link.') } })}><SiteIcon name={campaign.archived ? 'restore' : 'archive'} />{campaign.archived ? 'Restore campaign' : 'Archive campaign'}</button></div></details>}</div>
-    <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : 'players'} />{t === 'description' ? 'Description' : 'Players'}</Link>)}</nav>
+    <header className="campaign-dashboard-header" data-ui-region="campaign-header">
+      <div className="campaign-dashboard-bar">
+        <Link className="campaign-back" href="/" navigate={navigate} aria-label="Back to campaigns"><SiteIcon name="back" /><span>Campaigns</span></Link>
+        <div className="campaign-dashboard-identity"><span className="eyebrow">{roleName(campaign.role).toUpperCase()}</span><div className="campaign-title-line"><h1>{campaign.name}</h1>{campaign.archived && <span className="badge"><SiteIcon name="archive" size={16} />Archived · available to your table</span>}</div></div>
+        <div className="campaign-dashboard-controls">
+          {gm && <details className="campaign-menu"><summary><span className="campaign-action-label"><span>Campaign </span>Actions</span><SiteIcon name="chevron" className="menu-chevron" /></summary><div><p>Archive hides this campaign from the default picker. Your table keeps access.</p><button disabled={busy || active} onClick={() => void perform(async () => { const value = await api<Campaign>(base + (campaign.archived ? '/restore' : '/archive'), me.csrfToken, 'POST', {}); if (mounted.current) { accept(value); setNotice(campaign.archived ? 'Campaign restored.' : 'Campaign archived. Your table can still open this link.') } })}><SiteIcon name={campaign.archived ? 'restore' : 'archive'} />{campaign.archived ? 'Restore campaign' : 'Archive campaign'}</button></div></details>}
+          <AccountMenu me={me} signingOut={signingOut} signout={signout} />
+        </div>
+      </div>
+      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : 'players'} />{t === 'description' ? 'Description' : 'Players'}</Link>)}</nav>
+    </header>
     <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
     {tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <div className="description-grid">
       <div>
