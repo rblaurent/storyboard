@@ -26,16 +26,18 @@
     "parentType": "storyboard-config",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-config",
     "slug": "workspace",
     "name": "workspace",
-    "fieldType": "string",
-    "sortOrder": 4
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "constraints": "{\"target_type\": \"page\"}"
   },
   {
     "parentType": "storyboard-config",
@@ -113,9 +115,10 @@
     "parentType": "storyboard-account",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-account",
@@ -200,9 +203,10 @@
     "parentType": "storyboard-campaign",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-campaign",
@@ -215,8 +219,9 @@
     "parentType": "storyboard-campaign",
     "slug": "creator",
     "name": "creator",
-    "fieldType": "string",
-    "sortOrder": 5
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   },
   {
     "parentType": "storyboard-campaign",
@@ -229,8 +234,9 @@
     "parentType": "storyboard-campaign",
     "slug": "workspace",
     "name": "workspace",
-    "fieldType": "string",
-    "sortOrder": 7
+    "fieldType": "entity_ref",
+    "sortOrder": 7,
+    "constraints": "{\"target_type\": \"page\"}"
   },
   {
     "parentType": "storyboard-campaign",
@@ -336,23 +342,26 @@
     "parentType": "storyboard-player",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-player",
     "slug": "account",
     "name": "account",
-    "fieldType": "string",
-    "sortOrder": 4
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   },
   {
     "parentType": "storyboard-player",
     "slug": "campaign",
     "name": "campaign",
-    "fieldType": "string",
-    "sortOrder": 5
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
   },
   {
     "parentType": "storyboard-player",
@@ -365,8 +374,9 @@
     "parentType": "storyboard-player",
     "slug": "role_ref",
     "name": "role ref",
-    "fieldType": "string",
-    "sortOrder": 7
+    "fieldType": "entity_ref",
+    "sortOrder": 7,
+    "constraints": "{\"target_type\": \"storyboard-role\"}"
   },
   {
     "parentType": "storyboard-player",
@@ -402,9 +412,10 @@
     "parentType": "storyboard-role",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-role",
@@ -447,23 +458,26 @@
     "parentType": "storyboard-character",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-character",
     "slug": "campaign",
     "name": "campaign",
-    "fieldType": "string",
-    "sortOrder": 4
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
   },
   {
     "parentType": "storyboard-character",
     "slug": "player",
     "name": "player",
-    "fieldType": "string",
-    "sortOrder": 5
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "constraints": "{\"target_type\": \"storyboard-player\"}"
   },
   {
     "parentType": "storyboard-character",
@@ -513,9 +527,10 @@
     "parentType": "storyboard-session",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-session",
@@ -556,8 +571,9 @@
     "parentType": "storyboard-session",
     "slug": "account",
     "name": "account",
-    "fieldType": "string",
-    "sortOrder": 9
+    "fieldType": "entity_ref",
+    "sortOrder": 9,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   },
   {
     "parentType": "storyboard-session",
@@ -593,23 +609,26 @@
     "parentType": "storyboard-generation",
     "slug": "owner_id",
     "name": "owner id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 3,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-generation",
     "slug": "campaign",
     "name": "campaign",
-    "fieldType": "string",
-    "sortOrder": 4
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
   },
   {
     "parentType": "storyboard-generation",
     "slug": "account",
     "name": "account",
-    "fieldType": "string",
-    "sortOrder": 5
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   },
   {
     "parentType": "storyboard-generation",
@@ -756,9 +775,10 @@
     "parentType": "storyboard-portal",
     "slug": "owner_id",
     "name": "owner_id",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "sortOrder": 104,
-    "isRequired": true
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
   },
   {
     "parentType": "storyboard-portal",
@@ -814,8 +834,9 @@
     "parentType": "storyboard-character",
     "slug": "account",
     "name": "account",
-    "fieldType": "string",
-    "sortOrder": 112
+    "fieldType": "entity_ref",
+    "sortOrder": 112,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   },
   {
     "parentType": "storyboard-character",
@@ -835,8 +856,9 @@
     "parentType": "storyboard-portal",
     "slug": "campaign",
     "name": "campaign",
-    "fieldType": "string",
-    "sortOrder": 115
+    "fieldType": "entity_ref",
+    "sortOrder": 115,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
   },
   {
     "parentType": "storyboard-portal",
@@ -926,73 +948,82 @@
     "parentType": "storyboard-player",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 128
+    "sortOrder": 128,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-portal",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 129
+    "sortOrder": 129,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-campaign",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 130
+    "sortOrder": 130,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-account",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 131
+    "sortOrder": 131,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-character",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 132
+    "sortOrder": 132,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-config",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 133
+    "sortOrder": 133,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-session",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 134
+    "sortOrder": 134,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-generation",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 135
+    "sortOrder": 135,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-role",
     "slug": "owner_agent_id",
     "name": "Owning Agent",
-    "fieldType": "string",
+    "fieldType": "entity_ref",
     "isRequired": true,
-    "sortOrder": 136
+    "sortOrder": 136,
+    "constraints": "{\"target_type\": \"agent\"}"
   },
   {
     "parentType": "storyboard-portal",
