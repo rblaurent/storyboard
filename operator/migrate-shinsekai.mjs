@@ -175,8 +175,18 @@ export async function applyPlan(plan,inventory,connection) {
  plan.portalKeyFingerprint=sha(connection.secret)
  const status=await requireFences(connection)
  for(const p of plan.dependencies)if(sha(await connection.asset(p.asset))!==p.assetHash)throw Error('Portrait bytes changed before apply')
- const plugin=await connection.call('/api/entities/storyboard')
- if(!uuid(status.installation)||!uuid(plugin?.id)||plan.installation && plan.installation!==status.installation||plan.pluginId && plan.pluginId!==plugin.id)throw Error('Installation/plugin reconciliation required')
+ const pluginRows=await connection.call('/api/entities?'+new URLSearchParams({type:'plugin',limit:'500'}))
+ const plugins=pluginRows.items.filter(e=>e.typeSlug==='plugin'&&e.slug==='storyboard')
+ if(plugins.length!==1)throw Error('Storyboard plugin identity is ambiguous')
+ const plugin=plugins[0]
+ if(plan.pluginId&&plan.pluginId!==plugin.id){
+  // Recover the first live receipt only when the old untyped slug lookup
+  // selected the Storyboard workspace page before any target IDs were recorded.
+  const ambiguous=await connection.call('/api/entities/'+plan.pluginId)
+  if(ambiguous?.typeSlug!=='page'||ambiguous.slug!=='storyboard'||plan.targetIds)throw Error('Installation/plugin reconciliation required')
+  plan.pluginId=undefined
+ }
+ if(!uuid(status.installation)||!uuid(plugin.id)||plan.installation&&plan.installation!==status.installation)throw Error('Installation/plugin reconciliation required')
  if(!uuid(status.ownerAgentId)||plan.ownerAgentId&&plan.ownerAgentId!==status.ownerAgentId)throw Error('Owning Agent reconciliation required')
  plan.ownerAgentId=status.ownerAgentId;plan.installation=status.installation;plan.pluginId=plugin.id;await connection.save?.()
  plan.targetIds ||= {}; plan.targetIds.accounts ||= {}; plan.targetIds.members ||= {}; plan.targetIds.characters ||= {}
