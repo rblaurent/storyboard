@@ -5,7 +5,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "./*.tsx";
 @source "../../node_modules/@redbamboo/ui/src";
-.storyboard-admin { container-type: inline-size; min-height: 100%; background: var(--background); color: var(--foreground); padding: 32px 24px; }
+.storyboard-admin { container-type: inline-size; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; background: var(--background); color: var(--foreground); padding: 32px 24px; }
 .storyboard-admin-inner { max-width: 1152px; margin: 0 auto; display: grid; gap: 24px; }
 .storyboard-admin-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .storyboard-admin-title { display: flex; align-items: center; gap: 12px; }

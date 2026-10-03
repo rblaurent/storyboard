@@ -59,6 +59,13 @@ test('management dashboard stays usable at phone width', async ({ page }) => {
     expect(Math.max(0, ...tableOverflow)).toBeLessThanOrEqual(1)
   }
   await expect(page.getByRole('heading', { name: 'Recent audit activity' })).toBeVisible()
+  const dashboard = page.locator('[data-ui-surface="storyboard-management"]')
+  await dashboard.evaluate(element => { (element.querySelector('.storyboard-admin-inner') as HTMLElement).style.minHeight = '1600px' })
+  const before = await dashboard.evaluate(element => ({ top: element.scrollTop, height: element.clientHeight, content: element.scrollHeight }))
+  expect(before.content).toBeGreaterThan(before.height)
+  await dashboard.hover()
+  await page.mouse.wheel(0, 600)
+  await expect.poll(() => dashboard.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
   await page.screenshot({ path: path.join(evidence, 'fixture-management-phone-activity.png'), fullPage: true })
 })
 
