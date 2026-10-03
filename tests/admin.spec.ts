@@ -15,10 +15,15 @@ async function harness(page: Page) {
     if (p.endsWith('/manage/campaigns')) return json([{ id: cid, name: 'Disposable campaign', state: 'ready', archived: false, workspace: cid }])
     if (p.endsWith('/manage/operations')) return json([{ id: oid, kind: 'image', state: 'completed', error: '', applied: false }])
     if (p.endsWith('/manage/audit')) return json([{ id: 1, createdAt: '2026-10-03T12:00:00Z', data: { action: 'campaign.update', actor: aid, target: cid } }])
+    if (p === '/api/entities') {
+      const type = new URL(req.url()).searchParams.get('type')
+      if (type === 'quality-tier') return json({ items: [{ id: 'tier-fast', typeSlug: 'quality-tier', name: 'Fast', slug: 'fast', data: { icon: 'ph-bold ph-rabbit', color: '#22d3ee', sort_order: 0 } }, { id: 'tier-standard', typeSlug: 'quality-tier', name: 'Standard', slug: 'standard', data: { icon: 'ph-bold ph-lightning', color: '#a78bfa', sort_order: 1 } }, { id: 'tier-deep', typeSlug: 'quality-tier', name: 'Deep', slug: 'deep', data: { icon: 'ph-bold ph-brain', color: '#fb923c', sort_order: 2 } }], total: 3 })
+      if (type === 'comfyui-workflow') return json({ items: [{ id: 'workflow-z', typeSlug: 'comfyui-workflow', name: 'Z-Image Turbo', slug: 'z_turbo', data: { description: 'Fast campaign image generation.' } }, { id: 'workflow-sdxl', typeSlug: 'comfyui-workflow', name: 'SDXL', slug: 'sdxl', data: { description: 'Detailed campaign image generation.' } }], total: 2 })
+    }
     if (p === '/api/extensions/storyboard/settings') {
       if (state.denied) return json({ id: 'storyboard', sections: [], error: 'extension_owner_required' })
       if (method === 'PUT') return json({ ok: true, validateOnly: body.validateOnly })
-      return json({ id: 'storyboard', sections: [{ id: 'access', name: 'Public access', fields: [{ key: 'public_url', path: 'public_url', label: 'Public website', type: 'string', value: 'https://storyboard.minititine.cc', configured: true, protection: null }, { key: 'google_client_secret', path: 'google_client_secret', label: 'Google client secret', type: 'secret', value: null, configured: true, protection: 'encrypted' }, { key: 'proxy_secret', path: 'proxy_secret', label: 'Site connection key', type: 'secret', value: null, configured: true, protection: 'encrypted' }] }, { id: 'generation', name: 'Generation', fields: [{ key: 'visual_brief', path: 'visual_brief', label: 'Default visual brief', type: 'string', value: 'Clear composition, no lettering.', configured: true, protection: null }] }] })
+      return json({ id: 'storyboard', sections: [{ id: 'access', name: 'Public access', fields: [{ key: 'public_url', path: 'public_url', label: 'Public website', type: 'string', value: 'https://storyboard.minititine.cc', configured: true, protection: null }, { key: 'google_client_secret', path: 'google_client_secret', label: 'Google client secret', type: 'secret', value: null, configured: true, protection: 'encrypted' }, { key: 'proxy_secret', path: 'proxy_secret', label: 'Site connection key', type: 'secret', value: null, configured: true, protection: 'encrypted' }] }, { id: 'generation', name: 'Generation', fields: [{ key: 'quality_mode', path: 'quality_mode', label: 'Text quality mode', type: 'entity_ref', value: 'standard', configured: true, protection: null, constraints: { target_type: 'quality-tier' } }, { key: 'workflow', path: 'workflow', label: 'Image workflow', type: 'entity_ref', value: 'z_turbo', configured: true, protection: null, constraints: { target_type: 'comfyui-workflow' } }, { key: 'visual_brief', path: 'visual_brief', label: 'Default visual brief', type: 'string', value: 'Clear composition, no lettering.', configured: true, protection: null }] }] })
     }
     return json({ error: 'fixture_route_missing' }, 404)
   })
@@ -33,6 +38,9 @@ test('settings fixture: standard endpoint, validate-only, masked explicit secret
 })
 for (const theme of ['light', 'dark']) test(`shared Leaf components fixture screenshot · ${theme}`, async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', e => errors.push(e.message)); await harness(page); await page.goto(`/admin.fixture.html?surface=manage&theme=${theme}`); await expect(page.getByRole('heading', { name: 'Your service is configured' })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-management-${theme}.png`), fullPage: true }); await page.goto(`/admin.fixture.html?surface=settings&theme=${theme}`); await expect(page.getByLabel('Public website', { exact: true })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-settings-${theme}.png`), fullPage: true }); expect(errors).toEqual([])
+})
+test('settings fixture: entity references use cards and save canonical slugs', async ({ page }) => {
+  const s = await harness(page); await page.goto('/admin.fixture.html?surface=settings'); await expect(page.locator('[data-setting-path="quality_mode"] [data-slot="entity-card"]')).toHaveAttribute('data-entity-name', 'Standard'); await expect(page.locator('[data-setting-path="workflow"] [data-slot="entity-card"]')).toHaveAttribute('data-entity-name', 'Z-Image Turbo'); await page.getByRole('button', { name: 'Change Text quality mode' }).click(); await expect(page.getByRole('dialog')).toContainText('Select Text quality mode'); await page.getByRole('button', { name: 'Select Deep' }).click(); await expect(page.locator('[data-setting-path="quality_mode"] [data-slot="entity-card"]')).toHaveAttribute('data-entity-name', 'Deep'); await page.getByRole('button', { name: 'Save generation' }).click(); expect(s.requests.filter(r => r.method === 'PUT').at(-1)?.body).toEqual({ section: 'generation', values: { quality_mode: 'deep' }, validateOnly: false })
 })
 
 test('management dashboard stays usable at phone width', async ({ page }) => {
@@ -61,10 +69,15 @@ test('settings panel follows the Leaf extension template at phone width', async 
   const settings = page.locator('[data-ui-surface="storyboard-settings"]')
   await expect(settings).toBeVisible()
   await expect(settings).not.toHaveClass(/storyboard-admin/)
-  await expect(settings.locator('[data-slot="setting-row"]')).toHaveCount(4)
+  await expect(settings.locator('[data-slot="setting-row"]')).toHaveCount(6)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
   await page.screenshot({ path: path.join(evidence, 'fixture-settings-phone.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Change Text quality mode' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  const pickerOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(pickerOverflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: path.join(evidence, 'fixture-settings-phone-picker.png'), fullPage: true })
 })
 
 test('admin fixture: ambiguous owning Agent is selected explicitly before retrying preparation', async ({ page }) => {
