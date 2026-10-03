@@ -1,0 +1,12 @@
+{
+  "name": "storyboard",
+  "account_id": "da5f5f0e468649406fdc6440a46b1410",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": false,
+  "preview_urls": false,
+  // Proposed hostname only. This file has not been published or deployed.
+  "routes": [{ "pattern": "storyboard.minititine.cc", "custom_domain": true }],
+  "observability": { "enabled": false },
+  "vars": { "STORYBOARD_PUBLIC_ORIGIN": "https://storyboard.minititine.cc" }
+}

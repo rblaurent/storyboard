@@ -1,0 +1,37 @@
+{
+  "id": "storyboard",
+  "name": "Storyboard",
+  "version": "0.1.0",
+  "kernelApi": "^0.1.0",
+  "description": "Campaigns, players and characters with a standalone GM portal.",
+  "icon": "ph-bold ph-film-strip",
+  "color": "orange",
+  "requires": [
+    "entities",
+    "records",
+    "ai-inference",
+    "image-generation",
+    "assets"
+  ],
+  "backend": {
+    "assembly": "Leaf.Plugins.Storyboard",
+    "apiNamespace": "apps"
+  },
+  "frontend": {
+    "package": "storyboard-web",
+    "route": "/apps/storyboard",
+    "settings": {}
+  },
+  "permissions": [
+    {
+      "kind": "net",
+      "target": "oauth2.googleapis.com",
+      "reason": "Google sign-in token exchange"
+    },
+    {
+      "kind": "net",
+      "target": "www.googleapis.com",
+      "reason": "Validate Google identity signatures"
+    }
+  ]
+}

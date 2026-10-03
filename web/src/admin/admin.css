@@ -1,0 +1,11 @@
+/* Leaf owns the theme, base styles and typography. Site CSS never enters this bundle. */
+@layer theme, base, components, utilities;
+@import "@redbamboo/ui/tokens.css";
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "./*.tsx";
+@source "../../node_modules/@redbamboo/ui/src";
+.storyboard-admin { container-type: inline-size; }
+.storyboard-admin :is(th,td) { text-align: left; padding: .75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.storyboard-admin th { color: var(--muted-foreground); font-weight: 500; }
+@container (width < 640px) { .storyboard-admin [data-slot="setting-row"] > div:first-child { flex-direction: column; align-items: stretch; gap: .5rem; } }

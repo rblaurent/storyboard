@@ -1,0 +1,101 @@
+[
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-config",
+    "name": "Storyboard config",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard config accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-account",
+    "name": "Storyboard account",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard account accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-campaign",
+    "name": "Storyboard campaign",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard campaign accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-player",
+    "name": "Storyboard player",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard player accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-role",
+    "name": "Storyboard role",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard role accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-character",
+    "name": "Storyboard character",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": true,
+      "description": "Storyboard character accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-session",
+    "name": "Storyboard session",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": false,
+      "description": "Storyboard session accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-generation",
+    "name": "Storyboard generation",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "color": "orange",
+      "versioning": false,
+      "description": "Storyboard generation accessed through campaign-authorized domain APIs."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-portal",
+    "name": "Storyboard portal",
+    "data": {
+      "icon": "ph-bold ph-browser",
+      "color": "orange",
+      "versioning": true,
+      "description": "Confidential campaign-scoped delegated portal registration."
+    }
+  }
+]

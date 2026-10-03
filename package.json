@@ -1,0 +1,14 @@
+{
+  "name": "storyboard", "version": "0.1.0", "private": true, "type": "module",
+  "packageManager": "pnpm@11.0.9", "engines": { "node": ">=22.12" },
+  "scripts": {
+    "typecheck": "pnpm --filter storyboard-web typecheck && pnpm worker:typecheck",
+    "build:plugin": "pnpm --filter storyboard-web build:plugin",
+    "build:site": "pnpm --filter storyboard-web build:site",
+    "worker:typecheck": "pnpm --filter storyboard-worker typecheck",
+    "worker:test": "tsx --test worker/tests/*.test.ts",
+    "test:frontend": "playwright test",
+    "test": "pnpm worker:test && pnpm test:frontend"
+  },
+  "devDependencies": { "@types/node": "^24.0.0", "@playwright/test": "^1.55.0", "tsx": "^4.20.5", "typescript": "~6.0.2" }
+}

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><TargetFramework>net9.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile></PropertyGroup>
+<ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App"/><PackageReference Include="Google.Apis.Auth" Version="1.77.0"/></ItemGroup>
+<ItemGroup Condition="'$(LeafSdkAssembly)' != ''"><Reference Include="Leaf.Sdk"><HintPath>$(LeafSdkAssembly)</HintPath><Private>false</Private></Reference></ItemGroup>
+<ItemGroup Condition="'$(LeafSdkAssembly)' == '' and '$(LeafSdkProject)' != ''"><ProjectReference Include="$(LeafSdkProject)"/></ItemGroup>
+<Target Name="RequireHostSdk" BeforeTargets="ResolveReferences" Condition="'$(LeafSdkAssembly)' == '' and '$(LeafSdkProject)' == ''"><Error Text="Pass LeafSdkProject or LeafSdkAssembly explicitly; host SDK paths are not baked into this repository."/></Target>
+<ItemGroup><EmbeddedResource Include="../../plugin.json" LogicalName="plugin.json"/></ItemGroup>
+</Project>

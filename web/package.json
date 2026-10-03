@@ -1,0 +1,6 @@
+{
+  "name": "storyboard-web", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": { "dev": "vite --config vite.site.config.ts --host 127.0.0.1 --port 4197", "typecheck": "tsc --noEmit", "build:plugin": "vite build", "build:site": "vite build --config vite.site.config.ts" },
+  "dependencies": { "react": "^19.2.5", "react-dom": "^19.2.5" },
+  "devDependencies": { "@redbamboo/ui": "link:../../redbamboo-packages/packages/ui", "@tailwindcss/vite": "^4.2.4", "tailwindcss": "^4.2.4", "@module-federation/vite": "^1.16.12", "@types/react": "19.2.14", "@types/react-dom": "19.2.3", "@vitejs/plugin-react": "^6.0.1", "vite": "^8.0.10", "typescript": "~6.0.2" }
+}

@@ -1,0 +1,1032 @@
+[
+  {
+    "parentType": "storyboard-config",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "workspace",
+    "name": "workspace",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "public_url",
+    "name": "public url",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "google_client_id",
+    "name": "google client id",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "google_client_secret",
+    "name": "google client secret",
+    "fieldType": "secret",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "proxy_secret",
+    "name": "proxy secret",
+    "fieldType": "secret",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "quality_mode",
+    "name": "quality mode",
+    "fieldType": "string",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "workflow",
+    "name": "workflow",
+    "fieldType": "string",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "visual_brief",
+    "name": "visual brief",
+    "fieldType": "string",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "google_issuer",
+    "name": "google issuer",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "google_subject",
+    "name": "google subject",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "email",
+    "name": "email",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "email_key",
+    "name": "email key",
+    "fieldType": "string",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "avatar",
+    "name": "avatar",
+    "fieldType": "string",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "enabled",
+    "name": "enabled",
+    "fieldType": "boolean",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "can_create",
+    "name": "can create",
+    "fieldType": "boolean",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "legacy_id",
+    "name": "legacy id",
+    "fieldType": "string",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "state",
+    "name": "state",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "creator",
+    "name": "creator",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "creation_name",
+    "name": "creation name",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "workspace",
+    "name": "workspace",
+    "fieldType": "string",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "description",
+    "name": "description",
+    "fieldType": "string",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "summary",
+    "name": "summary",
+    "fieldType": "string",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "summary_stale",
+    "name": "summary stale",
+    "fieldType": "boolean",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "cover_asset",
+    "name": "cover asset",
+    "fieldType": "string",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "revision",
+    "name": "revision",
+    "fieldType": "number",
+    "sortOrder": 12
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "archived",
+    "name": "archived",
+    "fieldType": "boolean",
+    "sortOrder": 13
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "latest_image",
+    "name": "latest image",
+    "fieldType": "string",
+    "sortOrder": 14
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "latest_summary",
+    "name": "latest summary",
+    "fieldType": "string",
+    "sortOrder": 15
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "applied_operation",
+    "name": "applied operation",
+    "fieldType": "string",
+    "sortOrder": 16
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "game_key",
+    "name": "game key",
+    "fieldType": "string",
+    "sortOrder": 17
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "legacy_id",
+    "name": "legacy id",
+    "fieldType": "string",
+    "sortOrder": 18
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "account",
+    "name": "account",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "campaign",
+    "name": "campaign",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "role",
+    "name": "role",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "role_ref",
+    "name": "role ref",
+    "fieldType": "string",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "active",
+    "name": "active",
+    "fieldType": "boolean",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "key",
+    "name": "key",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "permissions",
+    "name": "permissions",
+    "fieldType": "json",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "campaign",
+    "name": "campaign",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "player",
+    "name": "player",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "portrait",
+    "name": "portrait",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "game_data",
+    "name": "game data",
+    "fieldType": "json",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "legacy_id",
+    "name": "legacy id",
+    "fieldType": "string",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "kind",
+    "name": "kind",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "nonce",
+    "name": "nonce",
+    "fieldType": "secret",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "verifier",
+    "name": "verifier",
+    "fieldType": "secret",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "expires",
+    "name": "expires",
+    "fieldType": "number",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "used",
+    "name": "used",
+    "fieldType": "boolean",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "account",
+    "name": "account",
+    "fieldType": "string",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "revoked",
+    "name": "revoked",
+    "fieldType": "boolean",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "owner_id",
+    "name": "owner id",
+    "fieldType": "string",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "campaign",
+    "name": "campaign",
+    "fieldType": "string",
+    "sortOrder": 4
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "account",
+    "name": "account",
+    "fieldType": "string",
+    "sortOrder": 5
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "kind",
+    "name": "kind",
+    "fieldType": "string",
+    "sortOrder": 6
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "prompt",
+    "name": "prompt",
+    "fieldType": "string",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "source_description",
+    "name": "source description",
+    "fieldType": "string",
+    "sortOrder": 8
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "source_name",
+    "name": "source name",
+    "fieldType": "string",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "revision",
+    "name": "revision",
+    "fieldType": "number",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "state",
+    "name": "state",
+    "fieldType": "string",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "error",
+    "name": "error",
+    "fieldType": "string",
+    "sortOrder": 12
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "result",
+    "name": "result",
+    "fieldType": "string",
+    "sortOrder": 13
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "refined_prompt",
+    "name": "refined prompt",
+    "fieldType": "string",
+    "sortOrder": 14
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "workflow",
+    "name": "workflow",
+    "fieldType": "string",
+    "sortOrder": 15
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "text_job",
+    "name": "text job",
+    "fieldType": "string",
+    "sortOrder": 16
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "image_job",
+    "name": "image job",
+    "fieldType": "string",
+    "sortOrder": 17
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "applied",
+    "name": "applied",
+    "fieldType": "boolean",
+    "sortOrder": 18
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 97
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 98
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 99
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 100
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 101
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "installation",
+    "name": "installation",
+    "fieldType": "string",
+    "sortOrder": 102,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "parent",
+    "name": "parent",
+    "fieldType": "string",
+    "sortOrder": 103
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "owner_id",
+    "name": "owner_id",
+    "fieldType": "string",
+    "sortOrder": 104,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "confidential",
+    "name": "confidential",
+    "fieldType": "boolean",
+    "sortOrder": 105,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 106
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 107
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 108
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "migration_run",
+    "name": "migration_run",
+    "fieldType": "string",
+    "sortOrder": 109
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "writes_fenced",
+    "name": "writes_fenced",
+    "fieldType": "boolean",
+    "sortOrder": 110
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "legacy_owner",
+    "name": "legacy_owner",
+    "fieldType": "string",
+    "sortOrder": 111
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "account",
+    "name": "account",
+    "fieldType": "string",
+    "sortOrder": 112
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "game_key",
+    "name": "game_key",
+    "fieldType": "string",
+    "sortOrder": 113
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "key",
+    "name": "key",
+    "fieldType": "string",
+    "sortOrder": 114
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "campaign",
+    "name": "campaign",
+    "fieldType": "string",
+    "sortOrder": 115
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "google_client_id",
+    "name": "google_client_id",
+    "fieldType": "string",
+    "sortOrder": 116
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "portal_secret",
+    "name": "portal_secret",
+    "fieldType": "secret",
+    "sortOrder": 117
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "legacy_workspace",
+    "name": "legacy_workspace",
+    "fieldType": "string",
+    "sortOrder": 118
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "previous_operation",
+    "name": "previous_operation",
+    "fieldType": "string",
+    "sortOrder": 119
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "deadline",
+    "name": "deadline",
+    "fieldType": "number",
+    "sortOrder": 120
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "visual_brief",
+    "name": "visual_brief",
+    "fieldType": "string",
+    "sortOrder": 121
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "quality_mode",
+    "name": "quality_mode",
+    "fieldType": "string",
+    "sortOrder": 122
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "workflow_inputs",
+    "name": "workflow_inputs",
+    "fieldType": "json",
+    "sortOrder": 123
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "image_capability",
+    "name": "image_capability",
+    "fieldType": "string",
+    "sortOrder": 124
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "enrollment_campaign",
+    "name": "Initial portal enrollment intent",
+    "fieldType": "string",
+    "sortOrder": 125
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "workflow_id",
+    "name": "workflow_id",
+    "fieldType": "string",
+    "sortOrder": 126
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "workflow_revision",
+    "name": "workflow_revision",
+    "fieldType": "string",
+    "sortOrder": 127
+  },
+  {
+    "parentType": "storyboard-player",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 128
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 129
+  },
+  {
+    "parentType": "storyboard-campaign",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 130
+  },
+  {
+    "parentType": "storyboard-account",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 131
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 132
+  },
+  {
+    "parentType": "storyboard-config",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 133
+  },
+  {
+    "parentType": "storyboard-session",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 134
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 135
+  },
+  {
+    "parentType": "storyboard-role",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "string",
+    "isRequired": true,
+    "sortOrder": 136
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "portrait_type",
+    "name": "Portrait Type",
+    "fieldType": "string",
+    "sortOrder": 138
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "character_fields",
+    "name": "Character Fields",
+    "fieldType": "json",
+    "sortOrder": 139
+  },
+  {
+    "parentType": "storyboard-portal",
+    "slug": "character_key",
+    "name": "Character Key",
+    "fieldType": "string",
+    "sortOrder": 140
+  },
+  {
+    "parentType": "storyboard-character",
+    "slug": "creation_operation",
+    "name": "Creation Operation",
+    "fieldType": "string",
+    "sortOrder": 141
+  },
+  {
+    "parentType": "storyboard-generation",
+    "slug": "paused_at",
+    "name": "Operator fence pause",
+    "fieldType": "number",
+    "sortOrder": 142
+  }
+]
