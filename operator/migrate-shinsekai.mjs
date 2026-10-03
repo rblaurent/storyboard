@@ -223,9 +223,9 @@ export async function applyPlan(plan,inventory,connection) {
   const account=await ensure('storyboard-account',mapping.slug,source.name,accountData(mapping),plan.targetIds.accounts[mapping.oldId])
   accounts.set(source.id,account);plan.targetIds.accounts[source.id]=account.id;await save()
   const role=mapping.gm?'gm':'player'
-  const roleRows=await connection.call('/api/entities?'+new URLSearchParams({type:'storyboard-role',limit:'500'}))
-  const definition=roleRows.items.find(e=>dataOf(e).key===role)
-  if(!definition || dataOf(definition).owner_id!==plan.ownerId)throw Error('Protected role definition required')
+  const roleRows=await connection.call(manage+'/roles')
+  const definition=roleRows.find(e=>e.key===role)
+  if(!uuid(definition?.id))throw Error('Protected role definition required')
   const slug='m-'+sha(campaign.id+':'+account.id)
   const member=await ensure('storyboard-player',slug,source.name,{campaign:campaign.id,account:account.id,role,role_ref:definition.id,active:true,parent:plan.workspaceId},plan.targetIds.members[source.id])
   members.set(source.id,member);plan.targetIds.members[source.id]=member.id;await save()

@@ -50,6 +50,7 @@ function harness(){
  const connection={secret:Buffer.alloc(32,7).toString('base64url'),client:'fixture-test.apps.googleusercontent.com',save:async()=>{state.saves++},asset:async()=>state.changedAssets?Buffer.from('changed'):assets,status:async()=>({version:'storyboard/1',writesFenced:state.portal}),call:async(path,method='GET',body)=>{
   if(path.endsWith('/status'))return{writesFenced:state.story,googleConfigured:true,installation,ownerAgentId}
   if(path.startsWith('/api/entities?type=plugin'))return{items:[{id:pluginId,typeSlug:'plugin',slug:'storyboard'}]}
+  if(path.endsWith('/roles'))return[{id:roleId,key:'gm'},{id:randomUUID(),key:'player'}]
   if(path.startsWith('/api/entities?'))return{items:[{id:roleId,data:{key:'gm',owner_id:owner.id}},{id:randomUUID(),data:{key:'player',owner_id:owner.id}}]}
   const match=path.match(/\/manage\/entities\/([^/]+)\/([^/]+)$/);assert.ok(match,'Only typed management record API may write')
   const key=match[1]+':'+match[2],existing=rows.get(key)
