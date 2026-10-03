@@ -28,7 +28,7 @@ test('admin fixture: preparation, projections, eligibility and actual inspector 
   const s = await harness(page); s.unconfigured = true; await page.goto('/admin.fixture.html?surface=manage'); await expect(page.getByRole('alert')).toContainText('installation owner'); await page.getByRole('button', { name: 'Prepare Storyboard' }).click(); await expect(page.getByRole('heading', { name: 'Your service is configured' })).toBeVisible(); await page.getByRole('tab', { name: /^Accounts/ }).click(); await page.getByRole('switch', { name: 'Allow Disposable account to create campaigns' }).click(); await expect(page.getByRole('switch')).toBeChecked(); expect(s.requests.find(r => r.path.endsWith('/eligibility'))?.body).toEqual({ canCreate: true }); await page.getByRole('tab', { name: /^Campaigns/ }).click(); await expect(page.getByRole('link', { name: 'Disposable campaign' })).toHaveAttribute('href', `/database/entities/storyboard-campaign/${cid}`); await page.getByRole('tab', { name: 'Activity', exact: true }).click(); await expect(page.getByText('Newer changes retained')).toBeVisible(); await expect(page.getByText('Not supplied')).toBeVisible()
 })
 test('settings fixture: standard endpoint, validate-only, masked explicit secret replacement and denied state', async ({ page }) => {
-  const s = await harness(page); await page.goto('/admin.fixture.html?surface=settings'); await expect(page.getByLabel('Public website', { exact: true })).toHaveValue('https://storyboard.minititine.cc'); await page.getByLabel('Public website', { exact: true }).fill('https://proposed.example.com'); await page.getByRole('button', { name: 'Validate', exact: true }).first().click(); await expect(page.getByRole('status').filter({ hasText: /^Settings/ })).toContainText('Nothing has been saved'); expect(s.requests.filter(r => r.method === 'PUT').at(-1)?.body).toEqual({ section: 'access', values: { public_url: 'https://proposed.example.com' }, validateOnly: true }); await page.getByRole('button', { name: 'Save public access' }).click(); await expect(page.getByRole('status').filter({ hasText: /^Settings/ })).toContainText('Settings saved.')
+  const s = await harness(page); await page.goto('/admin.fixture.html?surface=settings'); const settings = page.locator('[data-ui-surface="storyboard-settings"]'); await expect(settings).not.toHaveClass(/storyboard-admin/); await expect(settings.locator('[data-slot="section-header"]')).toHaveText(['Public access', 'Generation']); await expect(page.getByRole('button', { name: 'Reload settings' })).toContainText('Reload'); await expect(page.getByLabel('Public website', { exact: true })).toHaveValue('https://storyboard.minititine.cc'); await page.getByLabel('Public website', { exact: true }).fill('https://proposed.example.com'); await page.getByRole('button', { name: 'Validate', exact: true }).first().click(); await expect(page.getByRole('status').filter({ hasText: /^Settings/ })).toContainText('Nothing has been saved'); expect(s.requests.filter(r => r.method === 'PUT').at(-1)?.body).toEqual({ section: 'access', values: { public_url: 'https://proposed.example.com' }, validateOnly: true }); await page.getByRole('button', { name: 'Save public access' }).click(); await expect(page.getByRole('status').filter({ hasText: /^Settings/ })).toContainText('Settings saved.')
   const secret = page.locator('[data-setting-path="google_client_secret"]'); await expect(secret.getByText('Stored securely', { exact: true })).toBeVisible(); await secret.getByRole('button', { name: /Replace/ }).click(); await secret.locator('input').fill('disposable-replacement-secret'); await secret.getByRole('button', { name: /Save/ }).click(); await expect(page.getByRole('status').filter({ hasText: /^Settings/ })).toContainText('Settings saved.'); expect(s.requests.filter(r => r.method === 'PUT').at(-1)?.body).toEqual({ section: 'access', values: { google_client_secret: 'disposable-replacement-secret' }, validateOnly: false }); await expect(page.locator('body')).not.toContainText('disposable-replacement-secret'); s.denied = true; await page.getByRole('button', { name: 'Reload settings' }).click(); await expect(page.getByRole('alert')).toBeVisible(); await expect(page.getByLabel('Public website', { exact: true })).toHaveCount(0)
 })
 for (const theme of ['light', 'dark']) test(`shared Leaf components fixture screenshot · ${theme}`, async ({ page }) => {
@@ -52,6 +52,19 @@ test('management dashboard stays usable at phone width', async ({ page }) => {
   }
   await expect(page.getByRole('heading', { name: 'Recent audit activity' })).toBeVisible()
   await page.screenshot({ path: path.join(evidence, 'fixture-management-phone-activity.png'), fullPage: true })
+})
+
+test('settings panel follows the Leaf extension template at phone width', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await harness(page)
+  await page.goto('/admin.fixture.html?surface=settings')
+  const settings = page.locator('[data-ui-surface="storyboard-settings"]')
+  await expect(settings).toBeVisible()
+  await expect(settings).not.toHaveClass(/storyboard-admin/)
+  await expect(settings.locator('[data-slot="setting-row"]')).toHaveCount(4)
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: path.join(evidence, 'fixture-settings-phone.png'), fullPage: true })
 })
 
 test('admin fixture: ambiguous owning Agent is selected explicitly before retrying preparation', async ({ page }) => {
