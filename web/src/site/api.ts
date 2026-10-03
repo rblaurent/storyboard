@@ -3,6 +3,14 @@ export interface Person { id: string; name: string; avatar: string }
 export interface Campaign { id: string; name: string; description: string; summary: string; summaryStale: boolean; image: string | null; archived: boolean; revision: number; role: 'gm' | 'player'; playerCount: number; players: Person[] }
 export interface Player extends Person { accountId: string; role: 'gm' | 'player'; characters: { id: string; name: string; portrait: string | null }[] }
 export interface Operation { id: string; kind: 'image' | 'summary'; state: 'pending' | 'refining' | 'generating' | 'saving' | 'completed' | 'failed'; error: string; refinedPrompt: string; applied: boolean }
+export interface MusicStatus { available: boolean; connected: boolean; displayName: string | null; error: string | null }
+export interface MusicPlaylist { id: string; name: string; imageUrl: string | null; trackCount: number; uri: string | null }
+export interface MusicTrack { id: string; name: string; artist: string; album: string | null; imageUrl: string | null; durationMs: number; uri: string }
+export interface MusicPage<T> { items: T[]; offset: number; limit: number; total: number; hasMore: boolean }
+export interface MusicPlayback { available: boolean; playing: boolean; track: MusicTrack | null; progressMs: number; deviceId: string | null; deviceName: string | null; volumePercent: number; error: string | null }
+export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
+export interface MusicCandidate { id: string; title: string; tags: string; durationSeconds: number; audio: string; cover: string | null; promotedTrack: string }
+export interface MusicGeneration { id: string; state: 'pending' | 'generating' | 'ingesting' | 'completed' | 'failed'; error: string; creditsConsumed: number; candidates: MusicCandidate[] }
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(code) } }
 const messages: Record<string, string> = {
   campaign_changed: 'This campaign changed elsewhere. Your draft is kept. Review the latest saved version before trying again.',
@@ -12,6 +20,11 @@ const messages: Record<string, string> = {
   campaign_access_denied: 'You do not have access to this campaign. Ask its Game Master for access.',
   campaign_creation_not_enabled: 'Campaign creation has not been enabled for your account.',
   generation_queue_full: 'There are already several requests in progress. Please try again shortly.',
+  music_service_unavailable: 'The campaign music service is not installed yet.',
+  music_service_error: 'The music service could not complete that request. Your queue was not changed.',
+  music_brief_invalid: 'The music brief came back malformed. Nothing was generated or charged.',
+  music_generation_confirmation_required: 'Confirm the generation before Storyboard submits paid work.',
+  music_generation_queue_full: 'Two score generations are already active. Wait for one to finish before starting another.',
   account_disabled: 'This account is disabled. Contact the Storyboard administrator.',
   not_found: 'This item is unavailable, or you no longer have access.',
   storyboard_not_configured: 'Storyboard is still being prepared. Please try again later.',
@@ -41,7 +54,7 @@ export async function api<T>(path: string, csrf = '', method = 'GET', body?: unk
 // Remote images are limited to Google's verified avatar hosts. Campaign artwork is scoped media.
 export function imageSource(value: string | null | undefined): string | undefined {
   if (!value) return undefined
-  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/media\/(?:cover|characters\/[0-9a-f-]{36})$/i.test(value)) return value
-  try { const u = new URL(value); if (u.protocol === 'https:' && /^lh[3-6]\.googleusercontent\.com$/.test(u.hostname) && !u.username && !u.password && !u.port) return u.href } catch { /* Untrusted image URL. */ }
+  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/candidates\/[0-9a-f-]{36}\/cover)$/i.test(value)) return value
+  try { const u = new URL(value); if (u.protocol === 'https:' && (/^lh[3-6]\.googleusercontent\.com$/.test(u.hostname) || u.hostname === 'i.scdn.co') && !u.username && !u.password && !u.port) return u.href } catch { /* Untrusted image URL. */ }
   return undefined
 }

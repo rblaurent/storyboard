@@ -4,7 +4,7 @@ const upstream = 'https://redleaf.minititine.cc'
 const mount = '/api/public/storyboard'
 const id = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const cookies = new Set(['__Host-storyboard', '__Host-storyboard-login'])
-const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 
 interface Route { target: string; static: boolean; immutable: boolean }
 export function route(url: URL, method: string): Route | null {
@@ -15,7 +15,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music)`)) {
     return method === 'GET' && query([]) ? { target: mount + '/site' + p, static: true, immutable: false } : null
   }
   if (/^\/assets\/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2|svg|png|webp|jpg)$/.test(p)) {
@@ -33,6 +33,13 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/players/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/music/(?:status|playback|queue)`)) allowed = (method === 'GET' || p.endsWith('/playback') && method === 'POST') && query([])
+  if (match(`/api/campaigns/${id}/music/(?:find|brief|generations)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/music/playlists`)) allowed = method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
+  if (match(`/api/campaigns/${id}/music/playlists/[A-Za-z0-9]{1,128}/tracks`)) allowed = method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
+  if (match(`/api/campaigns/${id}/music/generations/${id}`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/music/candidates/${id}/promote`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/music/candidates/${id}/(?:audio|cover)`) || match(`/api/campaigns/${id}/music/tracks/${id}/audio`)) allowed = method === 'GET' && query([])
   return allowed ? { target: mount + p.slice(4), static: false, immutable: false } : null
 }
 
@@ -101,6 +108,12 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
     const csrf = request.headers.get('X-CSRF-Token')
     if (csrf && /^[a-f0-9]{64}$/i.test(csrf)) headers.set('X-CSRF-Token', csrf)
   }
+  const media = /\/music\/(?:candidates|tracks)\/.+\/(?:audio|cover)$/.test(url.pathname)
+  const range = request.headers.get('Range')
+  if (media) {
+    headers.set('Accept', '*/*')
+    if (range && /^bytes=\d*-\d*$/.test(range)) headers.set('Range', range)
+  }
   const seconds = Math.floor(now / 1000).toString()
   headers.set('X-Storyboard-Time', seconds); headers.set('X-Storyboard-Origin', origin)
   headers.set('X-Storyboard-Proof', await proof(env.STORYBOARD_PROXY_KEY, `${request.method}\n${chosen.target}${url.search}\n${seconds}\n${origin}`))
@@ -115,6 +128,7 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
     out.set('Location', location)
   } else {
     out.set('Content-Type', response.headers.get('Content-Type') || 'application/octet-stream')
+    if (media) for (const name of ['Accept-Ranges', 'Content-Range', 'Content-Length']) { const value = response.headers.get(name); if (value) out.set(name, value) }
   }
   if (!chosen.static) {
     // Workers exposes getAll for separate Set-Cookie lines (Expires contains a comma).

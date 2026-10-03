@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { SiteIcon } from './icons'
-import { api, ApiError, explain, imageSource, type Account, type Campaign, type Operation, type Person, type Player } from './api'
+import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlayback, type MusicPlaylist, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -61,11 +61,11 @@ export function App() {
     try {
       await api('/logout', me!.csrfToken, 'POST', {})
       // Operation receipts are only resume hints. Clear this browser's hints on sign-out.
-      for (const k of Object.keys(sessionStorage)) if (k.startsWith(`storyboard:operation:${me!.id}:`)) sessionStorage.removeItem(k)
+      for (const k of Object.keys(sessionStorage)) if (k.startsWith(`storyboard:operation:${me!.id}:`) || k.startsWith(`storyboard:music-generation:${me!.id}:`)) sessionStorage.removeItem(k)
       setMe(null); navigate('/')
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
-  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players)$/i.exec(path)
+  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music)$/i.exec(path)
   const campaignDashboard = !!(me && !loading && match)
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
@@ -119,6 +119,10 @@ type GenerationCommand = { kind: 'image' | 'summary'; prompt: string; expectedRe
 type Receipt = { command: GenerationCommand; id?: string }
 function readReceipt(key: string): Receipt | null {
   try { const r = JSON.parse(sessionStorage.getItem(key) || 'null'); return r && typeof r.command?.operationId === 'string' && ['image', 'summary'].includes(r.command.kind) && typeof r.command.prompt === 'string' && Number.isSafeInteger(r.command.expectedRevision) && (!r.id || /^[0-9a-f-]{36}$/i.test(r.id)) ? r : null } catch { return null }
+}
+type MusicGenerationCommand = { operationId: string; situation: string; brief: MusicBrief; confirmed: true }
+function readMusicGenerationReceipt(key: string): { id: string; command: MusicGenerationCommand } | null {
+  try { const value = JSON.parse(sessionStorage.getItem(key) || 'null'); return value && /^[0-9a-f-]{36}$/i.test(value.id) && /^[0-9a-f-]{36}$/i.test(value.command?.operationId) && typeof value.command?.situation === 'string' && value.command?.confirmed === true && typeof value.command?.brief?.prompt === 'string' ? value : null } catch { return null }
 }
 function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: string; tab: string; me: Account; navigate: (p: string) => void; signingOut: boolean; signout: () => Promise<void> }) {
   const base = `/campaigns/${id}`
@@ -194,10 +198,10 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: stri
           <AccountMenu me={me} signingOut={signingOut} signout={signout} />
         </div>
       </div>
-      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : 'players'} />{t === 'description' ? 'Description' : 'Players'}</Link>)}</nav>
+      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : 'music'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : 'Music'}</Link>)}</nav>
     </header>
     <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
-    {tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <div className="description-grid">
+    {tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <div className="description-grid">
       <div>
         {gm ? <form className="description-form" onSubmit={e => { e.preventDefault(); if (active) return; void perform(async () => { const value = await api<Campaign>(base, me.csrfToken, 'PUT', draftRef.current); if (mounted.current) { accept(value, true); setNotice('Campaign saved.') } }) }}><span className="eyebrow">THE PREMISE</span><label htmlFor="campaign-name">Campaign name</label><input id="campaign-name" value={draft.name} onChange={e => edit('name', e.target.value)} required maxLength={120} /><label htmlFor="campaign-description">Description</label><textarea id="campaign-description" rows={12} maxLength={40000} value={draft.description} onChange={e => edit('description', e.target.value)} placeholder="Set the scene. What kind of world will your players step into?" /><label htmlFor="campaign-summary">Summary</label><textarea id="campaign-summary" rows={4} maxLength={1500} value={draft.summary} onChange={e => edit('summary', e.target.value)} placeholder="A short introduction for your table" /><div className="form-actions"><button className="primary" disabled={busy || active || !draft.name.trim() || !dirty.current}><SiteIcon name={busy ? 'busy' : 'save'} className={busy ? 'is-spinning' : undefined} />{busy ? 'Saving…' : 'Save changes'}</button><span className="quiet">{active ? 'Wait for the current request before saving.' : dirty.current ? 'Unsaved changes' : 'All changes saved'}</span></div></form> : <article className="read-description"><span className="eyebrow">THE PREMISE</span><h2>{campaign.name}</h2><p>{campaign.description || 'Your Game Master has not added a description yet.'}</p></article>}
         {gm && dirty.current && <details className="saved-version"><summary>Review latest saved version</summary><button disabled={busy || active} onClick={() => void perform(async () => { await refresh(); setNotice('The latest saved version is shown below. Your draft is kept.') })}>Refresh saved version</button><h3>{campaign.name}</h3><p>{campaign.description || 'No saved description.'}</p><p>{campaign.summary || 'No saved summary.'}</p>{draft.expectedRevision !== campaign.revision && <button disabled={busy || active} onClick={reviewLatest}>Keep draft against latest revision</button>}</details>}
@@ -208,6 +212,82 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: stri
         {(operation || receipt) && <section className="operation-panel" aria-live="polite"><span className="eyebrow">{(operation?.kind || receipt?.command.kind) === 'image' ? 'ARTWORK' : 'SUMMARY'}</span><p>{!operation ? receipt?.id ? 'Checking request…' : 'Request not confirmed. Retry to recover the same request.' : ({ pending: 'Request queued…', refining: 'Refining the idea…', generating: 'Creating the artwork…', saving: 'Saving the result…', completed: operation.applied ? 'Ready and saved.' : 'Ready. Newer campaign changes were retained; this result was not applied.', failed: operation.error || 'Generation failed. Your previous artwork is kept. Try again.' }[operation.state])}</p>{operation?.refinedPrompt && <details><summary>View refined prompt</summary><p>{operation.refinedPrompt}</p></details>}{receipt && !receipt.id && <button disabled={busy} onClick={() => void start(receipt.command)}>Retry same request</button>}<ErrorMessage error={pollError} />{pollError && <button onClick={() => setPollVersion(v => v + 1)}>Resume status</button>}</section>}
       </aside>
     </div>}
+    <PlayerDock id={id} gm={!!gm} me={me} navigate={navigate} />
+  </section>
+}
+
+function trackTime(ms: number) { const seconds = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
+function MusicArtwork({ src, title }: { src: string | null; title: string }) { const safe = imageSource(src); return safe ? <img className="music-art" src={safe} alt={`${title} cover`} /> : <span className="music-art music-art-empty" aria-label={`${title} has no cover`}><SiteIcon name="music" /></span> }
+
+function PlayerDock({ id, gm, me, navigate }: { id: string; gm: boolean; me: Account; navigate: (p: string) => void }) {
+  const base = `/campaigns/${id}/music`
+  const [state, setState] = useState<MusicPlayback | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const controller = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined
+    async function poll() { try { setState(await api<MusicPlayback>(base + '/playback', '', 'GET', undefined, controller.signal)) } catch { /* The music page carries the actionable error. */ } if (!controller.signal.aborted) timer = setTimeout(poll, 5000) }
+    void poll(); return () => { controller.abort(); if (timer) clearTimeout(timer) }
+  }, [base])
+  async function command(action: 'play' | 'pause' | 'next' | 'previous') { if (busy || !gm) return; setBusy(true); try { setState(await api<MusicPlayback>(base + '/playback', me.csrfToken, 'POST', { action, deviceId: state?.deviceId })) } finally { setBusy(false) } }
+  return <aside className="player-dock" aria-label="Campaign player">
+    <Link className="player-now" href={`${base}`} navigate={navigate}><MusicArtwork src={state?.track?.imageUrl || null} title={state?.track?.name || 'Campaign music'} /><span><strong>{state?.track?.name || 'Nothing playing'}</strong><small>{state?.track ? `${state.track.artist}${state.deviceName ? ` · ${state.deviceName}` : ''}` : 'Open Music to set the scene'}</small></span></Link>
+    {state?.track && <span className="player-progress">{trackTime(state.progressMs)} / {trackTime(state.track.durationMs)}</span>}
+    {gm && <div className="player-controls"><button disabled={busy || !state?.track} aria-label="Previous track" onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button className="player-primary" disabled={busy || !state?.track} aria-label={state?.playing ? 'Pause music' : 'Play music'} onClick={() => void command(state?.playing ? 'pause' : 'play')}><SiteIcon name={state?.playing ? 'pause' : 'play'} /></button><button disabled={busy || !state?.track} aria-label="Next track" onClick={() => void command('next')}><SiteIcon name="next" /></button></div>}
+  </aside>
+}
+
+function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }) {
+  const base = `/campaigns/${id}/music`
+  const generationReceiptKey = `storyboard:music-generation:${me.id}:${id}`
+  const generationResume = useRef(readMusicGenerationReceipt(generationReceiptKey))
+  const [status, setStatus] = useState<MusicStatus | null>(null)
+  const [playlists, setPlaylists] = useState<MusicPlaylist[]>([])
+  const [playlistPage, setPlaylistPage] = useState<MusicPage<MusicPlaylist> | null>(null)
+  const [selected, setSelected] = useState<MusicPlaylist | null>(null)
+  const [tracks, setTracks] = useState<MusicTrack[]>([])
+  const [queue, setQueue] = useState<MusicTrack[]>([])
+  const [results, setResults] = useState<MusicTrack[]>([])
+  const [query, setQuery] = useState('')
+  const [situation, setSituation] = useState(generationResume.current?.command.situation || '')
+  const [brief, setBrief] = useState<MusicBrief | null>(generationResume.current?.command.brief || null)
+  const [confirming, setConfirming] = useState(false)
+  const [generation, setGeneration] = useState<MusicGeneration | null>(null)
+  const [generationId, setGenerationId] = useState(generationResume.current?.id || '')
+  const generationCommand = useRef<MusicGenerationCommand | null>(generationResume.current?.command || null)
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+  useEffect(() => {
+    const c = new AbortController(); setError('')
+    Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=50', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/queue', '', 'GET', undefined, c.signal)])
+      .then(([s, p, q]) => { if (!c.signal.aborted) { setStatus(s); setPlaylistPage(p); setPlaylists(p.items); setQueue(q) } }).catch(e => { if (!c.signal.aborted) setError(explain(e)) })
+    return () => c.abort()
+  }, [base])
+  useEffect(() => {
+    if (!generationId || generation && ['completed', 'failed'].includes(generation.state)) return
+    const c = new AbortController(); let timer: ReturnType<typeof setTimeout> | undefined
+    async function poll() { try { const value = await api<MusicGeneration>(`${base}/generations/${generationId}`, '', 'GET', undefined, c.signal); if (!c.signal.aborted) { setGeneration(value); if (!['completed', 'failed'].includes(value.state)) timer = setTimeout(poll, 1800) } } catch (e) { if (!c.signal.aborted) { setError(explain(e)); timer = setTimeout(poll, 3000) } } }
+    timer = setTimeout(poll, 700); return () => { c.abort(); if (timer) clearTimeout(timer) }
+  }, [base, generationId, generation?.state])
+  async function choose(value: MusicPlaylist) { setSelected(value); setBusy('playlist'); setError(''); try { const p = await api<MusicPage<MusicTrack>>(`${base}/playlists/${encodeURIComponent(value.id)}/tracks?offset=0&limit=100`); setTracks(p.items) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function more() { if (!playlistPage?.hasMore || busy) return; setBusy('more'); try { const p = await api<MusicPage<MusicPlaylist>>(`${base}/playlists?offset=${playlists.length}&limit=50`); setPlaylists(v => [...v, ...p.items]); setPlaylistPage(p) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function find() { if (!situation.trim() || busy) return; setBusy('find'); setError(''); setBrief(null); try { const value = await api<{ query: string; tracks: MusicTrack[] }>(base + '/find', me.csrfToken, 'POST', { situation: situation.trim() }); setQuery(value.query); setResults(value.tracks) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function compose() { if (!situation.trim() || busy) return; setBusy('brief'); setError(''); setResults([]); setConfirming(false); setGeneration(null); setGenerationId(''); try { sessionStorage.removeItem(generationReceiptKey) } catch { /* resume hint only */ }; generationCommand.current = null; try { setBrief(await api<MusicBrief>(base + '/brief', me.csrfToken, 'POST', { situation: situation.trim() })) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function generate() { if (!brief || busy) return; setBusy('generate'); setError(''); const value = generationCommand.current ?? { operationId: crypto.randomUUID(), situation: situation.trim(), brief, confirmed: true as const }; generationCommand.current = value; try { const created = await api<MusicGeneration>(base + '/generations', me.csrfToken, 'POST', value); setGeneration(created); setGenerationId(created.id); try { sessionStorage.setItem(generationReceiptKey, JSON.stringify({ id: created.id, command: value })) } catch { /* resume hint only */ }; setConfirming(false) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function promote(candidate: string) { if (busy) return; setBusy('promote-' + candidate); setError(''); try { await api(`${base}/candidates/${candidate}/promote`, me.csrfToken, 'POST', {}); if (generation) setGeneration(await api<MusicGeneration>(`${base}/generations/${generation.id}`)); setNotice('Candidate saved as a reusable campaign track.') } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function command(action: 'play' | 'queue', track: MusicTrack) { if (busy || !gm) return; setBusy(track.id + action); setError(''); setNotice(''); try { await api(base + '/playback', me.csrfToken, 'POST', action === 'play' ? { action, trackUris: [track.uri] } : { action, uri: track.uri }); if (action === 'queue') setQueue(await api<MusicTrack[]>(base + '/queue')); setNotice(action === 'play' ? `Playing ${track.name}.` : `${track.name} added to the live queue.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  const visible = results.length ? results : tracks
+  return <section className="music-workspace">
+    <div className="music-heading"><div><span className="eyebrow">SCORE THE SESSION</span><h2>Music</h2><p>Build the atmosphere, manage the live queue, or turn the current scene into a new score.</p></div><div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? `Spotify · ${status.displayName || 'Connected'}` : status?.error || 'Checking music service…'}</div></div>
+    <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
+    <form className="scene-composer panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="music-situation">What is happening right now?</label><textarea id="music-situation" value={situation} onChange={e => setSituation(e.target.value)} maxLength={2000} rows={3} placeholder="The party enters the drowned throne room while something enormous moves below the water…" /><div className="scene-actions"><button className="primary" disabled={!gm || !situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the room…' : 'Find music'}</button><button type="button" className="accent" disabled={!gm || !situation.trim() || !!busy} onClick={() => void compose()}><SiteIcon name="generate" />{busy === 'brief' ? 'Shaping the score…' : 'Compose new'}</button><span className="quiet">Find uses Fast. Compose uses Deep and stops before any paid generation.</span></div></form>
+    {brief && <section className="music-brief panel" aria-label="Generation brief"><div><span className="eyebrow">READY TO COMPOSE</span><h3>{brief.title}</h3><p>{brief.prompt}</p></div><dl><div><dt>Mood</dt><dd>{brief.mood}</dd></div><div><dt>Energy</dt><dd>{brief.energy}</dd></div><div><dt>Tempo</dt><dd>{brief.tempo}</dd></div><div><dt>Length</dt><dd>{trackTime(brief.durationSeconds * 1000)}</dd></div></dl><p className="brief-style"><strong>Style</strong> {brief.style}</p><p className="quiet">{brief.instruments.join(' · ')}</p>{!generation && !confirming && <button className="accent" onClick={() => setConfirming(true)} disabled={!!busy}><SiteIcon name="generate" />Generate candidates</button>}{confirming && <div className="generation-confirm"><strong>This submits paid music generation.</strong><span>The brief above is the exact prompt snapshot. Retrying this confirmation reuses the same operation ID.</span><div><button className="accent" onClick={() => void generate()} disabled={!!busy}>{busy === 'generate' ? 'Submitting…' : 'Confirm and generate'}</button><button onClick={() => setConfirming(false)} disabled={!!busy}>Cancel</button></div></div>}{!generation && <p className="quiet">No credits have been spent.</p>}</section>}
+    {generation && <section className="candidate-panel panel" aria-live="polite"><div className="music-section-title"><div><span className="eyebrow">GENERATED CANDIDATES</span><h3>{generation.state === 'completed' ? 'Choose what becomes part of the campaign' : generation.state === 'failed' ? 'Generation stopped' : 'Your score is being created'}</h3></div><span>{generation.state}</span></div>{generation.error && <Feedback tone="error">{generation.error}</Feedback>}{!['completed', 'failed'].includes(generation.state) && <p role="status">{generation.state === 'ingesting' ? 'Saving every candidate into Leaf Assets…' : 'Generating with the confirmed brief…'}</p>}{generation.candidates.map(candidate => <article className="candidate-row" key={candidate.id}><MusicArtwork src={candidate.cover} title={candidate.title} /><div><strong>{candidate.title}</strong><small>{candidate.tags || brief?.style || 'generated score'} · {trackTime(candidate.durationSeconds * 1000)}</small><audio controls preload="metadata" src={candidate.audio}>Your browser cannot play this audio.</audio></div><button disabled={!!candidate.promotedTrack || !!busy} onClick={() => void promote(candidate.id)}><SiteIcon name="plus" />{candidate.promotedTrack ? 'Saved to library' : 'Save track'}</button></article>)}{generation.state === 'failed' && generationCommand.current && <button disabled={!!busy} onClick={() => void generate()}>Retry same operation</button>}{generation.state === 'completed' && <p className="quiet">Credits recorded: {generation.creditsConsumed}. Every candidate is already stored durably, even before promotion.</p>}</section>}
+    <div className="music-layout">
+      <aside className="music-library"><div className="music-section-title"><div><span className="eyebrow">LIBRARY</span><h3>Playlists</h3></div><span>{playlists.length}{playlistPage ? ` / ${playlistPage.total}` : ''}</span></div><div className="playlist-list">{playlists.map(p => <button key={p.id} className={selected?.id === p.id ? 'is-selected' : ''} onClick={() => void choose(p)}><MusicArtwork src={p.imageUrl} title={p.name} /><span><strong>{p.name}</strong><small>{p.trackCount} tracks</small></span></button>)}</div>{playlistPage?.hasMore && <button disabled={!!busy} onClick={() => void more()}>Load more playlists</button>}</aside>
+      <section className="music-tracks"><div className="music-section-title"><div><span className="eyebrow">{results.length ? 'MATCHES' : 'SELECTED PLAYLIST'}</span><h3>{results.length ? `For “${query}”` : selected?.name || 'Choose a playlist'}</h3></div><span>{visible.length} tracks</span></div>{busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist has no playable tracks.' : 'Select a playlist or describe the current scene.'}</p></div> : <div className="track-list">{visible.map((track, i) => <article className="track-row" key={`${track.id}-${i}`}><span className="track-number">{String(i + 1).padStart(2, '0')}</span><MusicArtwork src={track.imageUrl} title={track.name} /><div className="track-name"><strong>{track.name}</strong><small>{track.artist}{track.album ? ` · ${track.album}` : ''}</small></div><span className="track-duration">{trackTime(track.durationMs)}</span>{gm && <div className="track-actions"><button aria-label={`Play ${track.name}`} disabled={!!busy} onClick={() => void command('play', track)}><SiteIcon name="play" /></button><button aria-label={`Queue ${track.name}`} disabled={!!busy} onClick={() => void command('queue', track)}><SiteIcon name="queue" /></button></div>}</article>)}</div>}</section>
+      <aside className="live-queue"><div className="music-section-title"><div><span className="eyebrow">LIVE</span><h3>Session queue</h3></div><span>{queue.length}</span></div><p className="quiet">Spotify keeps the authoritative queue. Add tracks here, then use the player dock from any campaign tab.</p>{queue.length ? <ol className="queue-list">{queue.map((track, i) => <li key={`${track.id}-${i}`}><span>{String(i + 1).padStart(2, '0')}</span><div><strong>{track.name}</strong><small>{track.artist}</small></div><span>{trackTime(track.durationMs)}</span></li>)}</ol> : <div className="queue-placeholder"><SiteIcon name="list" size={32} /><strong>The queue is clear</strong><span>Add a track when the next beat reveals itself.</span></div>}</aside>
+    </div>
   </section>
 }
 

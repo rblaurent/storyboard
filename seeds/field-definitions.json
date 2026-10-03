@@ -1059,5 +1059,234 @@
     "name": "Operator fence pause",
     "fieldType": "number",
     "sortOrder": 142
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "installation",
+    "name": "Installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "parent",
+    "name": "Parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "confidential",
+    "name": "Confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "owner_id",
+    "name": "Owner",
+    "fieldType": "entity_ref",
+    "sortOrder": 3,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"agent\"}"
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "campaign",
+    "name": "Campaign",
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "account",
+    "name": "Requested by",
+    "fieldType": "entity_ref",
+    "sortOrder": 6,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "situation",
+    "name": "Situation snapshot",
+    "fieldType": "string",
+    "sortOrder": 7
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "brief",
+    "name": "Generation brief",
+    "fieldType": "json",
+    "sortOrder": 8,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "state",
+    "name": "State",
+    "fieldType": "string",
+    "sortOrder": 9,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "error",
+    "name": "Error",
+    "fieldType": "string",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "compute_job",
+    "name": "Compute job",
+    "fieldType": "string",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "result_json",
+    "name": "Result metadata",
+    "fieldType": "json",
+    "sortOrder": 12
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "credits_consumed",
+    "name": "Credits consumed",
+    "fieldType": "number",
+    "sortOrder": 13
+  },
+  {
+    "parentType": "storyboard-music-generation",
+    "slug": "deadline",
+    "name": "Deadline",
+    "fieldType": "number",
+    "sortOrder": 14
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "installation",
+    "name": "Installation",
+    "fieldType": "string",
+    "sortOrder": 0,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "parent",
+    "name": "Parent",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "confidential",
+    "name": "Confidential",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "owner_id",
+    "name": "Owner",
+    "fieldType": "entity_ref",
+    "sortOrder": 3,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"user\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "owner_agent_id",
+    "name": "Owning Agent",
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"agent\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "campaign",
+    "name": "Campaign",
+    "fieldType": "entity_ref",
+    "sortOrder": 5,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "generation",
+    "name": "Generation",
+    "fieldType": "entity_ref",
+    "sortOrder": 6,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-music-generation\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "audio_asset",
+    "name": "Audio asset",
+    "fieldType": "entity_ref",
+    "sortOrder": 7,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"asset\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "cover_asset",
+    "name": "Cover asset",
+    "fieldType": "entity_ref",
+    "sortOrder": 8,
+    "constraints": "{\"target_type\": \"asset\"}"
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "provider_task_id",
+    "name": "Provider task ID",
+    "fieldType": "string",
+    "sortOrder": 9
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "provider_audio_id",
+    "name": "Provider audio ID",
+    "fieldType": "string",
+    "sortOrder": 10
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "duration_seconds",
+    "name": "Duration seconds",
+    "fieldType": "number",
+    "sortOrder": 11
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "tags",
+    "name": "Tags",
+    "fieldType": "string",
+    "sortOrder": 12
+  },
+  {
+    "parentType": "storyboard-music-candidate",
+    "slug": "promoted_track",
+    "name": "Promoted track",
+    "fieldType": "entity_ref",
+    "sortOrder": 13,
+    "constraints": "{\"target_type\": \"music-track\"}"
   }
 ]

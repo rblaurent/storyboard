@@ -12,13 +12,13 @@ test('service errors are explicit and user-provided image hosts are refused', as
   const s = await fixture(page); s.meFail = true; await page.goto('/'); await expect(page.getByRole('alert')).toContainText('being prepared'); await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible()
   s.meFail = false; s.campaign.image = 'https://untrusted.example/track.svg'; s.campaign.players[0].avatar = 'https://untrusted.example/track.svg'; await page.reload(); await expect(page.getByRole('heading', { name: 'The Glass Observatory' })).toBeVisible(); await expect(page.locator('img[src^="https://untrusted.example"]')).toHaveCount(0)
 })
-test('picker preference, creation permission, retry UUID and two campaign tabs', async ({ page }) => {
+test('picker preference, creation permission, retry UUID and campaign tabs', async ({ page }) => {
   const s = await fixture(page); await page.goto('/'); await expect(page.getByRole('heading', { name: 'Your campaigns.' })).toBeVisible()
   await page.getByLabel('Show archived').check(); await expect.poll(() => s.requests.some(r => r.path === '/api/campaigns?archived=true')).toBe(true)
   await page.reload(); await expect(page.getByLabel('Show archived')).toBeChecked()
   await page.getByRole('button', { name: 'Create campaign' }).click(); await page.getByLabel('Campaign name').fill('A new chapter'); s.createFail = true
   await page.getByRole('button', { name: 'Create', exact: true }).click(); await expect(page.getByRole('alert')).toBeVisible(); await page.getByRole('button', { name: 'Retry creation' }).click()
-  await expect(page).toHaveURL(new RegExp(`/campaigns/${cid}/description`)); await expect(page.getByRole('navigation', { name: 'Campaign tabs' }).getByRole('link')).toHaveCount(2)
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${cid}/description`)); await expect(page.getByRole('navigation', { name: 'Campaign tabs' }).getByRole('link')).toHaveCount(3)
   const commands = s.requests.filter(r => r.method === 'POST' && r.path === '/api/campaigns'); expect(commands).toHaveLength(2); expect(commands[0].body).toEqual(commands[1].body); expect(commands[0].body?.operationId).toMatch(/^[a-f0-9-]{36}$/); expect(commands[0].csrf).toBe(csrf)
   const stored = await page.evaluate(() => ({ ...localStorage })); expect(stored).toEqual({ 'storyboard:show-archived': 'true' })
 })
@@ -65,6 +65,16 @@ test('navigation stops polling, resumes same receipt; sign-out cancels timers', 
   await page.waitForTimeout(1900); expect(s.requests.filter(r => r.path.includes('/operations/')).length).toBe(before)
   await page.goto(`/campaigns/${cid}/description`); await expect(page.getByText('Creating the artwork…')).toBeVisible(); await page.locator('.account-menu summary').click(); await page.getByRole('button', { name: 'Sign out', exact: true }).click(); await expect(page.getByRole('link', { name: 'Sign in with Google' })).toBeVisible(); const after = s.requests.filter(r => r.path.includes('/operations/')).length; await page.waitForTimeout(1900); expect(s.requests.filter(r => r.path.includes('/operations/')).length).toBe(after)
 })
+test('music browses real pages, finds a scene match, prepares an uncharged brief and keeps the player across tabs', async ({ page }) => {
+  const s = await fixture(page); await page.goto(`/campaigns/${cid}/music`)
+  await expect(page.getByRole('heading', { name: 'Music', exact: true })).toBeVisible(); await expect(page.getByText('Spotify · Alex')).toBeVisible(); await expect(page.getByRole('button', { name: /Shinsekai Atmospheres/ })).toBeVisible()
+  await page.getByRole('button', { name: /Shinsekai Atmospheres/ }).click(); await expect(page.locator('.music-tracks').getByText('The Orrery Turns')).toBeVisible()
+  await page.getByLabel('What is happening right now?').fill('The party enters a drowned throne room while something moves below the water.')
+  await page.getByRole('button', { name: 'Find music' }).click(); await expect(page.getByText(/submerged throne ambient tension/)).toBeVisible(); await page.getByRole('button', { name: 'Queue The Orrery Turns' }).click(); await expect(page.getByRole('status')).toContainText('added to the live queue')
+  await page.getByRole('button', { name: 'Compose new' }).click(); await expect(page.getByRole('heading', { name: 'The Drowned Crown' })).toBeVisible(); await expect(page.getByText('No credits have been spent.')).toBeVisible(); await page.getByRole('button', { name: 'Generate candidates' }).click(); await expect(page.getByText('This submits paid music generation.')).toBeVisible(); await page.getByRole('button', { name: 'Confirm and generate' }).click(); await expect(page.getByText('The Drowned Crown A')).toBeVisible(); await expect(page.getByText('Credits recorded: 12')).toBeVisible(); await page.reload(); await expect(page.getByText('The Drowned Crown A')).toBeVisible(); await page.getByRole('button', { name: 'Save track' }).click(); await expect(page.getByRole('button', { name: 'Saved to library' })).toBeDisabled()
+  expect(s.requests.find(r => r.path.endsWith('/music/find'))?.csrf).toBe(csrf); expect(s.requests.find(r => r.path.endsWith('/music/brief'))?.body).toEqual({ situation: 'The party enters a drowned throne room while something moves below the water.' }); expect(s.requests.find(r => r.path.endsWith('/music/generations'))?.body).toMatchObject({ confirmed: true, situation: 'The party enters a drowned throne room while something moves below the water.' })
+  await page.getByRole('link', { name: 'Description', exact: true }).click(); await expect(page.getByLabel('Campaign player')).toContainText('Lanterns Beneath the Tide'); await expect(page.getByLabel('Campaign player')).toContainText('Salle TV')
+})
 for (const viewport of [{ name: 'desktop', width: 1440, height: 1040 }, { name: 'tablet', width: 834, height: 1112 }, { name: 'phone', width: 390, height: 844 }]) {
   test(`disposable fixture layout and keyboard evidence · ${viewport.name}`, async ({ page }) => {
     const errors: string[] = []; page.on('pageerror', e => errors.push(e.message)); await page.setViewportSize(viewport); await fixture(page); await page.goto('/'); await expect(page.getByRole('heading', { name: 'The Glass Observatory' })).toBeVisible(); await expect(page.getByRole('img', { name: 'The Glass Observatory artwork' })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-picker-${viewport.name}.png`), fullPage: true })
@@ -77,6 +87,7 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1040 }, { name: 
     if (viewport.name === 'phone') { const fieldBox = await page.getByLabel('Campaign name').boundingBox(); expect(fieldBox!.y).toBeLessThan(330) }
     await page.screenshot({ path: path.join(evidence, `fixture-description-${viewport.name}.png`), fullPage: true }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.getByRole('link', { name: 'Players', exact: true }).click(); await expect(page.getByText('Elian Vale')).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-players-${viewport.name}.png`), fullPage: true }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); expect(errors).toEqual([])
+    await page.getByRole('link', { name: 'Music', exact: true }).click(); await expect(page.getByRole('heading', { name: 'Music', exact: true })).toBeVisible(); await page.screenshot({ path: path.join(evidence, `fixture-music-${viewport.name}.png`), fullPage: true }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); expect(errors).toEqual([])
   })
 }
 

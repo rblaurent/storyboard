@@ -97,5 +97,27 @@
       "versioning": true,
       "description": "Confidential campaign-scoped delegated portal registration."
     }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-music-generation",
+    "name": "Storyboard music generation",
+    "data": {
+      "icon": "ph-bold ph-waveform",
+      "color": "orange",
+      "versioning": false,
+      "description": "Recoverable, idempotent campaign music generation request and credit audit."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-music-candidate",
+    "name": "Storyboard music candidate",
+    "data": {
+      "icon": "ph-bold ph-music-notes",
+      "color": "orange",
+      "versioning": false,
+      "description": "Durably ingested generated candidate awaiting promotion to a reusable music track."
+    }
   }
 ]

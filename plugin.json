@@ -11,6 +11,8 @@
     "records",
     "ai-inference",
     "image-generation",
+    "compute",
+    "music-gen",
     "assets"
   ],
   "backend": {

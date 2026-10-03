@@ -18,6 +18,13 @@ import { UserMinusIcon } from '@phosphor-icons/react/dist/csr/UserMinus'
 import { WarningCircleIcon } from '@phosphor-icons/react/dist/csr/WarningCircle'
 import { CheckCircleIcon } from '@phosphor-icons/react/dist/csr/CheckCircle'
 import { CircleNotchIcon } from '@phosphor-icons/react/dist/csr/CircleNotch'
+import { MusicNotesIcon } from '@phosphor-icons/react/dist/csr/MusicNotes'
+import { PlayIcon } from '@phosphor-icons/react/dist/csr/Play'
+import { PauseIcon } from '@phosphor-icons/react/dist/csr/Pause'
+import { SkipBackIcon } from '@phosphor-icons/react/dist/csr/SkipBack'
+import { SkipForwardIcon } from '@phosphor-icons/react/dist/csr/SkipForward'
+import { QueueIcon } from '@phosphor-icons/react/dist/csr/Queue'
+import { ListBulletsIcon } from '@phosphor-icons/react/dist/csr/ListBullets'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -41,6 +48,13 @@ const icons = {
   warning: WarningCircleIcon,
   check: CheckCircleIcon,
   busy: CircleNotchIcon,
+  music: MusicNotesIcon,
+  play: PlayIcon,
+  pause: PauseIcon,
+  previous: SkipBackIcon,
+  next: SkipForwardIcon,
+  queue: QueueIcon,
+  list: ListBulletsIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */
