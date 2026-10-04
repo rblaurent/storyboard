@@ -335,15 +335,19 @@ function PlayerDock({ campaignId, csrfToken, navigate }: { campaignId: string; c
         })
         spotify.current = player
         let settled = false
+        const connectTimer = window.setTimeout(() => failed('Spotify took too long to connect this browser. Reconnect Spotify in Smart Home settings, then try again.'), 12000)
         const failed = (message: string) => {
           announceReady(false, message)
-          if (!settled) { settled = true; reject(new Error('spotify_player_unavailable')) }
+          if (!settled) { settled = true; window.clearTimeout(connectTimer); reject(new Error('spotify_player_unavailable')) }
         }
         player.addListener('ready', ({ device_id }: { device_id: string }) => {
           if (disposed) { player.disconnect(); return }
+          if (settled) return
+          settled = true
+          window.clearTimeout(connectTimer)
           spotifyDeviceId.current = device_id
           announceReady(true)
-          if (!settled) { settled = true; resolve(player) }
+          resolve(player)
         })
         player.addListener('not_ready', () => { spotifyDeviceId.current = ''; announceReady(false, 'The browser player went offline. Tap Play to reconnect it.') })
         player.addListener('player_state_changed', (state: SpotifyWebPlaybackState | null) => {
@@ -511,14 +515,13 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
         {busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist is empty. Add tracks from the pool.' : 'Search Spotify or save a generated candidate to begin.'}</p></div> : <div className="track-list">{visible.map((track, i) => {
           const stored = saved(track)
           const draggable = stored || (!results.length && track)
-          const preparingSpotify = track.sourceKind === 'spotify' && !spotifyPlayer.ready && !spotifyPlayer.error
           return <article className="track-row" key={`${track.id}-${i}`} draggable={!!gm && !!draggable} onDragStart={event => draggable && drag(event, { kind: 'track', id: draggable.id, label: draggable.name })}>
             <span className="drag-handle" aria-hidden="true"><SiteIcon name="drag" size={16} /></span>
             <MusicArtwork src={track.imageUrl} title={track.name} source={track.sourceKind} />
             <div className="track-name"><strong>{track.name}</strong><small><span className={`source-badge is-${track.sourceKind}`}>{track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'}</span>{track.artist}{track.album ? ` · ${track.album}` : ''}</small></div>
             <span className="track-duration">{trackTime(track.durationMs)}</span>
             {gm && <div className="track-actions">
-              <button aria-label={`Play ${track.name}`} title={preparingSpotify ? 'Preparing the browser player…' : undefined} disabled={!!busy || preparingSpotify} onClick={() => void play(track)}><SiteIcon name={preparingSpotify ? 'busy' : 'play'} className={preparingSpotify ? 'is-spinning' : undefined} /></button>
+              <button aria-label={`Play ${track.name}`} disabled={!!busy} onClick={() => void play(track)}><SiteIcon name="play" /></button>
               {results.length && !stored ? <button aria-label={`Save ${track.name} to pool`} disabled={!!busy} onClick={() => void saveTrack(track)}><SiteIcon name="plus" /></button> : <>
                 <button aria-label={`Enqueue ${track.name}`} disabled={!!busy || !draggable} onClick={() => draggable && void enqueue({ trackId: draggable.id }, draggable.name)}><SiteIcon name="queue" /></button>
                 {selected ? <button aria-label={`Remove ${track.name} from ${selected.name}`} disabled={!!busy} onClick={() => void removeFromPlaylist(track)}><SiteIcon name="close" /></button> : playlists.length > 0 && draggable && <PlaylistAdder track={draggable} playlists={playlists} disabled={!!busy} add={(value, playlist) => void addToPlaylist(value, playlist)} />}
