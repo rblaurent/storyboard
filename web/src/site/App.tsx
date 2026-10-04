@@ -260,7 +260,7 @@ interface SpotifyEmbedController {
   destroy(): void
 }
 interface SpotifyIframeApi { createController(element: HTMLElement, options: { uri: string; width: string; height: string }, ready: (controller: SpotifyEmbedController) => void): void }
-declare global { interface Window { onSpotifyIframeApiReady?: (api: SpotifyIframeApi) => void; __storyboardSpotifyIframeApi?: SpotifyIframeApi } }
+declare global { interface Window { onSpotifyIframeApiReady?: (api: SpotifyIframeApi) => void; __storyboardSpotifyIframeApi?: SpotifyIframeApi; __storyboardSpotifyControllerReady?: boolean } }
 let spotifyIframePromise: Promise<SpotifyIframeApi> | null = null
 function spotifyIframeApi() {
   if (window.__storyboardSpotifyIframeApi) return Promise.resolve(window.__storyboardSpotifyIframeApi)
@@ -281,8 +281,35 @@ function PlayerDock({ campaignId, navigate }: { campaignId: string; navigate: (p
   const audio = useRef<HTMLAudioElement>(null)
   const embed = useRef<HTMLDivElement>(null)
   const spotify = useRef<SpotifyEmbedController | null>(null)
+  const spotifyCreating = useRef(false)
   const pendingSpotifyUri = useRef('')
   useEffect(() => {
+    let disposed = false
+    const announceReady = (ready: boolean) => {
+      window.__storyboardSpotifyControllerReady = ready
+      window.dispatchEvent(new CustomEvent('storyboard:spotify-player-ready', { detail: { ready } }))
+    }
+    const prepare = (uri: string) => {
+      if (!uri) return
+      pendingSpotifyUri.current = uri
+      if (spotify.current) { announceReady(true); return }
+      if (spotifyCreating.current) return
+      spotifyCreating.current = true
+      void spotifyIframeApi().then(api => {
+        if (disposed || !embed.current || !pendingSpotifyUri.current) return
+        const initialUri = pendingSpotifyUri.current
+        api.createController(embed.current, { uri: initialUri, width: '100%', height: '80' }, controller => {
+          if (disposed) { controller.destroy(); return }
+          spotify.current = controller
+          spotifyCreating.current = false
+          controller.addListener('playback_started', () => setPlaying(true))
+          controller.addListener('playback_update', event => { setPlaying(!event.data?.isPaused); setProgress(event.data?.position || 0) })
+          if (pendingSpotifyUri.current !== initialUri) controller.loadEntity(pendingSpotifyUri.current)
+          announceReady(true)
+        })
+      })
+    }
+    const warm = (event: Event) => prepare((event as CustomEvent<{ uri: string }>).detail?.uri || '')
     const play = (event: Event) => {
       const detail = (event as CustomEvent<{ track: MusicTrack; campaignId: string }>).detail
       if (!detail?.track) return
@@ -293,26 +320,18 @@ function PlayerDock({ campaignId, navigate }: { campaignId: string; navigate: (p
       } else if (detail.track.sourceKind === 'spotify' && detail.track.uri) {
         audio.current?.pause(); pendingSpotifyUri.current = detail.track.uri; setPlaying(false)
         if (spotify.current) { spotify.current.loadEntity(detail.track.uri); spotify.current.play() }
+        else prepare(detail.track.uri)
       }
     }
-    window.addEventListener('storyboard:play-track', play); return () => window.removeEventListener('storyboard:play-track', play)
+    window.addEventListener('storyboard:prepare-spotify-track', warm)
+    window.addEventListener('storyboard:play-track', play)
+    return () => {
+      disposed = true
+      window.removeEventListener('storyboard:prepare-spotify-track', warm)
+      window.removeEventListener('storyboard:play-track', play)
+      spotify.current?.destroy(); spotify.current = null; announceReady(false)
+    }
   }, [])
-  useEffect(() => {
-    if (track?.sourceKind !== 'spotify' || !track.uri || !embed.current || spotify.current) return
-    let disposed = false
-    void spotifyIframeApi().then(api => {
-      if (disposed || !embed.current || !pendingSpotifyUri.current) return
-      api.createController(embed.current, { uri: pendingSpotifyUri.current, width: '100%', height: '80' }, controller => {
-        if (disposed) { controller.destroy(); return }
-        spotify.current = controller
-        controller.addListener('playback_started', () => setPlaying(true))
-        controller.addListener('playback_update', event => { setPlaying(!event.data?.isPaused); setProgress(event.data?.position || 0) })
-        controller.play()
-      })
-    })
-    return () => { disposed = true }
-  }, [track?.sourceKind, track?.uri])
-  useEffect(() => () => { spotify.current?.destroy() }, [])
   async function toggle() {
     if (!track) return
     if (track.sourceKind === 'spotify') { if (playing) spotify.current?.pause(); else spotify.current?.play(); return }
@@ -323,7 +342,7 @@ function PlayerDock({ campaignId, navigate }: { campaignId: string; navigate: (p
   const spotifyTrack = track?.sourceKind === 'spotify'
   return <aside className={`player-dock${spotifyTrack ? ' is-spotify' : ''}`} aria-label="Browser campaign player">
     <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
-    <div className={`spotify-embed${spotifyTrack ? '' : ' is-hidden'}`} ref={embed} aria-label="Spotify browser player" />
+    <div className={`spotify-embed${spotifyTrack ? '' : ' is-hidden'}`} ref={embed} aria-label="Spotify browser player" aria-hidden={!spotifyTrack} />
     <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{track ? `${track.artist} · This browser` : 'Open Music to set the scene'}</small></span></Link>
     {track && <span className="player-progress">{trackTime(progress)} / {trackTime(track.durationMs)}</span>}
     <div className="player-controls"><button className="player-primary" disabled={!track} aria-label={playing ? 'Pause music in this browser' : 'Play music in this browser'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button></div>
@@ -359,6 +378,17 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [spotifyPlayerReady, setSpotifyPlayerReady] = useState(() => !!window.__storyboardSpotifyControllerReady)
+  const visible = results.length ? results : selected ? playlistTracks : pool
+  const firstSpotifyUri = visible.find(track => track.sourceKind === 'spotify' && track.uri)?.uri || ''
+  useEffect(() => {
+    const changed = (event: Event) => setSpotifyPlayerReady(!!(event as CustomEvent<{ ready: boolean }>).detail?.ready)
+    window.addEventListener('storyboard:spotify-player-ready', changed)
+    return () => window.removeEventListener('storyboard:spotify-player-ready', changed)
+  }, [])
+  useEffect(() => {
+    if (firstSpotifyUri) window.dispatchEvent(new CustomEvent('storyboard:prepare-spotify-track', { detail: { uri: firstSpotifyUri } }))
+  }, [firstSpotifyUri])
   useEffect(() => {
     const c = new AbortController(); setError('')
     Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal), api<MusicQueueItem[]>(base + '/queue', '', 'GET', undefined, c.signal)])
@@ -387,7 +417,6 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   function play(track: MusicTrack) { if (busy || !gm) return; setError(''); setNotice(''); window.dispatchEvent(new CustomEvent('storyboard:play-track', { detail: { track, campaignId: id } })); setNotice(`Loaded ${track.name} in this browser.`) }
   function drag(event: React.DragEvent, value: { kind: 'track' | 'playlist'; id: string; label: string }) { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-storyboard-music', JSON.stringify(value)) }
   function drop(event: React.DragEvent) { event.preventDefault(); setDraggingOver(false); try { const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-music')) as { kind: string; id: string; label: string }; if (value.kind === 'track') void enqueue({ trackId: value.id }, value.label); else if (value.kind === 'playlist') void enqueue({ playlistId: value.id }, value.label) } catch { /* foreign drag */ } }
-  const visible = results.length ? results : selected ? playlistTracks : pool
   const saved = (track: MusicTrack) => pool.find(item => item.id === track.id || !!track.uri && item.uri === track.uri)
   return <section className="music-workspace">
     <div className="music-heading"><div><span className="eyebrow">SCORE THE SESSION</span><h2>Music</h2><p>Curate mixed-source playlists, search Spotify, generate scores, and run one campaign queue.</p></div><div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? 'Spotify catalogue connected' : status?.error || 'Checking music service…'}</div></div>
@@ -398,7 +427,31 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
     <form className="spotify-search" onSubmit={searchSpotify}><label htmlFor="spotify-track-search"><SiteIcon name="spotify" />Search Spotify tracks</label><div className="inline"><input id="spotify-track-search" value={catalogQuery} onChange={event => setCatalogQuery(event.target.value)} maxLength={180} placeholder="Track, artist, album, mood…" /><button disabled={!catalogQuery.trim() || !!busy}><SiteIcon name="search" />{busy === 'search' ? 'Searching…' : 'Search'}</button></div></form>
     <div className="music-layout">
       <aside className="music-library"><div className="music-section-title"><div><span className="eyebrow">CAMPAIGN</span><h3>Playlists</h3></div><button className="icon-button" aria-label="Create playlist" onClick={() => setCreatingPlaylist(v => !v)}><SiteIcon name="plus" /></button></div>{creatingPlaylist && <form className="playlist-create" onSubmit={createPlaylist}><input autoFocus value={playlistName} onChange={event => setPlaylistName(event.target.value)} maxLength={160} placeholder="Playlist name" aria-label="Playlist name" /><div><button className="primary" disabled={!playlistName.trim() || !!busy}>Create</button><button type="button" onClick={() => setCreatingPlaylist(false)}>Cancel</button></div></form>}<button className={`pool-selector${!selected && !results.length ? ' is-selected' : ''}`} onClick={() => { setSelected(null); setResults([]) }}><span className="playlist-art"><SiteIcon name="music" /></span><span><strong>Track pool</strong><small>{pool.length} mixed-source tracks</small></span></button><div className="playlist-list">{playlists.map(p => <div className={`playlist-row${selected?.id === p.id ? ' is-selected' : ''}`} key={p.id} draggable={gm} onDragStart={event => drag(event, { kind: 'playlist', id: p.id, label: p.name })}><button onClick={() => void choose(p)}><span className="playlist-art"><SiteIcon name="playlist" /></span><span><strong>{p.name}</strong><small>{p.trackCount} tracks</small></span></button>{gm && <button className="icon-button" aria-label={`Enqueue ${p.name}`} disabled={!!busy || p.trackCount === 0} onClick={() => void enqueue({ playlistId: p.id }, p.name)}><SiteIcon name="queue" /></button>}</div>)}</div></aside>
-      <section className="music-tracks"><div className="music-section-title"><div><span className="eyebrow">{results.length ? 'SPOTIFY RESULTS' : selected ? 'PLAYLIST' : 'CAMPAIGN LIBRARY'}</span><h3>{results.length ? `For “${query}”` : selected?.name || 'Track pool'}</h3></div><span>{visible.length} tracks</span></div>{results.length > 0 && <button className="back-to-pool" onClick={() => setResults([])}><SiteIcon name="back" />Back to {selected ? selected.name : 'track pool'}</button>}{busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist is empty. Add tracks from the pool.' : 'Search Spotify or save a generated candidate to begin.'}</p></div> : <div className="track-list">{visible.map((track, i) => { const stored = saved(track); const draggable = stored || (!results.length && track); return <article className="track-row" key={`${track.id}-${i}`} draggable={!!gm && !!draggable} onDragStart={event => draggable && drag(event, { kind: 'track', id: draggable.id, label: draggable.name })}><span className="drag-handle" aria-hidden="true"><SiteIcon name="drag" size={16} /></span><MusicArtwork src={track.imageUrl} title={track.name} source={track.sourceKind} /><div className="track-name"><strong>{track.name}</strong><small><span className={`source-badge is-${track.sourceKind}`}>{track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'}</span>{track.artist}{track.album ? ` · ${track.album}` : ''}</small></div><span className="track-duration">{trackTime(track.durationMs)}</span>{gm && <div className="track-actions"><button aria-label={`Play ${track.name}`} disabled={!!busy} onClick={() => void play(track)}><SiteIcon name="play" /></button>{results.length && !stored ? <button aria-label={`Save ${track.name} to pool`} disabled={!!busy} onClick={() => void saveTrack(track)}><SiteIcon name="plus" /></button> : <><button aria-label={`Enqueue ${track.name}`} disabled={!!busy || !draggable} onClick={() => draggable && void enqueue({ trackId: draggable.id }, draggable.name)}><SiteIcon name="queue" /></button>{selected ? <button aria-label={`Remove ${track.name} from ${selected.name}`} disabled={!!busy} onClick={() => void removeFromPlaylist(track)}><SiteIcon name="close" /></button> : playlists.length > 0 && draggable && <PlaylistAdder track={draggable} playlists={playlists} disabled={!!busy} add={(value, playlist) => void addToPlaylist(value, playlist)} />}</>}</div>}</article> })}</div>}</section>
+      <section className="music-tracks">
+        <div className="music-section-title">
+          <div><span className="eyebrow">{results.length ? 'SPOTIFY RESULTS' : selected ? 'PLAYLIST' : 'CAMPAIGN LIBRARY'}</span><h3>{results.length ? `For “${query}”` : selected?.name || 'Track pool'}</h3></div>
+          <span>{!spotifyPlayerReady && firstSpotifyUri ? 'Preparing player…' : `${visible.length} tracks`}</span>
+        </div>
+        {results.length > 0 && <button className="back-to-pool" onClick={() => setResults([])}><SiteIcon name="back" />Back to {selected ? selected.name : 'track pool'}</button>}
+        {busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist is empty. Add tracks from the pool.' : 'Search Spotify or save a generated candidate to begin.'}</p></div> : <div className="track-list">{visible.map((track, i) => {
+          const stored = saved(track)
+          const draggable = stored || (!results.length && track)
+          const preparingSpotify = track.sourceKind === 'spotify' && !spotifyPlayerReady
+          return <article className="track-row" key={`${track.id}-${i}`} draggable={!!gm && !!draggable} onDragStart={event => draggable && drag(event, { kind: 'track', id: draggable.id, label: draggable.name })}>
+            <span className="drag-handle" aria-hidden="true"><SiteIcon name="drag" size={16} /></span>
+            <MusicArtwork src={track.imageUrl} title={track.name} source={track.sourceKind} />
+            <div className="track-name"><strong>{track.name}</strong><small><span className={`source-badge is-${track.sourceKind}`}>{track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'}</span>{track.artist}{track.album ? ` · ${track.album}` : ''}</small></div>
+            <span className="track-duration">{trackTime(track.durationMs)}</span>
+            {gm && <div className="track-actions">
+              <button aria-label={`Play ${track.name}`} title={preparingSpotify ? 'Preparing the browser player…' : undefined} disabled={!!busy || preparingSpotify} onClick={() => void play(track)}><SiteIcon name={preparingSpotify ? 'busy' : 'play'} className={preparingSpotify ? 'is-spinning' : undefined} /></button>
+              {results.length && !stored ? <button aria-label={`Save ${track.name} to pool`} disabled={!!busy} onClick={() => void saveTrack(track)}><SiteIcon name="plus" /></button> : <>
+                <button aria-label={`Enqueue ${track.name}`} disabled={!!busy || !draggable} onClick={() => draggable && void enqueue({ trackId: draggable.id }, draggable.name)}><SiteIcon name="queue" /></button>
+                {selected ? <button aria-label={`Remove ${track.name} from ${selected.name}`} disabled={!!busy} onClick={() => void removeFromPlaylist(track)}><SiteIcon name="close" /></button> : playlists.length > 0 && draggable && <PlaylistAdder track={draggable} playlists={playlists} disabled={!!busy} add={(value, playlist) => void addToPlaylist(value, playlist)} />}
+              </>}
+            </div>}
+          </article>
+        })}</div>}
+      </section>
       <aside className={`live-queue${draggingOver ? ' is-drop-target' : ''}`} onDragEnter={() => setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop}><div className="music-section-title"><div><span className="eyebrow">LIVE</span><h3>Session queue</h3></div><span>{queue.length}</span></div><p className="quiet">Drag a track or whole playlist here. This queue belongs to the campaign, so it survives Spotify devices coming and going.</p>{queue.length ? <><ol className="queue-list">{queue.map((item, i) => <li key={item.queueId}><span>{String(i + 1).padStart(2, '0')}</span><div><strong>{item.track.name}</strong><small>{item.track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'} · {item.track.artist}</small></div><button className="icon-button" aria-label={`Remove ${item.track.name} from queue`} onClick={() => void removeQueue(item)}><SiteIcon name="close" size={16} /></button></li>)}</ol>{gm && <button className="clear-queue" disabled={!!busy} onClick={() => void clearQueue()}>Clear queue</button>}</> : <div className="queue-placeholder"><SiteIcon name="queue" size={32} /><strong>Drop the next beat here</strong><span>Tracks and complete playlists both work.</span></div>}</aside>
     </div>
   </section>
