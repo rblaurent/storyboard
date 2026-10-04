@@ -48,7 +48,7 @@ function Menu({ className, label, trigger, children }: { className: string; labe
   return <div className={`${className}${open ? ' is-open' : ''}`} ref={root}><button type="button" className="menu-trigger" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{trigger}</button>{open && <div className="menu-popover" role="menu" onClick={event => { if ((event.target as HTMLElement).closest('button,a')) setOpen(false) }}>{children}</div>}</div>
 }
 function AccountMenu({ me, signingOut, signout }: { me: Account; signingOut: boolean; signout: () => Promise<void> }) {
-  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<><Avatar person={me} /><span>{me.name}</span><SiteIcon name="chevron" className="menu-chevron" /></>}><button role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></Menu>
+  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}><div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>Storyboard account</span></div></div><button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></Menu>
 }
 function RolePicker({ value, disabled, label, onChange }: { value: 'gm' | 'player'; disabled?: boolean; label: string; onChange: (value: 'gm' | 'player') => void }) {
   const [open, setOpen] = useState(false)
@@ -218,10 +218,10 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: stri
         <div className="campaign-dashboard-identity"><SiteIcon name="notebook" size={32} className="brand-mark" /><div className="campaign-title-line"><h1>{campaign.name}</h1><span className="campaign-context">CAMPAIGN NOTEBOOK</span></div></div>
         <div className="campaign-dashboard-controls">
           <Menu className="campaign-menu" label={`Campaign menu for ${campaign.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}>
-            <div className="campaign-menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>{roleName(campaign.role)}{campaign.archived ? ' · Archived' : ''}</span></div></div>
-            <Link role="menuitem" href="/" navigate={navigate}><SiteIcon name="back" />Back to campaigns</Link>
-            {gm && <button role="menuitem" disabled={busy || active} onClick={() => void perform(async () => { const value = await api<Campaign>(base + (campaign.archived ? '/restore' : '/archive'), me.csrfToken, 'POST', {}); if (mounted.current) { accept(value); setNotice(campaign.archived ? 'Campaign restored.' : 'Campaign archived. Your table can still open this link.') } })}><SiteIcon name={campaign.archived ? 'restore' : 'archive'} />{campaign.archived ? 'Restore campaign' : 'Archive campaign'}</button>}
-            <button role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button>
+            <div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>{roleName(campaign.role)}{campaign.archived ? ' · Archived' : ''}</span></div></div>
+            <Link className="menu-row" role="menuitem" href="/" navigate={navigate}><SiteIcon name="back" />Back to campaigns</Link>
+            {gm && <button className="menu-row" role="menuitem" disabled={busy || active} onClick={() => void perform(async () => { const value = await api<Campaign>(base + (campaign.archived ? '/restore' : '/archive'), me.csrfToken, 'POST', {}); if (mounted.current) { accept(value); setNotice(campaign.archived ? 'Campaign restored.' : 'Campaign archived. Your table can still open this link.') } })}><SiteIcon name={campaign.archived ? 'restore' : 'archive'} />{campaign.archived ? 'Restore campaign' : 'Archive campaign'}</button>}
+            <button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button>
           </Menu>
         </div>
       </div>
