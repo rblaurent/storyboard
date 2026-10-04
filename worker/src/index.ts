@@ -4,7 +4,7 @@ const upstream = 'https://redleaf.minititine.cc'
 const mount = '/api/public/storyboard'
 const id = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const cookies = new Set(['__Host-storyboard', '__Host-storyboard-login'])
-const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+const csp = "default-src 'none'; script-src 'self' https://open.spotify.com; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self'; frame-src https://open.spotify.com; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 
 interface Route { target: string; static: boolean; immutable: boolean }
 export function route(url: URL, method: string): Route | null {
