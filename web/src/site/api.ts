@@ -1,7 +1,7 @@
 export interface Account { id: string; name: string; avatar: string; canCreate: boolean; csrfToken: string }
 export interface Person { id: string; name: string; avatar: string }
 export interface Campaign { id: string; name: string; description: string; summary: string; summaryStale: boolean; image: string | null; archived: boolean; revision: number; role: 'gm' | 'player'; playerCount: number; players: Person[] }
-export interface Player extends Person { accountId: string; role: 'gm' | 'player'; characters: { id: string; name: string; portrait: string | null }[] }
+export interface Player extends Person { accountId: string; role: 'gm' | 'player'; present: boolean; characters: { id: string; name: string; portrait: string | null }[] }
 export interface Operation { id: string; kind: 'image' | 'summary'; state: 'pending' | 'refining' | 'generating' | 'saving' | 'completed' | 'failed'; error: string; refinedPrompt: string; applied: boolean }
 export interface MusicStatus { available: boolean; connected: boolean; displayName: string | null; deviceReady: boolean; error: string | null }
 export interface MusicPlaylist { id: string; name: string; description: string; trackCount: number }
@@ -47,6 +47,12 @@ const messages: Record<string, string> = {
   visual_queue_empty: 'Add an image or visual set to the projection queue before starting the slideshow.',
   invalid_visual_queue_item: 'Choose either one image or one visual set to enqueue.',
   visual_session_changed: 'The projection changed on another control surface. The latest state has been loaded.',
+  workspace_unavailable: 'This campaign does not have a workspace yet.',
+  workspace_type_unavailable: 'That entity type is no longer available in this campaign workspace.',
+  workspace_parent_invalid: 'That workspace location is no longer available.',
+  workspace_entity_read_only: 'This system record is read-only here.',
+  workspace_type_read_only: 'System records cannot be created from the campaign workspace.',
+  workspace_entity_changed: 'This record changed elsewhere. Your draft is kept; reopen the record to load the latest version.',
   account_disabled: 'This account is disabled. Contact the Storyboard administrator.',
   not_found: 'This item is unavailable, or you no longer have access.',
   storyboard_not_configured: 'Storyboard is still being prepared. Please try again later.',

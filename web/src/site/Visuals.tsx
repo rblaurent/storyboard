@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, explain, imageSource, type Account, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
+import { LiveFoldout } from './LiveFoldout'
 
 const operation = () => crypto.randomUUID()
 type VisualGenerationCommand = { operationId: string; situation: string; brief: VisualBrief; confirmed: true }
@@ -34,7 +35,6 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
   const resume = useRef(readGenerationReceipt(receiptKey))
   const [library, setLibrary] = useState<Visual[]>([])
   const [sets, setSets] = useState<VisualSet[]>([])
-  const [queue, setQueue] = useState<VisualQueueItem[]>([])
   const [session, setSession] = useState<VisualSession | null>(null)
   const [situation, setSituation] = useState(resume.current?.command.situation || '')
   const [suggestions, setSuggestions] = useState<Visual[]>([])
@@ -49,10 +49,10 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
   const generationCommand = useRef<VisualGenerationCommand | null>(resume.current?.command || null)
 
   async function refresh() {
-    const [nextLibrary, nextSets, nextQueue, nextSession] = await Promise.all([
-      api<Visual[]>(base + '/library'), api<VisualSet[]>(base + '/sets'), api<VisualQueueItem[]>(base + '/queue'), api<VisualSession>(base + '/session'),
+    const [nextLibrary, nextSets, nextSession] = await Promise.all([
+      api<Visual[]>(base + '/library'), api<VisualSet[]>(base + '/sets'), api<VisualSession>(base + '/session'),
     ])
-    setLibrary(nextLibrary); setSets(nextSets); setQueue(nextQueue); setSession(nextSession)
+    setLibrary(nextLibrary); setSets(nextSets); setSession(nextSession)
   }
   useEffect(() => { let alive = true; void refresh().catch(c => { if (alive) setError(explain(c)) }); const timer = window.setInterval(() => { void api<VisualSession>(base + '/session').then(v => { if (alive) setSession(v) }).catch(() => {}) }, 2500); return () => { alive = false; window.clearInterval(timer) } }, [base])
   useEffect(() => {
@@ -71,11 +71,9 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
   async function promote(candidate: VisualCandidate) { await work('promote', async () => { await api(base + `/candidates/${candidate.id}/promote`, me.csrfToken, 'POST', {}); setGeneration(value => value ? { ...value, candidates: value.candidates.map(c => c.id === candidate.id ? { ...c, promotedVisual: 'saved' } : c) } : value); await refresh(); setNotice(`${candidate.title} is now in the campaign library.`) }) }
   async function createSet(e: FormEvent) { e.preventDefault(); await work('set', async () => { const created = await api<VisualSet>(base + '/sets', me.csrfToken, 'POST', { name: newSetName, description: '', operationId: operation() }); setNewSetName(''); setSelectedSet(created.id); await refresh() }) }
   async function addToSet(visual: Visual) { if (!selectedSet) { setError('Choose or create a visual set first.'); return } await work('set-item', async () => { await api(`${base}/sets/${selectedSet}/items`, me.csrfToken, 'POST', { visualId: visual.id }); await refresh(); setNotice(`${visual.name} added to the visual set.`) }) }
-  async function enqueue(value: { visualId?: string; setId?: string }, label: string) { await work('queue', async () => { setQueue(await api<VisualQueueItem[]>(base + '/queue', me.csrfToken, 'POST', { ...value, operationId: operation() })); setNotice(`${label} added to the projection queue.`) }) }
+  async function enqueue(value: { visualId?: string; setId?: string }, label: string) { await work('queue', async () => { await api<VisualQueueItem[]>(base + '/queue', me.csrfToken, 'POST', { ...value, operationId: operation() }); window.dispatchEvent(new CustomEvent('storyboard:visual-queue-changed', { detail: { campaignId: id } })); setNotice(`${label} added to the projection queue.`) }) }
   async function command(action: string, extra: Record<string, unknown> = {}) { if (!session) return; await work('command', async () => setSession(await api<VisualSession>(base + '/session/commands', me.csrfToken, 'POST', { action, operationId: operation(), expectedRevision: session.revision, ...extra }))) }
   function drag(event: React.DragEvent, value: { kind: 'visual' | 'set'; id: string; label: string }) { event.dataTransfer.setData('application/x-storyboard-visual', JSON.stringify(value)); event.dataTransfer.effectAllowed = 'copy' }
-  function drop(event: React.DragEvent) { event.preventDefault(); try { const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-visual')) as { kind: 'visual' | 'set'; id: string; label: string }; void enqueue(value.kind === 'visual' ? { visualId: value.id } : { setId: value.id }, value.label) } catch { /* Ignore foreign drags. */ } }
-  const currentId = session?.current?.id
 
   return <section className="visuals-workspace">
     <header className="campaign-page-header"><div><h2>Visuals</h2><p>Build the atmosphere, curate visual sets, and control what the table sees.</p></div><a className="button projection-link" href={`/campaigns/${id}/projection`} target="_blank" rel="noreferrer"><SiteIcon name="projector" />Open projection</a></header>
@@ -87,22 +85,68 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
     <div className="visuals-layout">
       <aside className="visual-sets"><div className="visual-section-title"><div><span className="eyebrow">CAMPAIGN</span><h3>Visual sets</h3></div></div>{gm && <form className="visual-set-create" onSubmit={createSet}><input value={newSetName} onChange={e => setNewSetName(e.target.value)} maxLength={160} placeholder="New visual set" aria-label="New visual set name" /><button disabled={!newSetName.trim() || !!busy}><SiteIcon name="plus" />Create</button></form>}<div className="visual-set-list">{sets.map(set => <article key={set.id} className={selectedSet === set.id ? 'is-selected' : ''} draggable={gm} onDragStart={e => drag(e, { kind: 'set', id: set.id, label: set.name })}><button onClick={() => setSelectedSet(set.id)}><SiteIcon name="images" /><span><strong>{set.name}</strong><small>{set.imageCount} images</small></span></button>{gm && <button className="icon-button" disabled={!set.imageCount || !!busy} aria-label={`Enqueue ${set.name}`} onClick={() => void enqueue({ setId: set.id }, set.name)}><SiteIcon name="queue" /></button>}</article>)}</div></aside>
       <section className="visual-library"><div className="visual-section-title"><div><span className="eyebrow">CAMPAIGN LIBRARY</span><h3>Atmosphere images</h3></div><span>{library.length}</span></div>{!library.length ? <div className="visual-empty"><SiteIcon name="images" size={32} /><strong>No visuals yet</strong><span>Build a visual set above, then save the images you want to keep.</span></div> : <div className="visual-grid">{library.map(v => <VisualCard key={v.id} visual={v} draggable={gm} onDragStart={e => drag(e, { kind: 'visual', id: v.id, label: v.name })} actions={gm && <><button aria-label={`Show ${v.name}`} onClick={() => void command('show', { visualId: v.id })}><SiteIcon name="projector" /></button><button aria-label={`Queue ${v.name}`} onClick={() => void enqueue({ visualId: v.id }, v.name)}><SiteIcon name="queue" /></button><button aria-label={`Add ${v.name} to selected set`} disabled={!selectedSet} onClick={() => void addToSet(v)}><SiteIcon name="plus" /></button></>} />)}</div>}</section>
-      <aside className="projection-console" onDragOver={e => e.preventDefault()} onDrop={drop}><div className="visual-section-title"><div><span className="eyebrow">LIVE</span><h3>Projection queue</h3></div><span>{queue.length}</span></div><div className={`projection-preview${session?.blackout ? ' is-blackout' : ''}`}>{session?.blackout ? <strong>Blackout</strong> : session?.current ? <img key={session.current.id} className={`transition-${session.transition}`} src={imageSource(session.current.imageUrl)} alt={session.current.name} /> : <><SiteIcon name="projector" size={32} /><span>Nothing showing</span></>}</div>{gm && <div className="projection-controls"><button aria-label="Previous visual" disabled={!!busy || !queue.length} onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button className="primary" aria-label={session?.playing ? 'Pause slideshow' : 'Play slideshow'} disabled={!!busy || !queue.length} onClick={() => void command(session?.playing ? 'pause' : 'play')}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button><button aria-label="Next visual" disabled={!!busy || !queue.length} onClick={() => void command('next')}><SiteIcon name="next" /></button><button className={session?.blackout ? 'is-active' : ''} aria-label="Toggle blackout" disabled={!!busy} onClick={() => void command('blackout')}><SiteIcon name="blackout" /></button></div>}<ol className="visual-queue">{queue.map((item, index) => <li key={item.queueId} className={currentId === item.visual.id ? 'is-current' : ''}><button onClick={() => gm && void command('show', { visualId: item.visual.id })}><img src={imageSource(item.visual.imageUrl)} alt="" /><span><strong>{item.visual.name}</strong><small>{String(index + 1).padStart(2, '0')}</small></span></button>{gm && <button className="icon-button" aria-label={`Remove ${item.visual.name} from queue`} onClick={() => void work('remove', async () => setQueue(await api<VisualQueueItem[]>(`${base}/queue/${item.queueId}/remove`, me.csrfToken, 'POST', {})))}><SiteIcon name="close" /></button>}</li>)}</ol>{gm && queue.length > 0 && <button className="clear-queue" onClick={() => void work('clear', async () => setQueue(await api<VisualQueueItem[]>(base + '/queue/clear', me.csrfToken, 'POST', {})))}>Clear queue</button>}<p className="quiet">Drag an image or a whole visual set here.</p></aside>
     </div>
   </section>
 }
 
-export function LiveVisual({ campaignId, navigate }: { campaignId: string; navigate: (path: string) => void }) {
+export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, panelExpanded, toggleFoldout }: { campaignId: string; csrfToken: string; canControl: boolean; navigate: (path: string) => void; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
   const [session, setSession] = useState<VisualSession | null>(null)
-  useEffect(() => { let alive = true; const read = () => void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { if (alive) setSession(v) }).catch(() => {}); read(); const timer = window.setInterval(read, 3000); return () => { alive = false; window.clearInterval(timer) } }, [campaignId])
+  const [queue, setQueue] = useState<VisualQueueItem[]>([])
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [draggingOver, setDraggingOver] = useState(false)
+  async function read() {
+    const [nextSession, nextQueue] = await Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`)])
+    setSession(nextSession); setQueue(nextQueue)
+  }
+  useEffect(() => {
+    let alive = true
+    const refresh = () => void Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`)]).then(([nextSession, nextQueue]) => { if (alive) { setSession(nextSession); setQueue(nextQueue) } }).catch(() => {})
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaignId?: string }>).detail
+      if (alive && (!detail?.campaignId || detail.campaignId === campaignId)) refresh()
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 3000)
+    window.addEventListener('storyboard:visual-queue-changed', changed)
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:visual-queue-changed', changed) }
+  }, [campaignId])
+  async function work(label: string, action: () => Promise<void>) {
+    if (!canControl || busy) return
+    setBusy(label); setError('')
+    try { await action() }
+    catch (cause) { setError(explain(cause)); if (cause instanceof ApiError && cause.code === 'visual_session_changed') await read().catch(() => {}) }
+    finally { setBusy(''); setDraggingOver(false) }
+  }
+  async function enqueue(value: { visualId?: string; setId?: string }) {
+    await work('enqueue', async () => setQueue(await api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`, csrfToken, 'POST', { ...value, operationId: operation() })))
+  }
+  async function command(action: string, extra: Record<string, unknown> = {}) {
+    if (!session) return
+    await work(action, async () => setSession(await api<VisualSession>(`/campaigns/${campaignId}/visuals/session/commands`, csrfToken, 'POST', { action, operationId: operation(), expectedRevision: session.revision, ...extra })))
+  }
+  function drop(event: React.DragEvent) {
+    event.preventDefault(); setDraggingOver(false)
+    if (!canControl) return
+    try {
+      const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-visual')) as { kind: 'visual' | 'set'; id: string }
+      void enqueue(value.kind === 'visual' ? { visualId: value.id } : { setId: value.id })
+    } catch { /* Ignore foreign drags. */ }
+  }
   const title = session?.blackout ? 'Blackout' : session?.current?.name || 'Nothing showing'
-  return <section className={`live-visual${session?.blackout ? ' is-blackout' : ''}`} aria-label="Live visuals">
-    <div className="live-module-label"><SiteIcon name="projector" /><span>VISUALS</span>{session?.playing && <i aria-label="Slideshow playing" />}</div>
+  return <LiveFoldout module="visuals" label="Visuals" icon="projector" summary={title} open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-visual${session?.blackout ? ' is-blackout' : ''}${draggingOver ? ' is-drop-target' : ''}`} aria-label="Live visuals" data-live-drop="visuals" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop} status={session?.playing && <i className="live-module-active" aria-label="Slideshow playing" />}>
     <button className="live-visual-preview" onClick={() => navigate(`/campaigns/${campaignId}/visuals`)} aria-label={`Open Visuals. ${title}`}>
       {session?.blackout ? <span className="live-visual-blank" /> : session?.current ? <img src={imageSource(session.current.imageUrl)} alt="" /> : <span className="live-visual-empty"><SiteIcon name="images" size={32} /></span>}
       <span><small>{session?.playing ? 'SLIDESHOW PLAYING' : 'NOW SHOWING'}</small><strong>{title}</strong></span>
     </button>
-  </section>
+    {canControl && <div className="live-projection-controls"><button aria-label="Previous visual" disabled={!!busy || !queue.length} onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button className="primary" aria-label={session?.playing ? 'Pause slideshow' : 'Play slideshow'} disabled={!!busy || !queue.length} onClick={() => void command(session?.playing ? 'pause' : 'play')}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button><button aria-label="Next visual" disabled={!!busy || !queue.length} onClick={() => void command('next')}><SiteIcon name="next" /></button><button className={session?.blackout ? 'is-active' : ''} aria-label="Toggle blackout" disabled={!!busy} onClick={() => void command('blackout')}><SiteIcon name="blackout" /></button></div>}
+    <div className="live-queue-panel" aria-label="Projection queue">
+      <div className="live-queue-heading"><strong>Projection queue</strong><span>{queue.length}</span></div>
+      {error && <p className="live-module-error" role="alert">{error}</p>}
+      {queue.length ? <ol className="live-visual-queue">{queue.map((item, index) => <li key={item.queueId} className={session?.currentQueueId === item.queueId ? 'is-current' : ''}><button disabled={!canControl || !!busy} onClick={() => void command('show', { visualId: item.visual.id })}><img src={imageSource(item.visual.imageUrl)} alt="" /><span><strong>{item.visual.name}</strong><small>{String(index + 1).padStart(2, '0')}</small></span></button>{canControl && <button className="icon-button" disabled={!!busy} aria-label={`Remove ${item.visual.name} from queue`} onClick={() => void work('remove', async () => setQueue(await api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue/${item.queueId}/remove`, csrfToken, 'POST', {})))}><SiteIcon name="close" size={16} /></button>}</li>)}</ol> : <div className="live-drop-empty"><SiteIcon name="images" /><span>{canControl ? 'Drop an image or visual set here' : 'The projection queue is empty'}</span></div>}
+      {canControl && queue.length > 0 && <button className="live-clear-queue" disabled={!!busy} onClick={() => void work('clear', async () => setQueue(await api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue/clear`, csrfToken, 'POST', {})))}>Clear queue</button>}
+    </div>
+  </LiveFoldout>
 }
 
 export function ProjectionView({ campaignId }: { campaignId: string }) {

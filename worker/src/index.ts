@@ -15,7 +15,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music|visuals|projection)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music|visuals|workspace|projection)`)) {
     // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
     // Leaf instead of asking the static host for a file at the browser route.
     return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
@@ -32,8 +32,13 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}`)) allowed = ['GET', 'PUT'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/(?:archive|restore|generate)`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/players`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/players/${id}/presence`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/players/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
+  if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/workspace/entities`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/workspace/entities/${id}`)) allowed = method === 'PUT' && query([])
+  if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/status`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/playback`)) allowed = ['GET', 'POST'].includes(method) && query([])

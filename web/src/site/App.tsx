@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { SiteIcon } from './icons'
 import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
 import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
+import { CampaignWorkspace } from './Workspace'
+import { LiveFoldout } from './LiveFoldout'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -51,8 +53,13 @@ function Menu({ className, label, trigger, children }: { className: string; labe
   }, [open])
   return <div className={`${className}${open ? ' is-open' : ''}`} ref={root}><button type="button" className="menu-trigger" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{trigger}</button>{open && <div className="menu-popover" role="menu" onClick={event => { if ((event.target as HTMLElement).closest('button,a')) setOpen(false) }}>{children}</div>}</div>
 }
-function AccountMenu({ me, signingOut, signout }: { me: Account; signingOut: boolean; signout: () => Promise<void> }) {
-  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}><div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>Storyboard account</span></div></div><button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></Menu>
+function AccountMenu({ me, signingOut, signout, showAbout }: { me: Account; signingOut: boolean; signout: () => Promise<void>; showAbout: () => void }) {
+  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}><div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>Storyboard account</span></div></div><button className="menu-row" role="menuitem" onClick={showAbout}><SiteIcon name="info" />About Storyboard</button><button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></Menu>
+}
+function AboutDialog({ close }: { close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => { const node = dialog.current; if (node && !node.open) node.showModal(); return () => { if (node?.open) node.close() } }, [])
+  return <dialog className="about-dialog" ref={dialog} aria-labelledby="about-title" onClose={close} onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close() }}><div><button type="button" className="about-close" aria-label="Close About Storyboard" onClick={() => dialog.current?.close()}><SiteIcon name="close" /></button><SiteIcon name="notebook" size={32} className="brand-mark" /><h2 id="about-title">Storyboard</h2><p>Your campaign notebook for preparing worlds, running sessions, and keeping the table’s lore, music, and visuals together.</p></div></dialog>
 }
 function RolePicker({ value, disabled, label, onChange }: { value: 'gm' | 'player'; disabled?: boolean; label: string; onChange: (value: 'gm' | 'player') => void }) {
   const [open, setOpen] = useState(false)
@@ -72,9 +79,14 @@ export function App() {
   const [error, setError] = useState('')
   const [path, setPath] = useState(window.location.pathname)
   const [signingOut, setSigningOut] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [playerCampaignId, setPlayerCampaignId] = useState('')
+  const [liveCanControl, setLiveCanControl] = useState(false)
   const [liveExpanded, setLiveExpanded] = useState(() => {
     try { const saved = localStorage.getItem('storyboard:live-expanded'); return saved === null ? window.matchMedia('(min-width: 1181px)').matches : saved === 'true' } catch { return true }
+  })
+  const [liveModules, setLiveModules] = useState<Record<'players' | 'visuals' | 'music', boolean>>(() => {
+    try { return { players: true, visuals: true, music: true, ...JSON.parse(localStorage.getItem('storyboard:live-modules') || '{}') } } catch { return { players: true, visuals: true, music: true } }
   })
   const navigate = useCallback((next: string) => { history.pushState(null, '', next); setPath(next); window.scrollTo(0, 0) }, [])
   useEffect(() => {
@@ -97,24 +109,33 @@ export function App() {
       setMe(null); navigate('/')
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
-  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music|visuals)$/i.exec(path)
+  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music|visuals|workspace)$/i.exec(path)
   const projectionMatch = /^\/campaigns\/([0-9a-f-]{36})\/projection$/i.exec(path)
   useEffect(() => { if (match?.[1] || projectionMatch?.[1]) setPlayerCampaignId((match || projectionMatch)![1]) }, [match?.[1], projectionMatch?.[1]])
   const campaignDashboard = !!(me && !loading && match)
   const projection = !!(me && !loading && projectionMatch)
   const live = !!(me && playerCampaignId && !projection)
+  useEffect(() => {
+    if (!me || !playerCampaignId) { setLiveCanControl(false); return }
+    const controller = new AbortController()
+    api<Campaign>(`/campaigns/${playerCampaignId}`, '', 'GET', undefined, controller.signal)
+      .then(campaign => { if (!controller.signal.aborted) setLiveCanControl(campaign.role === 'gm') })
+      .catch(() => { if (!controller.signal.aborted) setLiveCanControl(false) })
+    return () => controller.abort()
+  }, [me, playerCampaignId])
   function setLive(value: boolean) { setLiveExpanded(value); try { localStorage.setItem('storyboard:live-expanded', String(value)) } catch { /* Browser storage may be disabled. */ } }
+  function toggleLiveModule(module: 'players' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel${liveExpanded ? ' live-expanded' : ' live-contracted'}` : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
-      {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} />}
+      {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} />}
     </header>}
     <main id="main" className={campaignDashboard ? 'campaign-main' : undefined} tabIndex={-1}>
       {error && <ErrorMessage error={error} />}
-      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
+      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LiveVisual campaignId={playerCampaignId} navigate={navigate} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} navigate={navigate} /></LivePanel>}
-    {!projection && <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>}
+    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} navigate={navigate} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
 
@@ -127,6 +148,28 @@ function LivePanel({ expanded, setExpanded, children }: { expanded: boolean; set
     </header>
     <div className="live-panel-content">{children}</div>
   </aside>
+}
+
+function LivePlayers({ campaignId, navigate, open, panelExpanded, toggleFoldout }: { campaignId: string; navigate: (path: string) => void; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
+  const [players, setPlayers] = useState<Player[]>([])
+  useEffect(() => {
+    let alive = true
+    const read = () => void api<Player[]>(`/campaigns/${campaignId}/players`).then(value => { if (alive) setPlayers(value) }).catch(() => {})
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaignId?: string }>).detail
+      if (!detail?.campaignId || detail.campaignId === campaignId) read()
+    }
+    read(); const timer = window.setInterval(read, 5000); window.addEventListener('storyboard:players-presence-changed', changed)
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:players-presence-changed', changed) }
+  }, [campaignId])
+  const present = players.filter(player => player.present)
+  return <LiveFoldout module="players" label="Players" icon="players" summary={present.length ? `${present.length} at the table` : 'No one at the table'} open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className="live-players" aria-label="Live players" status={<b className="live-module-count">{present.length}</b>}>
+    <Link className="live-players-summary" href={`/campaigns/${campaignId}/players`} navigate={navigate}>
+      <span className="live-presence-stack">{present.length ? present.slice(0, 3).map(player => <Avatar key={player.id} person={player} />) : <SiteIcon name="players" />}</span>
+      <span><strong>{present.length ? `${present.length} at the table` : 'No one at the table'}</strong><small>Open Players to update presence</small></span>
+    </Link>
+    {present.length > 0 && <ul className="live-player-list">{present.map(player => <li key={player.id}><div className="live-player-person"><Avatar person={player} /><span><strong>{player.name}</strong><small>{roleName(player.role)}</small></span></div><div className="live-character-match">{player.characters.length ? player.characters.map(character => <span key={character.id}>{imageSource(character.portrait) ? <img src={imageSource(character.portrait)} alt="" /> : <i>{character.name.slice(0, 1).toUpperCase()}</i>}<strong>{character.name}</strong></span>) : <small>No character matched</small>}</div></li>)}</ul>}
+  </LiveFoldout>
 }
 
 function Picker({ me, navigate }: { me: Account; navigate: (p: string) => void }) {
@@ -159,7 +202,7 @@ function Picker({ me, navigate }: { me: Account; navigate: (p: string) => void }
     <div className="picker-rule"><span>{loading ? 'Loading campaigns…' : `${campaigns.length} ${campaigns.length === 1 ? 'campaign' : 'campaigns'}`}</span><label className="check"><input type="checkbox" checked={archived} onChange={e => { setArchived(e.target.checked); try { localStorage.setItem('storyboard:show-archived', String(e.target.checked)) } catch { /* preference optional */ } }} />Show archived</label></div>
     {creating && <form className="create-form panel" onSubmit={create}><label htmlFor="new-name">Campaign name</label><div className="inline"><input autoFocus id="new-name" required maxLength={120} value={name} disabled={busy || !!creation.current} onChange={e => setName(e.target.value)} placeholder="Give your story a title" /><button className="primary" disabled={busy || !name.trim()}>{busy ? 'Creating…' : creation.current ? 'Retry creation' : 'Create'}</button><button type="button" disabled={busy} onClick={() => { setCreating(false); creation.current = null }}>Cancel</button></div><p className="quiet">Start with a name. Add your description and artwork next.</p></form>}
     <ErrorMessage error={error} />{error && !creating && <button onClick={() => setReload(v => v + 1)}>Try again</button>}
-    {loading ? <div className="campaign-grid" aria-label="Loading campaigns">{[0, 1, 2].map(n => <div key={n} className="skeleton-card" />)}</div> : !campaigns.length && !error ? <div className="empty"><span className="eyebrow">AN OPEN PAGE</span><h2>{archived ? 'No campaigns yet' : 'Your next story is waiting'}</h2><p>{me.canCreate ? 'Create a campaign to bring your table together.' : 'Once your Game Master adds you, your campaign will appear here.'}</p></div> : <div className="campaign-grid">{campaigns.map((campaign, i) => <Link key={campaign.id} className="campaign-card" href={`/campaigns/${campaign.id}/description`} navigate={navigate}><Artwork campaign={campaign} /><div className="card-content"><div className="card-meta"><span>CAMPAIGN {String(i + 1).padStart(2, '0')}</span>{campaign.archived && <span className="badge"><SiteIcon name="archive" size={16} />Archived</span>}</div><h2>{campaign.name}</h2><p className="card-summary">{campaign.summary || campaign.description || 'An unwritten chapter. Open the campaign to begin.'}</p>{campaign.summaryStale && <span className="quiet">Summary may need updating</span>}<div className="card-roster"><div className="avatar-stack">{campaign.players.slice(0, 4).map(p => <Avatar key={p.id} person={p} />)}</div><span>{campaign.playerCount} at the table</span><span className="role">{roleName(campaign.role)}</span></div></div></Link>)}</div>}
+    {loading ? <div className="campaign-grid" aria-label="Loading campaigns">{[0, 1, 2].map(n => <div key={n} className="skeleton-card" />)}</div> : !campaigns.length && !error ? <div className="empty"><span className="eyebrow">AN OPEN PAGE</span><h2>{archived ? 'No campaigns yet' : 'Your next story is waiting'}</h2><p>{me.canCreate ? 'Create a campaign to bring your table together.' : 'Once your Game Master adds you, your campaign will appear here.'}</p></div> : <div className="campaign-grid">{campaigns.map(campaign => <Link key={campaign.id} className="campaign-card" href={`/campaigns/${campaign.id}/description`} navigate={navigate}><Artwork campaign={campaign} /><div className="card-content">{campaign.archived && <div className="card-meta"><span className="badge"><SiteIcon name="archive" size={16} />Archived</span></div>}<h2>{campaign.name}</h2><p className="card-summary">{campaign.summary || campaign.description || 'An unwritten chapter. Open the campaign to begin.'}</p>{campaign.summaryStale && <span className="quiet">Summary may need updating</span>}<div className="card-roster"><div className="avatar-stack">{campaign.players.slice(0, 4).map(p => <Avatar key={p.id} person={p} />)}</div><span>{campaign.playerCount} at the table</span><span className="role">{roleName(campaign.role)}</span></div></div></Link>)}</div>}
   </section>
 }
 
@@ -173,7 +216,7 @@ type MusicGenerationCommand = { operationId: string; situation: string; brief: M
 function readMusicGenerationReceipt(key: string): { id: string; command: MusicGenerationCommand } | null {
   try { const value = JSON.parse(sessionStorage.getItem(key) || 'null'); return value && /^[0-9a-f-]{36}$/i.test(value.id) && /^[0-9a-f-]{36}$/i.test(value.command?.operationId) && typeof value.command?.situation === 'string' && value.command?.confirmed === true && typeof value.command?.brief?.prompt === 'string' ? value : null } catch { return null }
 }
-function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: string; tab: string; me: Account; navigate: (p: string) => void; signingOut: boolean; signout: () => Promise<void> }) {
+function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }: { id: string; tab: string; me: Account; navigate: (p: string) => void; signingOut: boolean; signout: () => Promise<void>; showAbout: () => void }) {
   const base = `/campaigns/${id}`
   const receiptKey = `storyboard:operation:${me.id}:${id}`
   const [campaign, setCampaign] = useState<Campaign | null>(null)
@@ -240,20 +283,21 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: stri
   return <section>
     <header className="campaign-dashboard-header" data-ui-region="campaign-header">
       <div className="campaign-dashboard-bar">
-        <div className="campaign-dashboard-identity"><SiteIcon name="notebook" size={32} className="brand-mark" /><div className="campaign-title-line"><h1>{campaign.name}</h1><span className="campaign-context">CAMPAIGN NOTEBOOK</span></div></div>
+        <div className="campaign-dashboard-identity"><Link className="campaign-home-link" href="/" navigate={navigate} aria-label="Back to campaigns"><SiteIcon name="notebook" size={32} className="brand-mark" /></Link><div className="campaign-title-line"><h1>{campaign.name}</h1><span className="campaign-context">CAMPAIGN NOTEBOOK</span></div></div>
         <div className="campaign-dashboard-controls">
           <Menu className="campaign-menu" label={`Campaign menu for ${campaign.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}>
             <div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>{roleName(campaign.role)}{campaign.archived ? ' · Archived' : ''}</span></div></div>
             <Link className="menu-row" role="menuitem" href="/" navigate={navigate}><SiteIcon name="back" />Back to campaigns</Link>
             {gm && <button className="menu-row" role="menuitem" disabled={busy || active} onClick={() => void perform(async () => { const value = await api<Campaign>(base + (campaign.archived ? '/restore' : '/archive'), me.csrfToken, 'POST', {}); if (mounted.current) { accept(value); setNotice(campaign.archived ? 'Campaign restored.' : 'Campaign archived. Your table can still open this link.') } })}><SiteIcon name={campaign.archived ? 'restore' : 'archive'} />{campaign.archived ? 'Restore campaign' : 'Archive campaign'}</button>}
+            <button className="menu-row" role="menuitem" onClick={showAbout}><SiteIcon name="info" />About Storyboard</button>
             <button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button>
           </Menu>
         </div>
       </div>
-      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music', 'visuals'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'music' ? 'music' : 'images'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'music' ? 'Music' : 'Visuals'}</Link>)}</nav>
+      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music', 'visuals', ...(gm ? ['workspace'] : [])].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'music' ? 'music' : t === 'visuals' ? 'images' : 'workspace'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'music' ? 'Music' : t === 'visuals' ? 'Visuals' : 'Workspace'}</Link>)}</nav>
     </header>
     <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
-    {tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
+    {tab === 'workspace' ? gm ? <CampaignWorkspace id={id} me={me} /> : <section className="empty"><h2>Workspace unavailable</h2><p>Campaign workspace access is currently limited to Game Masters.</p></section> : tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
       <div>
         {gm ? <form className="description-form" onSubmit={e => { e.preventDefault(); if (active) return; void perform(async () => { const value = await api<Campaign>(base, me.csrfToken, 'PUT', draftRef.current); if (mounted.current) { accept(value, true); setNotice('Campaign saved.') } }) }}><label htmlFor="campaign-name">Campaign name</label><input id="campaign-name" value={draft.name} onChange={e => edit('name', e.target.value)} required maxLength={120} /><label htmlFor="campaign-description">Description</label><textarea id="campaign-description" rows={12} maxLength={40000} value={draft.description} onChange={e => edit('description', e.target.value)} placeholder="Set the scene. What kind of world will your players step into?" /><label htmlFor="campaign-summary">Summary</label><textarea id="campaign-summary" rows={4} maxLength={1500} value={draft.summary} onChange={e => edit('summary', e.target.value)} placeholder="A short introduction for your table" /><div className="form-actions"><button className="primary" disabled={busy || active || !draft.name.trim() || !dirty.current}><SiteIcon name={busy ? 'busy' : 'save'} className={busy ? 'is-spinning' : undefined} />{busy ? 'Saving…' : 'Save changes'}</button><span className="quiet">{active ? 'Wait for the current request before saving.' : dirty.current ? 'Unsaved changes' : 'All changes saved'}</span></div></form> : <article className="read-description"><p>{campaign.description || 'Your Game Master has not added a description yet.'}</p></article>}
         {gm && dirty.current && <details className="saved-version"><summary>Review latest saved version</summary><button disabled={busy || active} onClick={() => void perform(async () => { await refresh(); setNotice('The latest saved version is shown below. Your draft is kept.') })}>Refresh saved version</button><h3>{campaign.name}</h3><p>{campaign.description || 'No saved description.'}</p><p>{campaign.summary || 'No saved summary.'}</p>{draft.expectedRevision !== campaign.revision && <button disabled={busy || active} onClick={reviewLatest}>Keep draft against latest revision</button>}</details>}
@@ -316,18 +360,35 @@ function spotifyWebPlaybackSdk() {
   return spotifySdkPromise
 }
 
-function LiveMusic({ campaignId, csrfToken, navigate }: { campaignId: string; csrfToken: string; navigate: (p: string) => void }) {
+function LiveMusic({ campaignId, csrfToken, canControl, navigate, open, panelExpanded, toggleFoldout }: { campaignId: string; csrfToken: string; canControl: boolean; navigate: (p: string) => void; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
   const [track, setTrack] = useState<MusicTrack | null>(null)
   const [sourceCampaignId, setSourceCampaignId] = useState(campaignId)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [playerError, setPlayerError] = useState('')
+  const [queue, setQueue] = useState<MusicQueueItem[]>([])
+  const [queueBusy, setQueueBusy] = useState('')
+  const [queueError, setQueueError] = useState('')
+  const [draggingOver, setDraggingOver] = useState(false)
   const audio = useRef<HTMLAudioElement>(null)
   const spotify = useRef<SpotifyWebPlayer | null>(null)
   const spotifyCreating = useRef<Promise<SpotifyWebPlayer> | null>(null)
   const spotifyDeviceId = useRef('')
   const tokenCampaignId = useRef(campaignId)
   const playerErrorRef = useRef('')
+  const readQueue = useCallback(() => api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`).then(setQueue), [campaignId])
+  useEffect(() => {
+    let alive = true
+    const read = () => void readQueue().catch(() => {})
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaignId?: string }>).detail
+      if (alive && (!detail?.campaignId || detail.campaignId === campaignId)) read()
+    }
+    read()
+    const timer = window.setInterval(read, 5000)
+    window.addEventListener('storyboard:music-queue-changed', changed)
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:music-queue-changed', changed) }
+  }, [campaignId, readQueue])
   useEffect(() => {
     let disposed = false
     const announceReady = (ready: boolean, error = '') => {
@@ -436,13 +497,48 @@ function LiveMusic({ campaignId, csrfToken, navigate }: { campaignId: string; cs
     if (playing) audio.current.pause(); else await audio.current.play()
     setPlaying(!playing)
   }
-  return <section className="live-music" aria-label="Browser campaign player">
+  async function enqueue(payload: { trackId?: string; playlistId?: string }) {
+    if (!canControl || queueBusy) return
+    setQueueBusy('enqueue'); setQueueError('')
+    try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`, csrfToken, 'POST', { ...payload, operationId: crypto.randomUUID() })) }
+    catch (cause) { setQueueError(explain(cause)) }
+    finally { setQueueBusy(''); setDraggingOver(false) }
+  }
+  async function removeQueue(item: MusicQueueItem) {
+    if (!canControl || queueBusy) return
+    setQueueBusy(item.queueId); setQueueError('')
+    try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue/${item.queueId}/remove`, csrfToken, 'POST', {})) }
+    catch (cause) { setQueueError(explain(cause)) }
+    finally { setQueueBusy('') }
+  }
+  async function clearQueue() {
+    if (!canControl || queueBusy) return
+    setQueueBusy('clear'); setQueueError('')
+    try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue/clear`, csrfToken, 'POST', {})) }
+    catch (cause) { setQueueError(explain(cause)) }
+    finally { setQueueBusy('') }
+  }
+  function drop(event: React.DragEvent) {
+    event.preventDefault(); setDraggingOver(false)
+    if (!canControl) return
+    try {
+      const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-music')) as { kind: string; id: string }
+      if (value.kind === 'track') void enqueue({ trackId: value.id })
+      else if (value.kind === 'playlist') void enqueue({ playlistId: value.id })
+    } catch { /* Ignore foreign drags. */ }
+  }
+  return <LiveFoldout module="music" label="Music" icon="music" summary={track?.name || 'Nothing playing'} open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-music${draggingOver ? ' is-drop-target' : ''}`} aria-label="Browser campaign player" data-live-drop="music" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop}>
     <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
-    <div className="live-module-label"><SiteIcon name="music" /><span>MUSIC</span></div>
     <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{playerError || (track ? `${track.artist} · This browser` : 'Open Music to set the scene')}</small></span></Link>
     {track && <span className="player-progress">{trackTime(progress)} / {trackTime(track.durationMs)}</span>}
     <div className="player-controls"><button className="player-primary" disabled={!track} aria-label={playing ? 'Pause music in this browser' : 'Play music in this browser'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button></div>
-  </section>
+    <div className="live-queue-panel" aria-label="Music queue">
+      <div className="live-queue-heading"><strong>Queue</strong><span>{queue.length}</span></div>
+      {queueError && <p className="live-module-error" role="alert">{queueError}</p>}
+      {queue.length ? <ol className="live-queue-list">{queue.map((item, index) => <li key={item.queueId}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.track.name}</strong><small>{item.track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'} · {item.track.artist}</small></div>{canControl && <button className="icon-button" disabled={!!queueBusy} aria-label={`Remove ${item.track.name} from queue`} onClick={() => void removeQueue(item)}><SiteIcon name="close" size={16} /></button>}</li>)}</ol> : <div className="live-drop-empty"><SiteIcon name="queue" /><span>{canControl ? 'Drop a track or playlist here' : 'The music queue is empty'}</span></div>}
+      {canControl && queue.length > 0 && <button className="live-clear-queue" disabled={!!queueBusy} onClick={() => void clearQueue()}>Clear queue</button>}
+    </div>
+  </LiveFoldout>
 }
 
 function PlaylistAdder({ track, playlists, disabled, add }: { track: MusicTrack; playlists: MusicPlaylist[]; disabled: boolean; add: (track: MusicTrack, playlist: MusicPlaylist) => void }) {
@@ -458,13 +554,11 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const [selected, setSelected] = useState<MusicPlaylist | null>(null)
   const [playlistTracks, setPlaylistTracks] = useState<MusicTrack[]>([])
   const [pool, setPool] = useState<MusicTrack[]>([])
-  const [queue, setQueue] = useState<MusicQueueItem[]>([])
   const [results, setResults] = useState<MusicTrack[]>([])
   const [query, setQuery] = useState('')
   const [catalogQuery, setCatalogQuery] = useState('')
   const [creatingPlaylist, setCreatingPlaylist] = useState(false)
   const [playlistName, setPlaylistName] = useState('')
-  const [draggingOver, setDraggingOver] = useState(false)
   const [situation, setSituation] = useState(generationResume.current?.command.situation || '')
   const [brief, setBrief] = useState<MusicBrief | null>(generationResume.current?.command.brief || null)
   const [confirming, setConfirming] = useState(false)
@@ -490,8 +584,8 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   }, [firstSpotifyUri, gm, id])
   useEffect(() => {
     const c = new AbortController(); setError('')
-    Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal), api<MusicQueueItem[]>(base + '/queue', '', 'GET', undefined, c.signal)])
-      .then(([s, p, tracks, q]) => { if (!c.signal.aborted) { setStatus(s); setPlaylists(p.items); setPool(tracks); setQueue(q) } }).catch(e => { if (!c.signal.aborted) setError(explain(e)) })
+    Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal)])
+      .then(([s, p, tracks]) => { if (!c.signal.aborted) { setStatus(s); setPlaylists(p.items); setPool(tracks) } }).catch(e => { if (!c.signal.aborted) setError(explain(e)) })
     return () => c.abort()
   }, [base])
   useEffect(() => {
@@ -510,12 +604,9 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   async function saveTrack(track: MusicTrack) { if (busy || track.sourceKind !== 'spotify' || !track.uri) return; setBusy('save-' + track.id); setError(''); try { const saved = await api<MusicTrack>(base + '/tracks', me.csrfToken, 'POST', { name: track.name, artist: track.artist, album: track.album, imageUrl: track.imageUrl, durationMs: track.durationMs, uri: track.uri }); setPool(items => [...items.filter(item => item.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name))); setNotice(`${track.name} saved to the campaign track pool.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
   async function addToPlaylist(track: MusicTrack, playlist: MusicPlaylist) { if (busy) return; setBusy('playlist-add-' + track.id); setError(''); try { const updated = await api<MusicPlaylist>(`${base}/playlists/${playlist.id}/tracks`, me.csrfToken, 'POST', { trackId: track.id }); setPlaylists(items => items.map(item => item.id === updated.id ? updated : item)); if (selected?.id === playlist.id) { setSelected(updated); const page = await api<MusicPage<MusicTrack>>(`${base}/playlists/${playlist.id}/tracks?offset=0&limit=100`); setPlaylistTracks(page.items) }; setNotice(`${track.name} added to ${playlist.name}.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
   async function removeFromPlaylist(track: MusicTrack) { if (!selected || busy) return; setBusy('playlist-remove-' + track.id); setError(''); try { await api(`${base}/playlists/${selected.id}/tracks/${track.id}/remove`, me.csrfToken, 'POST', {}); const page = await api<MusicPage<MusicTrack>>(`${base}/playlists/${selected.id}/tracks?offset=0&limit=100`); setPlaylistTracks(page.items); const updated = { ...selected, trackCount: page.total }; setSelected(updated); setPlaylists(items => items.map(item => item.id === updated.id ? updated : item)) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
-  async function enqueue(payload: { trackId?: string; playlistId?: string }, label: string) { if (busy || !gm) return; setBusy('enqueue'); setError(''); try { setQueue(await api<MusicQueueItem[]>(base + '/queue', me.csrfToken, 'POST', { ...payload, operationId: crypto.randomUUID() })); setNotice(`${label} added to the session queue.`) } catch (e) { setError(explain(e)) } finally { setBusy(''); setDraggingOver(false) } }
-  async function removeQueue(item: MusicQueueItem) { if (busy || !gm) return; setBusy('queue-remove'); try { setQueue(await api<MusicQueueItem[]>(`${base}/queue/${item.queueId}/remove`, me.csrfToken, 'POST', {})) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
-  async function clearQueue() { if (busy || !gm) return; setBusy('queue-clear'); try { setQueue(await api<MusicQueueItem[]>(base + '/queue/clear', me.csrfToken, 'POST', {})) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
+  async function enqueue(payload: { trackId?: string; playlistId?: string }, label: string) { if (busy || !gm) return; setBusy('enqueue'); setError(''); try { await api<MusicQueueItem[]>(base + '/queue', me.csrfToken, 'POST', { ...payload, operationId: crypto.randomUUID() }); window.dispatchEvent(new CustomEvent('storyboard:music-queue-changed', { detail: { campaignId: id } })); setNotice(`${label} added to the session queue.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
   function play(track: MusicTrack) { if (busy || !gm) return; setError(''); setNotice(''); window.dispatchEvent(new CustomEvent('storyboard:play-track', { detail: { track, campaignId: id } })); setNotice(`Loaded ${track.name} in this browser.`) }
   function drag(event: React.DragEvent, value: { kind: 'track' | 'playlist'; id: string; label: string }) { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-storyboard-music', JSON.stringify(value)) }
-  function drop(event: React.DragEvent) { event.preventDefault(); setDraggingOver(false); try { const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-music')) as { kind: string; id: string; label: string }; if (value.kind === 'track') void enqueue({ trackId: value.id }, value.label); else if (value.kind === 'playlist') void enqueue({ playlistId: value.id }, value.label) } catch { /* foreign drag */ } }
   const saved = (track: MusicTrack) => pool.find(item => item.id === track.id || !!track.uri && item.uri === track.uri)
   return <section className="music-workspace">
     <CampaignPageHeader title="Music" description="Curate mixed-source playlists, search Spotify, generate scores, and run one campaign queue." aside={<div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? 'Spotify catalogue connected' : status?.error || 'Checking music service…'}</div>} />
@@ -550,7 +641,6 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
           </article>
         })}</div>}
       </section>
-      <aside className={`live-queue${draggingOver ? ' is-drop-target' : ''}`} onDragEnter={() => setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop}><div className="music-section-title"><div><span className="eyebrow">LIVE</span><h3>Session queue</h3></div><span>{queue.length}</span></div><p className="quiet">Drag a track or whole playlist here. This queue belongs to the campaign, so it survives Spotify devices coming and going.</p>{queue.length ? <><ol className="queue-list">{queue.map((item, i) => <li key={item.queueId}><span>{String(i + 1).padStart(2, '0')}</span><div><strong>{item.track.name}</strong><small>{item.track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'} · {item.track.artist}</small></div><button className="icon-button" aria-label={`Remove ${item.track.name} from queue`} onClick={() => void removeQueue(item)}><SiteIcon name="close" size={16} /></button></li>)}</ol>{gm && <button className="clear-queue" disabled={!!busy} onClick={() => void clearQueue()}>Clear queue</button>}</> : <div className="queue-placeholder"><SiteIcon name="queue" size={32} /><strong>Drop the next beat here</strong><span>Tracks and complete playlists both work.</span></div>}</aside>
     </div>
   </section>
 }
@@ -574,10 +664,12 @@ function Players({ id, gm, me, onMembershipChange }: { id: string; gm: boolean; 
     if (lock.current) return; lock.current = true; setBusy(true); setError(''); setNotice('')
     try { await action() } catch (c) { if (mounted.current) setError(explain(c)) } finally { lock.current = false; if (mounted.current) setBusy(false) }
   }
-  async function membership(accountId: string, role: 'gm' | 'player') { const value = await api<Player[]>(base + '/players', me.csrfToken, 'POST', { accountId, role }); if (mounted.current) { setPlayers(value); setResults(null); setNotice('Membership updated.') }; await onMembershipChange() }
+  function announcePresence() { window.dispatchEvent(new CustomEvent('storyboard:players-presence-changed', { detail: { campaignId: id } })) }
+  async function membership(accountId: string, role: 'gm' | 'player') { const value = await api<Player[]>(base + '/players', me.csrfToken, 'POST', { accountId, role }); if (mounted.current) { setPlayers(value); setResults(null); setNotice('Membership updated.') }; announcePresence(); await onMembershipChange() }
+  async function presence(player: Player, present: boolean) { const value = await api<Player[]>(`${base}/players/${player.id}/presence`, me.csrfToken, 'POST', { present }); if (mounted.current) { setPlayers(value); setNotice(`${player.name} is ${present ? 'at the table' : 'marked absent'}.`) }; announcePresence() }
   return <section className="players-panel"><CampaignPageHeader title="Players" description={`${players.length} ${players.length === 1 ? 'person' : 'people'} in this campaign. Manage their roles and characters here.`} /><ErrorMessage error={error} />{error && <button disabled={busy} onClick={() => { setError(''); setReload(v => v + 1) }}>Reload roster</button>}{notice && <Feedback tone="notice">{notice}</Feedback>}
     {gm && <form className="roster-search panel" onSubmit={e => { e.preventDefault(); void perform(async () => { const value = await api<Person[]>(base + '/accounts?email=' + encodeURIComponent(email.trim())); if (mounted.current) setResults(value) }) }}><label htmlFor="account-email">Add an existing account</label><p className="quiet">Ask your player to sign in once, then look up their exact Google email.</p><div className="inline"><input id="account-email" type="email" required maxLength={254} value={email} onChange={e => { setEmail(e.target.value); setResults(null) }} placeholder="player@example.com" /><button disabled={busy}><SiteIcon name="search" />Find account</button></div>{results && (!results.length ? <p role="status">No matching account. They need to sign in first.</p> : results.map(p => <div key={p.id} className="lookup-result"><Avatar person={p} /><span>{p.name}</span><RolePicker value={addRole} label="Campaign role" onChange={setAddRole} /><button disabled={busy} onClick={() => void perform(() => membership(p.id, addRole))} type="button"><SiteIcon name="add" />Add to campaign</button></div>))}</form>}
-    {loading ? <p role="status">Loading the table…</p> : <div className="roster">{players.map(p => <article className="player-row" key={p.id}><div className="player-identity"><Avatar person={p} /><div><h3>{p.name}</h3><span className="quiet">{roleName(p.role)}</span></div></div><div className="characters">{p.characters.length ? p.characters.map(c => <div className="character" key={c.id}>{imageSource(c.portrait) && <img src={imageSource(c.portrait)} alt="" />}<span>{c.name}</span></div>) : <span className="quiet">No characters yet</span>}</div>{gm && <div className="member-actions"><RolePicker value={p.role} disabled={busy} label={`Role for ${p.name}`} onChange={role => void perform(() => membership(p.accountId, role))} /><button disabled={busy} onClick={() => setRemove(p)} aria-label={`Remove ${p.name}`} className="danger"><SiteIcon name="remove" />Remove</button></div>}</article>)}</div>}
-    {remove && <div className="panel remove-confirm" role="region" aria-label="Confirm membership removal"><h3>Remove {remove.name} from this campaign?</h3><p>This removes only their campaign membership and access. Their account and characters are retained.</p><div className="inline"><button className="danger" disabled={busy} onClick={() => void perform(async () => { await api(base + `/players/${remove.id}/remove`, me.csrfToken, 'POST', {}); if (mounted.current) { setRemove(null); setReload(v => v + 1); setNotice('Membership removed. Account and characters retained.') }; await onMembershipChange() })}><SiteIcon name="remove" />Remove membership</button><button disabled={busy} onClick={() => setRemove(null)}>Keep membership</button></div></div>}
+    {loading ? <p role="status">Loading the table…</p> : <div className="roster">{players.map(p => <article className={`player-row${p.present ? ' is-present' : ' is-absent'}`} key={p.id}><div className="player-identity"><Avatar person={p} /><div><h3>{p.name}</h3><span className="quiet">{roleName(p.role)}</span></div></div><div className="characters">{p.characters.length ? p.characters.map(c => <div className="character" key={c.id}>{imageSource(c.portrait) && <img src={imageSource(c.portrait)} alt="" />}<span>{c.name}</span></div>) : <span className="quiet">No characters yet</span>}</div>{gm && <div className="member-actions"><button className={`presence-toggle${p.present ? ' is-present' : ''}`} disabled={busy} aria-pressed={p.present} aria-label={`Mark ${p.name} ${p.present ? 'absent' : 'present'}`} onClick={() => void perform(() => presence(p, !p.present))}><SiteIcon name={p.present ? 'check' : 'close'} />{p.present ? 'Present' : 'Absent'}</button><RolePicker value={p.role} disabled={busy} label={`Role for ${p.name}`} onChange={role => void perform(() => membership(p.accountId, role))} /><button disabled={busy} onClick={() => setRemove(p)} aria-label={`Remove ${p.name}`} className="danger"><SiteIcon name="remove" />Remove</button></div>}</article>)}</div>}
+    {remove && <div className="panel remove-confirm" role="region" aria-label="Confirm membership removal"><h3>Remove {remove.name} from this campaign?</h3><p>This removes only their campaign membership and access. Their account and characters are retained.</p><div className="inline"><button className="danger" disabled={busy} onClick={() => void perform(async () => { await api(base + `/players/${remove.id}/remove`, me.csrfToken, 'POST', {}); if (mounted.current) { setRemove(null); setReload(v => v + 1); setNotice('Membership removed. Account and characters retained.') }; announcePresence(); await onMembershipChange() })}><SiteIcon name="remove" />Remove membership</button><button disabled={busy} onClick={() => setRemove(null)}>Keep membership</button></div></div>}
   </section>
 }

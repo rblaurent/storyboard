@@ -36,6 +36,8 @@ import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon'
 import { CornersOutIcon } from '@phosphor-icons/react/dist/csr/CornersOut'
 import { CaretLeftIcon } from '@phosphor-icons/react/dist/csr/CaretLeft'
 import { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight'
+import { FolderOpenIcon } from '@phosphor-icons/react/dist/csr/FolderOpen'
+import { InfoIcon } from '@phosphor-icons/react/dist/csr/Info'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -77,6 +79,8 @@ const icons = {
   fullscreen: CornersOutIcon,
   expandPanel: CaretLeftIcon,
   collapsePanel: CaretRightIcon,
+  workspace: FolderOpenIcon,
+  info: InfoIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */

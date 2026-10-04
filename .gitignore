@@ -2,6 +2,7 @@ node_modules/
 **/bin/
 **/obj/
 **/dist/
+**/site-dist/
 **/.wrangler/
 .dev.vars
 *.user

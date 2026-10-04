@@ -386,6 +386,13 @@
     "sortOrder": 8
   },
   {
+    "parentType": "storyboard-player",
+    "slug": "present",
+    "name": "present",
+    "fieldType": "boolean",
+    "sortOrder": 9
+  },
+  {
     "parentType": "storyboard-role",
     "slug": "installation",
     "name": "installation",

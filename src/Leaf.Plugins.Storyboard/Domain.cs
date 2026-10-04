@@ -20,4 +20,5 @@ public static class StoryJson {
 public sealed record CampaignWrite(string Name,string Description,string Summary,long ExpectedRevision);
 public sealed record CreateCampaign(string Name,string OperationId);
 public sealed record MembershipWrite(string AccountId,string Role);
+public sealed record PresenceWrite(bool Present);
 public sealed record GenerationWrite(string Kind,string Prompt,long ExpectedRevision,string OperationId);

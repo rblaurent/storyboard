@@ -26,6 +26,9 @@ importers:
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@redbamboo/workspace':
+        specifier: link:../../redbamboo-packages/packages/workspace
+        version: link:../../redbamboo-packages/packages/workspace
       react:
         specifier: ^19.2.5
         version: 19.3.0

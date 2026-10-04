@@ -65,6 +65,13 @@ public sealed class TestEntities : IEntityStore
         var old = (await GetAsync(id, ct))!;
         return (await CompareExchangeBySlugAsync(old.TypeSlug, old.Slug, name ?? old.Name, data, old.UpdatedAt, ct))!;
     }
+    public async Task<LeafEntity?> CompareExchangeCanonicalAsync(Guid id, string name, JsonObject data, DateTimeOffset expectedUpdatedAt, CancellationToken ct = default)
+    {
+        var old = await GetAsync(id, ct);
+        if (old?.UpdatedAt != expectedUpdatedAt) return null;
+        return await CompareExchangeBySlugAsync(old.TypeSlug, old.Slug, name, data, expectedUpdatedAt, ct);
+    }
+    public Task<bool> DeleteCanonicalAsync(Guid id, DateTimeOffset expectedUpdatedAt, CancellationToken ct = default) { lock (gate) { if (!entities.TryGetValue(id, out var entity) || entity.UpdatedAt != expectedUpdatedAt) return Task.FromResult(false); entities.Remove(id); return Task.FromResult(true); } }
     public Task DeleteAsync(Guid id, CancellationToken ct = default) { lock (gate) entities.Remove(id); return Task.CompletedTask; }
 }
 public sealed class TestRecords : IRecordStreams

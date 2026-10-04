@@ -24,7 +24,7 @@ public sealed class StoryAdministration(StoryStore store){
    string[] allowed=type switch{
     "storyboard-account"=>["google_issuer","google_subject","email","email_key","avatar","enabled","can_create","legacy_owner","legacy_id"],
     "storyboard-campaign"=>["state","creator","creation_name","workspace","description","summary","summary_stale","cover_asset","revision","archived","game_key","legacy_id"],
-    "storyboard-player"=>["account","campaign","role","role_ref","active"],
+    "storyboard-player"=>["account","campaign","role","role_ref","active","present"],
     "storyboard-character"=>["account","campaign","player","portrait","game_data","legacy_id","game_key"],
     _=>["key","campaign","google_client_id","portal_secret","legacy_workspace","portrait_type","character_fields","character_key"]};
    if(fields.ToJsonString().Length>65536||fields.Any(p=>!allowed.Contains(p.Key)&&p.Key is not "parent" and not "migration_run"))throw new StoryException("unknown_management_field");
