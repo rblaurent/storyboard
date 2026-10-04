@@ -25,6 +25,10 @@ import { SkipBackIcon } from '@phosphor-icons/react/dist/csr/SkipBack'
 import { SkipForwardIcon } from '@phosphor-icons/react/dist/csr/SkipForward'
 import { QueueIcon } from '@phosphor-icons/react/dist/csr/Queue'
 import { ListBulletsIcon } from '@phosphor-icons/react/dist/csr/ListBullets'
+import { PlaylistIcon } from '@phosphor-icons/react/dist/csr/Playlist'
+import { SpotifyLogoIcon } from '@phosphor-icons/react/dist/csr/SpotifyLogo'
+import { DotsSixVerticalIcon } from '@phosphor-icons/react/dist/csr/DotsSixVertical'
+import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -55,6 +59,10 @@ const icons = {
   next: SkipForwardIcon,
   queue: QueueIcon,
   list: ListBulletsIcon,
+  playlist: PlaylistIcon,
+  spotify: SpotifyLogoIcon,
+  drag: DotsSixVerticalIcon,
+  close: XIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */

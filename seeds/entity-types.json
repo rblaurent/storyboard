@@ -119,5 +119,38 @@
       "versioning": false,
       "description": "Durably ingested generated candidate awaiting promotion to a reusable music track."
     }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-music-playlist",
+    "name": "Storyboard music playlist",
+    "data": {
+      "icon": "ph-bold ph-playlist",
+      "color": "orange",
+      "versioning": true,
+      "description": "Campaign-owned playlist curated in Storyboard from Spotify and generated tracks."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-music-playlist-item",
+    "name": "Storyboard music playlist item",
+    "data": {
+      "icon": "ph-bold ph-list-numbers",
+      "color": "orange",
+      "versioning": true,
+      "description": "Ordered mixed-source track membership in a Storyboard playlist."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-music-queue-item",
+    "name": "Storyboard music queue item",
+    "data": {
+      "icon": "ph-bold ph-queue",
+      "color": "orange",
+      "versioning": true,
+      "description": "Durable campaign session queue item independent of a provider device queue."
+    }
   }
 ]

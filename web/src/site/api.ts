@@ -3,9 +3,10 @@ export interface Person { id: string; name: string; avatar: string }
 export interface Campaign { id: string; name: string; description: string; summary: string; summaryStale: boolean; image: string | null; archived: boolean; revision: number; role: 'gm' | 'player'; playerCount: number; players: Person[] }
 export interface Player extends Person { accountId: string; role: 'gm' | 'player'; characters: { id: string; name: string; portrait: string | null }[] }
 export interface Operation { id: string; kind: 'image' | 'summary'; state: 'pending' | 'refining' | 'generating' | 'saving' | 'completed' | 'failed'; error: string; refinedPrompt: string; applied: boolean }
-export interface MusicStatus { available: boolean; connected: boolean; displayName: string | null; error: string | null }
-export interface MusicPlaylist { id: string; name: string; imageUrl: string | null; trackCount: number; uri: string | null }
-export interface MusicTrack { id: string; name: string; artist: string; album: string | null; imageUrl: string | null; durationMs: number; uri: string }
+export interface MusicStatus { available: boolean; connected: boolean; displayName: string | null; deviceReady: boolean; error: string | null }
+export interface MusicPlaylist { id: string; name: string; description: string; trackCount: number }
+export interface MusicTrack { id: string; name: string; artist: string; album: string | null; imageUrl: string | null; durationMs: number; uri: string | null; sourceKind: 'spotify' | 'generated'; audioUrl: string | null }
+export interface MusicQueueItem { queueId: string; track: MusicTrack }
 export interface MusicPage<T> { items: T[]; offset: number; limit: number; total: number; hasMore: boolean }
 export interface MusicPlayback { available: boolean; playing: boolean; track: MusicTrack | null; progressMs: number; deviceId: string | null; deviceName: string | null; volumePercent: number; error: string | null }
 export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
@@ -22,6 +23,11 @@ const messages: Record<string, string> = {
   generation_queue_full: 'There are already several requests in progress. Please try again shortly.',
   music_service_unavailable: 'The campaign music service is not installed yet.',
   music_service_error: 'The music service could not complete that request. Your queue was not changed.',
+  spotify_no_active_device: 'Open Spotify on the device you want to use, start any track once, then try Play again. Your Storyboard queue is unchanged.',
+  spotify_playback_restricted: 'Spotify rejected remote playback for this account or device. Open Spotify there once, then try again.',
+  music_playlist_empty: 'That playlist is empty. Add a track before enqueuing it.',
+  invalid_music_track: 'That Spotify result could not be saved. Search again and retry.',
+  invalid_music_queue_item: 'That item could not be added to the session queue.',
   music_brief_invalid: 'The music brief came back malformed. Nothing was generated or charged.',
   music_generation_confirmation_required: 'Confirm the generation before Storyboard submits paid work.',
   music_generation_queue_full: 'Two score generations are already active. Wait for one to finish before starting another.',
@@ -54,7 +60,7 @@ export async function api<T>(path: string, csrf = '', method = 'GET', body?: unk
 // Remote images are limited to Google's verified avatar hosts. Campaign artwork is scoped media.
 export function imageSource(value: string | null | undefined): string | undefined {
   if (!value) return undefined
-  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/candidates\/[0-9a-f-]{36}\/cover)$/i.test(value)) return value
+  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/(?:candidates|tracks)\/[0-9a-f-]{36}\/cover)$/i.test(value)) return value
   try { const u = new URL(value); if (u.protocol === 'https:' && (/^lh[3-6]\.googleusercontent\.com$/.test(u.hostname) || u.hostname === 'i.scdn.co') && !u.username && !u.password && !u.port) return u.href } catch { /* Untrusted image URL. */ }
   return undefined
 }

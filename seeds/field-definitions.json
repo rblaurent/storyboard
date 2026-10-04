@@ -1288,5 +1288,122 @@
     "fieldType": "entity_ref",
     "sortOrder": 13,
     "constraints": "{\"target_type\": \"music-track\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist",
+    "slug": "campaign",
+    "name": "Campaign",
+    "fieldType": "entity_ref",
+    "sortOrder": 0,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist",
+    "slug": "description",
+    "name": "Description",
+    "fieldType": "string",
+    "sortOrder": 1
+  },
+  {
+    "parentType": "storyboard-music-playlist",
+    "slug": "active",
+    "name": "Active",
+    "fieldType": "boolean",
+    "sortOrder": 2,
+    "defaultValue": "true"
+  },
+  {
+    "parentType": "storyboard-music-playlist",
+    "slug": "created_by",
+    "name": "Created by",
+    "fieldType": "entity_ref",
+    "sortOrder": 3,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist-item",
+    "slug": "campaign",
+    "name": "Campaign",
+    "fieldType": "entity_ref",
+    "sortOrder": 0,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist-item",
+    "slug": "playlist",
+    "name": "Playlist",
+    "fieldType": "entity_ref",
+    "sortOrder": 1,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-music-playlist\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist-item",
+    "slug": "track",
+    "name": "Track",
+    "fieldType": "entity_ref",
+    "sortOrder": 2,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"music-track\"}"
+  },
+  {
+    "parentType": "storyboard-music-playlist-item",
+    "slug": "position",
+    "name": "Position",
+    "fieldType": "number",
+    "sortOrder": 3,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-playlist-item",
+    "slug": "active",
+    "name": "Active",
+    "fieldType": "boolean",
+    "sortOrder": 4,
+    "defaultValue": "true"
+  },
+  {
+    "parentType": "storyboard-music-queue-item",
+    "slug": "campaign",
+    "name": "Campaign",
+    "fieldType": "entity_ref",
+    "sortOrder": 0,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"storyboard-campaign\"}"
+  },
+  {
+    "parentType": "storyboard-music-queue-item",
+    "slug": "track",
+    "name": "Track",
+    "fieldType": "entity_ref",
+    "sortOrder": 1,
+    "isRequired": true,
+    "constraints": "{\"target_type\": \"music-track\"}"
+  },
+  {
+    "parentType": "storyboard-music-queue-item",
+    "slug": "position",
+    "name": "Position",
+    "fieldType": "number",
+    "sortOrder": 2,
+    "isRequired": true
+  },
+  {
+    "parentType": "storyboard-music-queue-item",
+    "slug": "active",
+    "name": "Active",
+    "fieldType": "boolean",
+    "sortOrder": 3,
+    "defaultValue": "true"
+  },
+  {
+    "parentType": "storyboard-music-queue-item",
+    "slug": "created_by",
+    "name": "Created by",
+    "fieldType": "entity_ref",
+    "sortOrder": 4,
+    "constraints": "{\"target_type\": \"storyboard-account\"}"
   }
 ]

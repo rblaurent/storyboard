@@ -8,7 +8,12 @@ using Microsoft.Extensions.Logging;
 namespace Leaf.Plugins.Storyboard;
 
 public sealed record MusicSituationWrite(string Situation);
-public sealed record MusicCommand(string Action, string? Uri, string? ContextUri, string[]? TrackUris, string? DeviceId);
+public sealed record MusicSearchWrite(string Query);
+public sealed record MusicTrackWrite(string Name, string Artist, string? Album, string? ImageUrl, int DurationMs, string Uri);
+public sealed record MusicPlaylistWrite(string Name, string? Description, string OperationId);
+public sealed record MusicPlaylistTrackWrite(string TrackId);
+public sealed record MusicQueueWrite(string? TrackId, string? PlaylistId, string OperationId);
+public sealed record MusicCommand(string Action, string? Uri, string? ContextUri, string[]? TrackUris, string? DeviceId, string? TrackId = null);
 public sealed record MusicBriefWrite(string Title, string Prompt, string Style, string NegativeTags, string Mood, string Energy, string Tempo, string[] Instruments, string NarrativeArc, int DurationSeconds, bool Instrumental);
 public sealed record MusicGenerationWrite(string OperationId, string Situation, MusicBriefWrite Brief, bool Confirmed);
 
@@ -22,23 +27,144 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         await campaigns.MembershipAsync(campaign, account, ct: ct);
         var playback = services.GetService<IMusicPlayback>();
         if (playback is null) return new { available = false, connected = false, displayName = (string?)null, error = "Music service is not installed." };
-        try { var value = await playback.GetStatusAsync(ct); return new { value.Available, value.Connected, value.DisplayName, value.Error }; }
+        try
+        {
+            var value = await playback.GetStatusAsync(ct);
+            var state = value.Connected ? await playback.GetPlaybackAsync(ct) : null;
+            return new { value.Available, value.Connected, value.DisplayName, deviceReady = !string.IsNullOrWhiteSpace(state?.DeviceId), value.Error };
+        }
         catch (Exception e) { return new { available = false, connected = false, displayName = (string?)null, error = e.Message }; }
     }
 
-    public async Task<MusicPage<MusicPlaylist>> PlaylistsAsync(string campaign, string account, int offset, int limit, CancellationToken ct)
+    public async Task<object> PlaylistsAsync(string campaign, string account, int offset, int limit, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, ct: ct);
-        try { return await Playback.GetPlaylistsAsync(Math.Max(0, offset), Math.Clamp(limit, 1, 50), ct); }
+        offset = Math.Max(0, offset); limit = Math.Clamp(limit, 1, 100);
+        var all = (await store.AllAsync("storyboard-music-playlist", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)).OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        var page = all.Skip(offset).Take(limit).ToArray();
+        var projections = new List<object>();
+        foreach (var playlist in page) projections.Add(await PlaylistProjectionAsync(playlist, ct));
+        return new { items = projections, offset, limit, total = all.Length, hasMore = offset + page.Length < all.Length };
+    }
+
+    public async Task<object> PlaylistAsync(string campaign, string account, string playlist, int offset, int limit, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        var entity = await store.RequireAsync("storyboard-music-playlist", playlist, ct);
+        if (entity.Data.Text("campaign") != campaign || !entity.Data.Flag("active")) throw new StoryException("not_found", 404);
+        offset = Math.Max(0, offset); limit = Math.Clamp(limit, 1, 100);
+        var all = (await store.AllAsync("storyboard-music-playlist-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["playlist"] = playlist, ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id).ToArray();
+        var items = new List<object>();
+        foreach (var item in all.Skip(offset).Take(limit)) items.Add(TrackProjection(await RequireTrackAsync(campaign, item.Data.Text("track"), ct)));
+        return new { items, offset, limit, total = all.Length, hasMore = offset + items.Count < all.Length };
+    }
+
+    public async Task<object> TracksAsync(string campaign, string account, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        var tracks = await store.AllAsync("music-track", new Dictionary<string, object?> { ["campaign"] = campaign }, ct);
+        return tracks.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Select(TrackProjection).ToArray();
+    }
+
+    public async Task<object> SearchAsync(string campaign, string account, MusicSearchWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        var query = StoryJson.Bounded(input?.Query, 180, true);
+        try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 24, ct)).Items.Select(SpotifyProjection).ToArray() }; }
         catch (Exception e) { throw ServiceError(e); }
     }
 
-    public async Task<MusicPage<MusicTrack>> PlaylistAsync(string campaign, string account, string playlist, int offset, int limit, CancellationToken ct)
+    public async Task<object> SaveTrackAsync(string campaign, string account, MusicTrackWrite input, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
-        playlist = StoryJson.Bounded(playlist, 180, true);
-        try { return await Playback.GetPlaylistTracksAsync(playlist, Math.Max(0, offset), Math.Clamp(limit, 1, 100), ct); }
-        catch (Exception e) { throw ServiceError(e); }
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        if (input is null || !System.Text.RegularExpressions.Regex.IsMatch(input.Uri ?? "", "^spotify:track:[A-Za-z0-9]{22}$")) throw new StoryException("invalid_music_track");
+        var image = string.IsNullOrWhiteSpace(input.ImageUrl) ? "" : input.ImageUrl!;
+        if (image.Length > 500 || image != "" && (!Uri.TryCreate(image, UriKind.Absolute, out var imageUri) || imageUri.Scheme != "https" || imageUri.Host != "i.scdn.co" || imageUri.UserInfo != "" || !imageUri.IsDefaultPort)) throw new StoryException("invalid_music_track");
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var campaignEntity = await store.RequireAsync("storyboard-campaign", campaign, ct);
+            var data = await store.ProtectAsync(new JsonObject
+            {
+                ["campaign"] = campaign, ["source_kind"] = "spotify", ["spotify_uri"] = input.Uri,
+                ["artist"] = StoryJson.Bounded(input.Artist, 300, true), ["album"] = StoryJson.Bounded(input.Album, 300),
+                ["image_url"] = image, ["duration_ms"] = Math.Clamp(input.DurationMs, 0, 24 * 60 * 60 * 1000),
+                ["source"] = "search", ["parent"] = campaignEntity.Data.Text("workspace")
+            }, ct);
+            var slug = "storyboard-spotify-" + StoryJson.Hash(campaign + "|" + input.Uri);
+            var saved = await store.ChangeAsync("music-track", slug, StoryJson.Bounded(input.Name, 300, true), old =>
+            {
+                if (old is not null && (old.Data.Text("campaign") != campaign || old.Data.Text("spotify_uri") != input.Uri)) throw new StoryException("operation_reused", 409);
+                return old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject();
+            }, ct);
+            await store.AuditAsync("music.track.saved", account, saved.Id.ToString(), new JsonObject { ["source"] = "spotify" }, ct);
+            return TrackProjection(saved);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    public async Task<object> CreatePlaylistAsync(string campaign, string account, MusicPlaylistWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        if (input is null) throw new StoryException("invalid_json");
+        var operation = StoryJson.Id(input.OperationId);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var c = await store.RequireAsync("storyboard-campaign", campaign, ct);
+            var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["description"] = StoryJson.Bounded(input.Description, 1000), ["active"] = true, ["created_by"] = account, ["parent"] = c.Data.Text("workspace") }, ct);
+            var slug = "playlist-" + StoryJson.Hash(campaign + "|" + account + "|" + operation.ToString("N"));
+            var saved = await store.ChangeAsync("storyboard-music-playlist", slug, StoryJson.Bounded(input.Name, 160, true), old =>
+            {
+                if (old is not null && (old.Data.Text("campaign") != campaign || old.Name != input.Name.Trim())) throw new StoryException("operation_reused", 409);
+                return old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject();
+            }, ct);
+            await store.AuditAsync("music.playlist.created", account, saved.Id.ToString(), ct: ct);
+            return await PlaylistProjectionAsync(saved, ct);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    public async Task<object> AddPlaylistTrackAsync(string campaign, string account, string playlistId, MusicPlaylistTrackWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var playlist = await RequirePlaylistAsync(campaign, playlistId, ct);
+            var track = await RequireTrackAsync(campaign, input?.TrackId ?? "", ct);
+            var current = await store.AllAsync("storyboard-music-playlist-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["playlist"] = playlistId, ["active"] = true }, ct);
+            var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["playlist"] = playlistId, ["track"] = track.Id.ToString(), ["position"] = current.Count == 0 ? 0 : current.Max(e => e.Data.Number("position")) + 1, ["active"] = true, ["parent"] = playlist.Id.ToString() }, ct);
+            var saved = await store.ChangeAsync("storyboard-music-playlist-item", "playlist-item-" + StoryJson.Hash(playlistId + "|" + track.Id), track.Name, old =>
+            {
+                var next = old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(); next["active"] = true; return next;
+            }, ct);
+            await store.AuditAsync("music.playlist.track_added", account, saved.Id.ToString(), ct: ct);
+            return await PlaylistProjectionAsync(playlist, ct);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    public async Task<object> RemovePlaylistTrackAsync(string campaign, string account, string playlistId, string trackId, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            await RequirePlaylistAsync(campaign, playlistId, ct);
+            await RequireTrackAsync(campaign, trackId, ct);
+            var slug = "playlist-item-" + StoryJson.Hash(playlistId + "|" + StoryJson.Id(trackId));
+            var item = await store.Entities.GetBySlugAsync("storyboard-music-playlist-item", slug, ct) ?? throw new StoryException("not_found", 404);
+            await store.CheckProtectionAsync(item, ct);
+            await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["active"] = false; return next; }, ct);
+            await store.AuditAsync("music.playlist.track_removed", account, item.Id.ToString(), ct: ct);
+            return new { ok = true };
+        }
+        finally { store.Commands.Release(); }
     }
 
     public async Task<object> FindAsync(string campaign, string account, MusicSituationWrite input, CancellationToken ct)
@@ -54,7 +180,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             Provenance = Provenance(campaign, account, "find")
         }, ct);
         var query = StoryJson.Bounded(completion.Text.Trim().Trim('"'), 180, true);
-        try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 20, ct)).Items }; }
+        try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 20, ct)).Items.Select(SpotifyProjection).ToArray() }; }
         catch (Exception e) { throw ServiceError(e); }
     }
 
@@ -82,11 +208,80 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         catch (Exception e) { return new(false, false, null, 0, null, null, 0, e.Message); }
     }
 
-    public async Task<IReadOnlyList<MusicTrack>> QueueAsync(string campaign, string account, CancellationToken ct)
+    public async Task<object> QueueAsync(string campaign, string account, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, ct: ct);
-        try { return await Playback.GetQueueAsync(ct); }
-        catch (Exception e) { throw ServiceError(e); }
+        var queue = (await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id).ToArray();
+        var items = new List<object>();
+        foreach (var item in queue) items.Add(new { queueId = item.Id, track = TrackProjection(await RequireTrackAsync(campaign, item.Data.Text("track"), ct)) });
+        return items;
+    }
+
+    public async Task<object> EnqueueAsync(string campaign, string account, MusicQueueWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        if (input is null || (string.IsNullOrWhiteSpace(input.TrackId) == string.IsNullOrWhiteSpace(input.PlaylistId))) throw new StoryException("invalid_music_queue_item");
+        var operation = StoryJson.Id(input.OperationId);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var tracks = new List<Leaf.Sdk.LeafEntity>();
+            if (!string.IsNullOrWhiteSpace(input.TrackId)) tracks.Add(await RequireTrackAsync(campaign, input.TrackId, ct));
+            else
+            {
+                var playlist = await RequirePlaylistAsync(campaign, input.PlaylistId!, ct);
+                var members = (await store.AllAsync("storyboard-music-playlist-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["playlist"] = playlist.Id.ToString(), ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id);
+                foreach (var member in members) tracks.Add(await RequireTrackAsync(campaign, member.Data.Text("track"), ct));
+            }
+            if (tracks.Count == 0) throw new StoryException("music_playlist_empty", 409);
+            var active = await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct);
+            var position = active.Count == 0 ? 0 : active.Max(e => e.Data.Number("position")) + 1;
+            for (var index = 0; index < tracks.Count; index++)
+            {
+                var track = tracks[index];
+                var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["track"] = track.Id.ToString(), ["position"] = position + index, ["active"] = true, ["created_by"] = account }, ct);
+                var slug = "queue-" + StoryJson.Hash(campaign + "|" + operation.ToString("N") + "|" + index);
+                await store.ChangeAsync("storyboard-music-queue-item", slug, track.Name, old =>
+                {
+                    if (old is not null && (old.Data.Text("campaign") != campaign || old.Data.Text("track") != track.Id.ToString())) throw new StoryException("operation_reused", 409);
+                    return old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject();
+                }, ct);
+            }
+            await store.AuditAsync("music.queue.enqueued", account, campaign, new JsonObject { ["count"] = tracks.Count }, ct);
+            return await QueueAsync(campaign, account, ct);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    public async Task<object> RemoveQueueItemAsync(string campaign, string account, string queueId, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var item = await store.RequireAsync("storyboard-music-queue-item", queueId, ct);
+            if (item.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
+            await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["active"] = false; return next; }, ct);
+            return await QueueAsync(campaign, account, ct);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    public async Task<object> ClearQueueAsync(string campaign, string account, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            foreach (var item in await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct))
+                await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["active"] = false; return next; }, ct);
+            await store.AuditAsync("music.queue.cleared", account, campaign, ct: ct);
+            return Array.Empty<object>();
+        }
+        finally { store.Commands.Release(); }
     }
 
     public async Task<MusicPlaybackState> CommandAsync(string campaign, string account, MusicCommand input, CancellationToken ct)
@@ -95,6 +290,13 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         if (input is null) throw new StoryException("invalid_json");
         try
         {
+            if (input.Action == "play" && !string.IsNullOrWhiteSpace(input.TrackId))
+            {
+                var track = await RequireTrackAsync(campaign, input.TrackId, ct);
+                if (track.Data.Text("source_kind") == "generated") throw new StoryException("browser_playback_required", 409);
+                await Playback.PlayAsync(null, [track.Data.Text("spotify_uri")], input.DeviceId, ct);
+                return await Playback.GetPlaybackAsync(ct);
+            }
             switch (input.Action)
             {
                 case "play": await Playback.PlayAsync(input.ContextUri, input.TrackUris, input.DeviceId, ct); break;
@@ -263,7 +465,48 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         return new { id = op.Id, state = op.Data.Text("state"), error = op.Data.Text("error"), creditsConsumed = op.Data.Number("credits_consumed"), candidates = candidates.OrderBy(c => c.Slug).Select(c => new { id = c.Id, title = c.Name, tags = c.Data.Text("tags"), durationSeconds = c.Data.Number("duration_seconds"), audio = $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/audio", cover = c.Data.Text("cover_asset") == "" ? null : $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/cover", promotedTrack = c.Data.Text("promoted_track") }) };
     }
 
-    private static object TrackProjection(Leaf.Sdk.LeafEntity track) => new { id = track.Id, name = track.Name, artist = track.Data.Text("artist"), album = track.Data.Text("album"), durationMs = track.Data.Number("duration_ms"), sourceKind = track.Data.Text("source_kind"), audio = track.Data.Text("audio_asset") == "" ? null : $"/api/campaigns/{track.Data.Text("campaign")}/music/tracks/{track.Id}/audio" };
+    public async Task<(byte[] Bytes, string ContentType)?> TrackCoverMediaAsync(string campaign, string account, string trackId, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        var track = await RequireTrackAsync(campaign, trackId, ct);
+        if (track.Data.Text("source_kind") != "generated" || track.Data.Text("cover_asset") == "") return null;
+        var file = await assets.ReadAsync(track.Data.Text("cover_asset"), ct);
+        return file is null ? null : (file.Bytes, file.ContentType);
+    }
+
+    private async Task<Leaf.Sdk.LeafEntity> RequireTrackAsync(string campaign, string trackId, CancellationToken ct)
+    {
+        var track = await store.RequireAsync("music-track", trackId, ct);
+        if (track.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
+        return track;
+    }
+
+    private async Task<Leaf.Sdk.LeafEntity> RequirePlaylistAsync(string campaign, string playlistId, CancellationToken ct)
+    {
+        var playlist = await store.RequireAsync("storyboard-music-playlist", playlistId, ct);
+        if (playlist.Data.Text("campaign") != campaign || !playlist.Data.Flag("active")) throw new StoryException("not_found", 404);
+        return playlist;
+    }
+
+    private async Task<object> PlaylistProjectionAsync(Leaf.Sdk.LeafEntity playlist, CancellationToken ct)
+    {
+        var count = (await store.AllAsync("storyboard-music-playlist-item", new Dictionary<string, object?> { ["campaign"] = playlist.Data.Text("campaign"), ["playlist"] = playlist.Id.ToString(), ["active"] = true }, ct)).Count;
+        return new { id = playlist.Id, name = playlist.Name, description = playlist.Data.Text("description"), trackCount = count };
+    }
+
+    private static object SpotifyProjection(MusicTrack track) => new { id = track.Id, name = track.Name, artist = track.Artist, album = track.Album, imageUrl = track.ImageUrl, durationMs = track.DurationMs, uri = track.Uri, sourceKind = "spotify", audioUrl = (string?)null };
+    private static object TrackProjection(Leaf.Sdk.LeafEntity track)
+    {
+        var generated = track.Data.Text("source_kind") == "generated";
+        return new
+        {
+            id = track.Id, name = track.Name, artist = track.Data.Text("artist"), album = track.Data.Text("album"), durationMs = track.Data.Number("duration_ms"),
+            sourceKind = track.Data.Text("source_kind"), uri = generated ? null : track.Data.Text("spotify_uri"),
+            imageUrl = generated && track.Data.Text("cover_asset") != "" ? $"/api/campaigns/{track.Data.Text("campaign")}/music/tracks/{track.Id}/cover" : NullIfEmpty(track.Data.Text("image_url")),
+            audioUrl = generated && track.Data.Text("audio_asset") != "" ? $"/api/campaigns/{track.Data.Text("campaign")}/music/tracks/{track.Id}/audio" : null
+        };
+    }
+    private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
     private Task<Leaf.Sdk.LeafEntity> SetAsync(Leaf.Sdk.LeafEntity entity, JsonObject patch, CancellationToken ct) => store.ChangeAsync(entity.TypeSlug, entity.Slug, entity.Name, old => { var next = old!.Data.DeepClone().AsObject(); foreach (var pair in patch) next[pair.Key] = pair.Value?.DeepClone(); return next; }, ct);
     private static JsonObject ValidateBrief(MusicBriefWrite brief)
     {
@@ -272,7 +515,13 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         return new JsonObject { ["title"] = StoryJson.Bounded(brief.Title, 120, true), ["prompt"] = StoryJson.Bounded(brief.Prompt, 2000, true), ["style"] = StoryJson.Bounded(brief.Style, 500), ["negativeTags"] = StoryJson.Bounded(brief.NegativeTags, 500), ["mood"] = StoryJson.Bounded(brief.Mood, 80), ["energy"] = energy, ["tempo"] = StoryJson.Bounded(brief.Tempo, 80), ["instruments"] = new JsonArray((brief.Instruments ?? []).Take(12).Select(v => (JsonNode?)JsonValue.Create(StoryJson.Bounded(v, 60, true))).ToArray()), ["narrativeArc"] = StoryJson.Bounded(brief.NarrativeArc, 500), ["durationSeconds"] = Math.Clamp(brief.DurationSeconds, 60, 240), ["instrumental"] = true };
     }
 
-    private static StoryException ServiceError(Exception e) => new("music_service_error", 502);
+    private static StoryException ServiceError(Exception e)
+    {
+        var message = e.Message;
+        if (message.Contains("NO_ACTIVE_DEVICE", StringComparison.OrdinalIgnoreCase) || message.Contains("No active device", StringComparison.OrdinalIgnoreCase)) return new StoryException("spotify_no_active_device", 409);
+        if (message.Contains("Premium", StringComparison.OrdinalIgnoreCase) || message.Contains("Spotify 403", StringComparison.OrdinalIgnoreCase)) return new StoryException("spotify_playback_restricted", 409);
+        return new StoryException("music_service_error", 502);
+    }
     private static ComputeProvenance Provenance(string campaign, string account, string action) => new(1,
         new ComputeOrigin("redleaf", new ComputeAppReference("plugin", "storyboard", null, "Storyboard"), new ComputeEntrypoint("api", "/api/public/storyboard/campaigns/music/" + action, "POST")),
         new ComputeActor("system", "Storyboard", Id: "storyboard"), new ComputeBeneficiary("system", Reason: "Requested by an authenticated Storyboard GM"),

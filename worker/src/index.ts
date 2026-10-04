@@ -33,13 +33,18 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/players/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
-  if (match(`/api/campaigns/${id}/music/(?:status|playback|queue)`)) allowed = (method === 'GET' || p.endsWith('/playback') && method === 'POST') && query([])
-  if (match(`/api/campaigns/${id}/music/(?:find|brief|generations)`)) allowed = method === 'POST' && query([])
-  if (match(`/api/campaigns/${id}/music/playlists`)) allowed = method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
-  if (match(`/api/campaigns/${id}/music/playlists/[A-Za-z0-9]{1,128}/tracks`)) allowed = method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
+  if (match(`/api/campaigns/${id}/music/status`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/music/playback`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/music/queue`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/music/queue/(?:clear|${id}/remove)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/music/(?:find|brief|search|generations)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/music/tracks`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/music/playlists`)) allowed = method === 'POST' && query([]) || method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
+  if (match(`/api/campaigns/${id}/music/playlists/${id}/tracks`)) allowed = method === 'POST' && query([]) || method === 'GET' && query(['offset', 'limit']) && keys.every(k => /^\d{1,3}$/.test(url.searchParams.get(k) || ''))
+  if (match(`/api/campaigns/${id}/music/playlists/${id}/tracks/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/music/generations/${id}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/candidates/${id}/promote`)) allowed = method === 'POST' && query([])
-  if (match(`/api/campaigns/${id}/music/candidates/${id}/(?:audio|cover)`) || match(`/api/campaigns/${id}/music/tracks/${id}/audio`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/music/candidates/${id}/(?:audio|cover)`) || match(`/api/campaigns/${id}/music/tracks/${id}/(?:audio|cover)`)) allowed = method === 'GET' && query([])
   return allowed ? { target: mount + p.slice(4), static: false, immutable: false } : null
 }
 
