@@ -1,12 +1,15 @@
 // DISPOSABLE API FIXTURE: proves source UI mechanics, never live authenticated acceptance.
 import type { Page } from '@playwright/test'
-import type { Campaign, MusicPlayback, MusicPlaylist, MusicQueueItem, MusicTrack, Operation, Player } from '../web/src/site/api'
+import type { Campaign, MusicPlayback, MusicPlaylist, MusicQueueItem, MusicTrack, Operation, Player, Visual, VisualGeneration, VisualQueueItem, VisualSession, VisualSet } from '../web/src/site/api'
 export const cid = '11111111-1111-4111-8111-111111111111'
 export const aid = '22222222-2222-4222-8222-222222222222'
 export const mid = '33333333-3333-4333-8333-333333333333'
 export const oid = '44444444-4444-4444-8444-444444444444'
 export const second = '55555555-5555-4555-8555-555555555555'
 export const candidate = '66666666-6666-4666-8666-666666666666'
+export const visualId = '12121212-1212-4121-8121-121212121212'
+export const visualCandidate = '13131313-1313-4131-8131-131313131313'
+export const visualSet = '14141414-1414-4141-8141-141414141414'
 export const csrf = 'b'.repeat(64)
 export async function fixture(page: Page, options: { player?: boolean; canCreate?: boolean; signedOut?: boolean } = {}) {
   const campaign: Campaign = { id: cid, name: 'The Glass Observatory', description: 'Above the cloud line, a silent observatory watches a sky that no longer follows its charts. Your crew has one night to discover what the astronomers left behind.', summary: 'A missing astronomer. A map of impossible stars. A small crew on the edge of a discovery that could change their world.', summaryStale: false, image: `/api/campaigns/${cid}/media/cover`, archived: false, revision: 3, role: options.player ? 'player' : 'gm', playerCount: 3, players: [{ id: aid, name: 'Alex', avatar: '' }, { id: mid, name: 'Sam', avatar: '' }, { id: second, name: 'Jules', avatar: '' }] }
@@ -15,14 +18,19 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
   const playlists: MusicPlaylist[] = [{ id: '99999999-9999-4999-8999-999999999999', name: 'Shinsekai Atmospheres', description: '', trackCount: 2 }, { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Quiet before the storm', description: '', trackCount: 1 }]
   const queue: MusicQueueItem[] = [{ queueId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', track: tracks[1] }]
   const playback: MusicPlayback = { available: true, playing: true, track: tracks[0], progressMs: 42000, deviceId: 'device-one', deviceName: 'Salle TV', volumePercent: 28, error: null }
+  const visuals: Visual[] = [{ id: visualId, name: 'The drowned court', mood: 'dread and wonder', tags: ['water', 'moonlight'], width: 1216, height: 768, imageUrl: `/api/campaigns/${cid}/visuals/images/${visualId}` }]
+  const visualSets: VisualSet[] = [{ id: visualSet, name: 'Drowned throne', description: '', imageCount: 1 }]
+  const visualQueue: VisualQueueItem[] = [{ queueId: '15151515-1515-4151-8151-151515151515', visual: visuals[0] }]
+  const visualSession: VisualSession = { campaignId: cid, revision: 0, playing: false, blackout: false, loop: true, intervalSeconds: 20, transition: 'crossfade', current: null, currentQueueId: '' }
+  const visualGeneration: VisualGeneration = { id: oid, state: 'completed', error: '', candidates: [{ id: visualCandidate, title: 'Shadow beneath the throne', prompt: 'A drowned throne room under cold moonlight, a vast shadow below.', mood: 'dread', tags: ['water', 'shadow'], imageUrl: `/api/campaigns/${cid}/visuals/candidates/${visualCandidate}/image`, promotedVisual: '' }] }
   const musicGeneration = { id: oid, state: 'completed', error: '', creditsConsumed: 12, candidates: [{ id: candidate, title: 'The Drowned Crown A', tags: 'dark cinematic ambient', durationSeconds: 150, audio: `/api/campaigns/${cid}/music/candidates/${candidate}/audio`, cover: null, promotedTrack: '' }] }
-  const state = { campaign, players, tracks, playlists, queue, playback, musicGeneration, operation: { id: oid, kind: 'image', state: 'generating', error: '', refinedPrompt: 'A quiet observatory above a vast cloud sea at dusk.', applied: false } as Operation, requests: [] as { path: string; method: string; body: Record<string, unknown> | null; csrf: string | undefined }[], conflict: false, createFail: false, generationFail: false, pollFail: false, signedOut: !!options.signedOut, meFail: false, lastGm: false }
+  const state = { campaign, players, tracks, playlists, queue, playback, musicGeneration, visuals, visualSets, visualQueue, visualSession, visualGeneration, operation: { id: oid, kind: 'image', state: 'generating', error: '', refinedPrompt: 'A quiet observatory above a vast cloud sea at dusk.', applied: false } as Operation, requests: [] as { path: string; method: string; body: Record<string, unknown> | null; csrf: string | undefined }[], conflict: false, createFail: false, generationFail: false, pollFail: false, signedOut: !!options.signedOut, meFail: false, lastGm: false }
   const art = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560"><defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#48576e"/><stop offset="1" stop-color="#d8ac7c"/></linearGradient><linearGradient id="cloud" x2="1" y2="0"><stop stop-color="#9ca9b0"/><stop offset="1" stop-color="#ddd6bf"/></linearGradient></defs><rect width="900" height="560" fill="url(#sky)"/><circle cx="710" cy="115" r="44" fill="#f5d5a0"/><path d="M0 380Q120 290 240 370T500 350T900 350V560H0Z" fill="url(#cloud)"/><path d="M0 470Q160 370 330 450T670 440T900 420V560H0Z" fill="#c6cbd0"/><path d="M310 560L395 240 565 255 640 560Z" fill="#39474b"/><path d="M370 280L405 168H560L590 280Z" fill="#b8aa88"/><path d="M390 170A85 85 0 0 1 560 170Z" fill="#2a3c49"/><path d="M450 280V215H510V280" fill="#273741"/><path d="M465 170V95L590 70" fill="none" stroke="#293842" stroke-width="13"/><path d="M395 300H565" stroke="#d0ba94" stroke-width="6"/><circle cx="155" cy="84" r="2" fill="#fff3d8"/><circle cx="290" cy="120" r="2" fill="#fff3d8"/></svg>'
   await page.route('**/api/**', async route => {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname; const method = req.method(); const body = req.postDataJSON() as Record<string, unknown> | null
     state.requests.push({ path: p + u.search, method, body, csrf: req.headers()['x-csrf-token'] })
     const json = (data: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
-    if (p.endsWith('/media/cover') || p.includes('/media/characters/') || p.endsWith(`/music/candidates/${candidate}/cover`)) return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'no-store' }, body: art })
+    if (p.endsWith('/media/cover') || p.includes('/media/characters/') || p.endsWith(`/music/candidates/${candidate}/cover`) || p.includes('/visuals/images/') || p.endsWith('/visuals/candidates/' + visualCandidate + '/image')) return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'no-store' }, body: art })
     if (p.endsWith(`/music/candidates/${candidate}/audio`)) return route.fulfill({ contentType: 'audio/mpeg', headers: { 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes' }, body: Buffer.from([1, 2, 3, 4, 5, 6]) })
     if (p === '/api/me') return state.signedOut ? json({ error: 'sign_in_required' }, 401) : state.meFail ? json({ error: 'storyboard_not_configured' }, 503) : json({ id: aid, name: 'Alex Morgan', avatar: '', canCreate: options.canCreate !== false, csrfToken: csrf })
     if (p === '/api/logout') { state.signedOut = true; return json({ ok: true }) }
@@ -50,6 +58,21 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
     if (p.includes('/music/generations/')) return json(state.musicGeneration)
     if (p.endsWith('/promote')) { state.musicGeneration.candidates[0].promotedTrack = '77777777-7777-4777-8777-777777777777'; return json({ id: state.musicGeneration.candidates[0].promotedTrack, name: state.musicGeneration.candidates[0].title, sourceKind: 'generated' }) }
     if (p.endsWith('/music/playback')) { if (method === 'POST') { if (body!.action === 'pause') state.playback.playing = false; if (body!.action === 'play') state.playback.playing = true }; return json(state.playback) }
+    if (p.endsWith('/visuals/profile')) return json({ artDirection: 'Painterly cinematic environments', negativePrompt: 'lettering, interface', defaultIntervalSeconds: 20, transition: 'crossfade' })
+    if (p.endsWith('/visuals/library')) return json(state.visuals)
+    if (p.endsWith('/visuals/match')) return json({ situation: String(body!.situation), suggestions: state.visuals, quickBrief: { title: 'Drowned court cue', transition: 'crossfade', intervalSeconds: 20, frames: [{ title: 'Drowned court', prompt: 'A drowned throne room under cold moonlight.', mood: 'dread', tags: ['water', 'moonlight'] }] } })
+    if (p.endsWith('/visuals/brief')) return json({ title: 'Drowned court sequence', transition: 'crossfade', intervalSeconds: 20, frames: [{ title: 'Still water', prompt: 'The drowned throne beneath cold moonlight.', mood: 'unease', tags: ['water'] }, { title: 'Rising shadow', prompt: 'A vast shadow moving beneath the throne.', mood: 'dread', tags: ['shadow'] }] })
+    if (p.endsWith('/visuals/generations')) return json(state.visualGeneration)
+    if (p.includes('/visuals/generations/')) return json(state.visualGeneration)
+    if (p.endsWith(`/visuals/candidates/${visualCandidate}/promote`)) { state.visualGeneration.candidates[0].promotedVisual = visualId; return json(state.visuals[0]) }
+    if (p.endsWith('/visuals/sets')) { if (method === 'POST') { const value: VisualSet = { id: '16161616-1616-4161-8161-161616161616', name: String(body!.name), description: '', imageCount: 0 }; state.visualSets.push(value); return json(value) }; return json(state.visualSets) }
+    if (p.includes('/visuals/sets/') && p.endsWith('/items')) { const set = state.visualSets.find(value => p.includes(value.id))!; set.imageCount += 1; return json(set) }
+    if (/\/visuals\/sets\/[0-9a-f-]{36}$/i.test(p)) return json({ set: state.visualSets.find(value => p.endsWith(value.id)), items: state.visuals })
+    if (p.endsWith('/visuals/queue')) { if (method === 'POST') state.visualQueue.push({ queueId: crypto.randomUUID(), visual: state.visuals[0] }); return json(state.visualQueue) }
+    if (p.endsWith('/visuals/queue/clear')) { state.visualQueue = []; return json(state.visualQueue) }
+    if (p.includes('/visuals/queue/') && p.endsWith('/remove')) { state.visualQueue = state.visualQueue.filter(item => !p.includes(item.queueId)); return json(state.visualQueue) }
+    if (p.endsWith('/visuals/session/commands')) { if (Number(body!.expectedRevision) !== state.visualSession.revision) return json({ error: 'visual_session_changed' }, 409); state.visualSession.revision += 1; const action = String(body!.action); if (action === 'show') { state.visualSession.current = state.visuals[0]; state.visualSession.playing = false; state.visualSession.blackout = false } if (action === 'play') { state.visualSession.current = state.visualSession.current || state.visuals[0]; state.visualSession.playing = true } if (action === 'pause') state.visualSession.playing = false; if (action === 'blackout') { state.visualSession.blackout = !state.visualSession.blackout; state.visualSession.playing = false }; return json(state.visualSession) }
+    if (p.endsWith('/visuals/session')) return json(state.visualSession)
     if (p.endsWith('/generate')) { if (state.generationFail) { state.generationFail = false; return json({ error: 'storyboard_unavailable' }, 503) }; state.operation.kind = body!.kind as 'image' | 'summary'; return json(state.operation) }
     if (p === `/api/campaigns/${cid}/operations/${oid}`) { if (state.pollFail) return json({ error: 'storyboard_unavailable' }, 503); return json(state.operation) }
     return json({ error: 'not_found' }, 404)

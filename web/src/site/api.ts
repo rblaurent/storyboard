@@ -12,6 +12,16 @@ export interface MusicPlayback { available: boolean; playing: boolean; track: Mu
 export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
 export interface MusicCandidate { id: string; title: string; tags: string; durationSeconds: number; audio: string; cover: string | null; promotedTrack: string }
 export interface MusicGeneration { id: string; state: 'pending' | 'generating' | 'ingesting' | 'completed' | 'failed'; error: string; creditsConsumed: number; candidates: MusicCandidate[] }
+export interface VisualProfile { artDirection: string; negativePrompt: string; defaultIntervalSeconds: number; transition: 'cut' | 'crossfade' }
+export interface Visual { id: string; name: string; mood: string; tags: string[]; width: number; height: number; imageUrl: string }
+export interface VisualMatch { situation: string; suggestions: Visual[]; quickBrief: VisualBrief }
+export interface VisualFrame { title: string; prompt: string; mood: string; tags: string[] }
+export interface VisualBrief { title: string; transition: 'cut' | 'crossfade'; intervalSeconds: number; frames: VisualFrame[] }
+export interface VisualCandidate extends VisualFrame { id: string; imageUrl: string; promotedVisual: string }
+export interface VisualGeneration { id: string; state: 'pending' | 'generating' | 'saving' | 'completed' | 'failed'; error: string; candidates: VisualCandidate[] }
+export interface VisualSet { id: string; name: string; description: string; imageCount: number }
+export interface VisualQueueItem { queueId: string; visual: Visual }
+export interface VisualSession { campaignId: string; revision: number; playing: boolean; blackout: boolean; loop: boolean; intervalSeconds: number; transition: 'cut' | 'crossfade'; current: Visual | null; currentQueueId: string }
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(code) } }
 const messages: Record<string, string> = {
   campaign_changed: 'This campaign changed elsewhere. Your draft is kept. Review the latest saved version before trying again.',
@@ -31,6 +41,12 @@ const messages: Record<string, string> = {
   music_brief_invalid: 'The music brief came back malformed. Nothing was generated or charged.',
   music_generation_confirmation_required: 'Confirm the generation before Storyboard submits paid work.',
   music_generation_queue_full: 'Two score generations are already active. Wait for one to finish before starting another.',
+  visual_generation_confirmation_required: 'Confirm the visual generation before Storyboard submits the render jobs.',
+  visual_generation_queue_full: 'Two visual generations are already active. Wait for one to finish before starting another.',
+  visual_set_empty: 'That visual set is empty. Add an image before enqueuing it.',
+  visual_queue_empty: 'Add an image or visual set to the projection queue before starting the slideshow.',
+  invalid_visual_queue_item: 'Choose either one image or one visual set to enqueue.',
+  visual_session_changed: 'The projection changed on another control surface. The latest state has been loaded.',
   account_disabled: 'This account is disabled. Contact the Storyboard administrator.',
   not_found: 'This item is unavailable, or you no longer have access.',
   storyboard_not_configured: 'Storyboard is still being prepared. Please try again later.',
@@ -60,7 +76,7 @@ export async function api<T>(path: string, csrf = '', method = 'GET', body?: unk
 // Remote images are limited to Google's verified avatar hosts. Campaign artwork is scoped media.
 export function imageSource(value: string | null | undefined): string | undefined {
   if (!value) return undefined
-  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/(?:candidates|tracks)\/[0-9a-f-]{36}\/cover)$/i.test(value)) return value
+  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/(?:candidates|tracks)\/[0-9a-f-]{36}\/cover|visuals\/(?:images\/[0-9a-f-]{36}|candidates\/[0-9a-f-]{36}\/image))$/i.test(value)) return value
   try { const u = new URL(value); if (u.protocol === 'https:' && (/^lh[3-6]\.googleusercontent\.com$/.test(u.hostname) || u.hostname === 'i.scdn.co') && !u.username && !u.password && !u.port) return u.href } catch { /* Untrusted image URL. */ }
   return undefined
 }

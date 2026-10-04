@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { SiteIcon } from './icons'
 import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
+import { ProjectionView, VisualDock, VisualsWorkspace } from './Visuals'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -89,24 +90,26 @@ export function App() {
     try {
       await api('/logout', me!.csrfToken, 'POST', {})
       // Operation receipts are only resume hints. Clear this browser's hints on sign-out.
-      for (const k of Object.keys(sessionStorage)) if (k.startsWith(`storyboard:operation:${me!.id}:`) || k.startsWith(`storyboard:music-generation:${me!.id}:`)) sessionStorage.removeItem(k)
+      for (const k of Object.keys(sessionStorage)) if (k.startsWith(`storyboard:operation:${me!.id}:`) || k.startsWith(`storyboard:music-generation:${me!.id}:`) || k.startsWith(`storyboard:visual-generation:${me!.id}:`)) sessionStorage.removeItem(k)
       setMe(null); navigate('/')
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
-  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music)$/i.exec(path)
-  useEffect(() => { if (match?.[1]) setPlayerCampaignId(match[1]) }, [match?.[1]])
+  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music|visuals)$/i.exec(path)
+  const projectionMatch = /^\/campaigns\/([0-9a-f-]{36})\/projection$/i.exec(path)
+  useEffect(() => { if (match?.[1] || projectionMatch?.[1]) setPlayerCampaignId((match || projectionMatch)![1]) }, [match?.[1], projectionMatch?.[1]])
   const campaignDashboard = !!(me && !loading && match)
-  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}`}>
+  const projection = !!(me && !loading && projectionMatch)
+  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
-    {!campaignDashboard && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
+    {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
       {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} />}
     </header>}
     <main id="main" className={campaignDashboard ? 'campaign-main' : undefined} tabIndex={-1}>
       {error && <ErrorMessage error={error} />}
-      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
+      {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {me && playerCampaignId && <PlayerDock campaignId={playerCampaignId} csrfToken={me.csrfToken} navigate={navigate} />}
-    <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>
+    {me && playerCampaignId && !projection && <div className="global-docks"><VisualDock campaignId={playerCampaignId} navigate={navigate} /><PlayerDock campaignId={playerCampaignId} csrfToken={me.csrfToken} navigate={navigate} /></div>}
+    {!projection && <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>}
   </div>
 }
 
@@ -231,10 +234,10 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout }: { id: stri
           </Menu>
         </div>
       </div>
-      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : 'music'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : 'Music'}</Link>)}</nav>
+      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music', 'visuals'].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'music' ? 'music' : 'images'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'music' ? 'Music' : 'Visuals'}</Link>)}</nav>
     </header>
     <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
-    {tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
+    {tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
       <div>
         {gm ? <form className="description-form" onSubmit={e => { e.preventDefault(); if (active) return; void perform(async () => { const value = await api<Campaign>(base, me.csrfToken, 'PUT', draftRef.current); if (mounted.current) { accept(value, true); setNotice('Campaign saved.') } }) }}><label htmlFor="campaign-name">Campaign name</label><input id="campaign-name" value={draft.name} onChange={e => edit('name', e.target.value)} required maxLength={120} /><label htmlFor="campaign-description">Description</label><textarea id="campaign-description" rows={12} maxLength={40000} value={draft.description} onChange={e => edit('description', e.target.value)} placeholder="Set the scene. What kind of world will your players step into?" /><label htmlFor="campaign-summary">Summary</label><textarea id="campaign-summary" rows={4} maxLength={1500} value={draft.summary} onChange={e => edit('summary', e.target.value)} placeholder="A short introduction for your table" /><div className="form-actions"><button className="primary" disabled={busy || active || !draft.name.trim() || !dirty.current}><SiteIcon name={busy ? 'busy' : 'save'} className={busy ? 'is-spinning' : undefined} />{busy ? 'Saving…' : 'Save changes'}</button><span className="quiet">{active ? 'Wait for the current request before saving.' : dirty.current ? 'Unsaved changes' : 'All changes saved'}</span></div></form> : <article className="read-description"><p>{campaign.description || 'Your Game Master has not added a description yet.'}</p></article>}
         {gm && dirty.current && <details className="saved-version"><summary>Review latest saved version</summary><button disabled={busy || active} onClick={() => void perform(async () => { await refresh(); setNotice('The latest saved version is shown below. Your draft is kept.') })}>Refresh saved version</button><h3>{campaign.name}</h3><p>{campaign.description || 'No saved description.'}</p><p>{campaign.summary || 'No saved summary.'}</p>{draft.expectedRevision !== campaign.revision && <button disabled={busy || active} onClick={reviewLatest}>Keep draft against latest revision</button>}</details>}

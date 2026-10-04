@@ -152,5 +152,53 @@
       "versioning": true,
       "description": "Durable campaign session queue item independent of a provider device queue."
     }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-profile",
+    "name": "Storyboard visual profile",
+    "data": { "icon": "ph-bold ph-palette", "color": "orange", "versioning": true, "description": "Campaign art direction and projection defaults." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual",
+    "name": "Storyboard visual",
+    "data": { "icon": "ph-bold ph-image", "color": "orange", "versioning": true, "description": "Reusable campaign atmosphere image backed by a protected Leaf Asset." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-generation",
+    "name": "Storyboard visual generation",
+    "data": { "icon": "ph-bold ph-sparkle", "color": "orange", "versioning": false, "description": "Recoverable and idempotent campaign visual generation request." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-candidate",
+    "name": "Storyboard visual candidate",
+    "data": { "icon": "ph-bold ph-image-square", "color": "orange", "versioning": false, "description": "Durably ingested generated visual awaiting promotion." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-set",
+    "name": "Storyboard visual set",
+    "data": { "icon": "ph-bold ph-images", "color": "orange", "versioning": true, "description": "Campaign-owned curated sequence of visuals." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-set-item",
+    "name": "Storyboard visual set item",
+    "data": { "icon": "ph-bold ph-list-numbers", "color": "orange", "versioning": true, "description": "Ordered visual membership in a campaign visual set." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-queue-item",
+    "name": "Storyboard visual queue item",
+    "data": { "icon": "ph-bold ph-queue", "color": "orange", "versioning": true, "description": "Durable projection queue item." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-visual-session",
+    "name": "Storyboard visual session",
+    "data": { "icon": "ph-bold ph-projector-screen", "color": "orange", "versioning": true, "description": "Server-authoritative campaign projection state." }
   }
 ]

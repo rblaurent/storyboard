@@ -15,7 +15,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music|visuals|projection)`)) {
     // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
     // Leaf instead of asking the static host for a file at the browser route.
     return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
@@ -48,6 +48,13 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/music/generations/${id}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/candidates/${id}/promote`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/music/candidates/${id}/(?:audio|cover)`) || match(`/api/campaigns/${id}/music/tracks/${id}/(?:audio|cover)`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/visuals/profile`)) allowed = ['GET', 'PUT'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/visuals/library`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/visuals/sets`) || match(`/api/campaigns/${id}/visuals/queue`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/visuals/(?:match|brief|generations)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/visuals/generations/${id}`) || match(`/api/campaigns/${id}/visuals/sets/${id}`) || match(`/api/campaigns/${id}/visuals/session`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/visuals/sets/${id}/items`) || match(`/api/campaigns/${id}/visuals/candidates/${id}/promote`) || match(`/api/campaigns/${id}/visuals/session/commands`) || match(`/api/campaigns/${id}/visuals/queue/(?:clear|${id}/remove)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/visuals/(?:images/${id}|candidates/${id}/image)`)) allowed = method === 'GET' && query([])
   return allowed ? { target: mount + p.slice(4), static: false, immutable: false } : null
 }
 

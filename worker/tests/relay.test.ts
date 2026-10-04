@@ -13,7 +13,7 @@ const url = (p: string) => new URL(origin + p)
 
 test('narrow route/method/query matrix includes only the frozen product boundary', () => {
   const routes: [string, string[]][] = [
-    ['/', ['GET']], [`/campaigns/${campaign}/description`, ['GET']], [`/campaigns/${campaign}/players`, ['GET']], [`/campaigns/${campaign}/music`, ['GET']],
+    ['/', ['GET']], [`/campaigns/${campaign}/description`, ['GET']], [`/campaigns/${campaign}/players`, ['GET']], [`/campaigns/${campaign}/music`, ['GET']], [`/campaigns/${campaign}/visuals`, ['GET']], [`/campaigns/${campaign}/projection`, ['GET']],
     ['/auth/google', ['GET']], ['/auth/callback?code=code&state=state&scope=openid&authuser=0&prompt=none', ['GET']], ['/api/me', ['GET']], ['/api/logout', ['POST']],
     ['/api/campaigns', ['GET', 'POST']], ['/api/campaigns?archived=true', ['GET']], [`/api/campaigns/${campaign}`, ['GET', 'PUT']], [`/api/campaigns/${campaign}/players`, ['GET', 'POST']],
     [`/api/campaigns/${campaign}/accounts?email=someone%40example.com`, ['GET']], [`/api/campaigns/${campaign}/archive`, ['POST']], [`/api/campaigns/${campaign}/restore`, ['POST']], [`/api/campaigns/${campaign}/generate`, ['POST']],
@@ -24,12 +24,15 @@ test('narrow route/method/query matrix includes only the frozen product boundary
     [`/api/campaigns/${campaign}/music/playback`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/browser-player`, ['POST']], [`/api/campaigns/${campaign}/music/queue`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/queue/clear`, ['POST']], [`/api/campaigns/${campaign}/music/queue/${member}/remove`, ['POST']],
     [`/api/campaigns/${campaign}/music/generations`, ['POST']], [`/api/campaigns/${campaign}/music/generations/${member}`, ['GET']], [`/api/campaigns/${campaign}/music/candidates/${member}/promote`, ['POST']],
     [`/api/campaigns/${campaign}/music/candidates/${member}/audio`, ['GET']], [`/api/campaigns/${campaign}/music/candidates/${member}/cover`, ['GET']], [`/api/campaigns/${campaign}/music/tracks/${member}/audio`, ['GET']], [`/api/campaigns/${campaign}/music/tracks/${member}/cover`, ['GET']],
+    [`/api/campaigns/${campaign}/visuals/profile`, ['GET', 'PUT']], [`/api/campaigns/${campaign}/visuals/library`, ['GET']], [`/api/campaigns/${campaign}/visuals/match`, ['POST']], [`/api/campaigns/${campaign}/visuals/brief`, ['POST']],
+    [`/api/campaigns/${campaign}/visuals/generations`, ['POST']], [`/api/campaigns/${campaign}/visuals/generations/${member}`, ['GET']], [`/api/campaigns/${campaign}/visuals/candidates/${member}/promote`, ['POST']], [`/api/campaigns/${campaign}/visuals/candidates/${member}/image`, ['GET']], [`/api/campaigns/${campaign}/visuals/images/${member}`, ['GET']],
+    [`/api/campaigns/${campaign}/visuals/sets`, ['GET', 'POST']], [`/api/campaigns/${campaign}/visuals/sets/${member}`, ['GET']], [`/api/campaigns/${campaign}/visuals/sets/${member}/items`, ['POST']], [`/api/campaigns/${campaign}/visuals/queue`, ['GET', 'POST']], [`/api/campaigns/${campaign}/visuals/queue/clear`, ['POST']], [`/api/campaigns/${campaign}/visuals/queue/${member}/remove`, ['POST']], [`/api/campaigns/${campaign}/visuals/session`, ['GET']], [`/api/campaigns/${campaign}/visuals/session/commands`, ['POST']],
     ['/assets/index-abcdefgh.js', ['GET']],
   ]
   for (const [path, methods] of routes) {
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) assert.equal(!!route(url(path), method), methods.includes(method), `${method} ${path}`)
   }
-  for (const path of ['/', `/campaigns/${campaign}/description`, `/campaigns/${campaign}/players`, `/campaigns/${campaign}/music`]) {
+  for (const path of ['/', `/campaigns/${campaign}/description`, `/campaigns/${campaign}/players`, `/campaigns/${campaign}/music`, `/campaigns/${campaign}/visuals`, `/campaigns/${campaign}/projection`]) {
     assert.equal(route(url(path), 'GET')?.target, '/api/public/storyboard/site/', path)
   }
   for (const path of ['/api/entities', '/api/apps/storyboard/manage/accounts', '/api/settings', '/api/campaigns?archived=false', '/api/campaigns?archived=true&archived=true', '/api/me?token=x', `/api/campaigns/${campaign}/accounts?email=a%40b&all=true`, `/api/campaigns/${campaign}/accounts`, '/assets/index.js', '/assets/index-abcdefgh.js?bypass=1', '/assets/%2e%2e%2fsecret.js', '/api//me', '/auth/google?return=https://evil.test', '/api/public/storyboard/me', `/api/campaigns/${campaign}/delete`, '/campaigns/not-an-id/description']) assert.equal(route(url(path), 'GET'), null, path)

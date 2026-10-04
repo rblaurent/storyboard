@@ -30,6 +30,10 @@ import { SpotifyLogoIcon } from '@phosphor-icons/react/dist/csr/SpotifyLogo'
 import { DotsSixVerticalIcon } from '@phosphor-icons/react/dist/csr/DotsSixVertical'
 import { XIcon } from '@phosphor-icons/react/dist/csr/X'
 import { ListIcon } from '@phosphor-icons/react/dist/csr/List'
+import { ProjectorScreenIcon } from '@phosphor-icons/react/dist/csr/ProjectorScreen'
+import { ImagesIcon } from '@phosphor-icons/react/dist/csr/Images'
+import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon'
+import { CornersOutIcon } from '@phosphor-icons/react/dist/csr/CornersOut'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -65,6 +69,10 @@ const icons = {
   drag: DotsSixVerticalIcon,
   close: XIcon,
   menu: ListIcon,
+  projector: ProjectorScreenIcon,
+  images: ImagesIcon,
+  blackout: MoonIcon,
+  fullscreen: CornersOutIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */
