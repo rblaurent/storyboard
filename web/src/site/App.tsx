@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { SiteIcon } from './icons'
 import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
-import { ProjectionView, VisualDock, VisualsWorkspace } from './Visuals'
+import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -73,6 +73,9 @@ export function App() {
   const [path, setPath] = useState(window.location.pathname)
   const [signingOut, setSigningOut] = useState(false)
   const [playerCampaignId, setPlayerCampaignId] = useState('')
+  const [liveExpanded, setLiveExpanded] = useState(() => {
+    try { const saved = localStorage.getItem('storyboard:live-expanded'); return saved === null ? window.matchMedia('(min-width: 1181px)').matches : saved === 'true' } catch { return true }
+  })
   const navigate = useCallback((next: string) => { history.pushState(null, '', next); setPath(next); window.scrollTo(0, 0) }, [])
   useEffect(() => {
     const pop = () => setPath(window.location.pathname)
@@ -99,7 +102,9 @@ export function App() {
   useEffect(() => { if (match?.[1] || projectionMatch?.[1]) setPlayerCampaignId((match || projectionMatch)![1]) }, [match?.[1], projectionMatch?.[1]])
   const campaignDashboard = !!(me && !loading && match)
   const projection = !!(me && !loading && projectionMatch)
-  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}`}>
+  const live = !!(me && playerCampaignId && !projection)
+  function setLive(value: boolean) { setLiveExpanded(value); try { localStorage.setItem('storyboard:live-expanded', String(value)) } catch { /* Browser storage may be disabled. */ } }
+  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel${liveExpanded ? ' live-expanded' : ' live-contracted'}` : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
       {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} />}
@@ -108,9 +113,20 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {me && playerCampaignId && !projection && <div className="global-docks"><VisualDock campaignId={playerCampaignId} navigate={navigate} /><PlayerDock campaignId={playerCampaignId} csrfToken={me.csrfToken} navigate={navigate} /></div>}
+    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LiveVisual campaignId={playerCampaignId} navigate={navigate} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} navigate={navigate} /></LivePanel>}
     {!projection && <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>}
   </div>
+}
+
+function LivePanel({ expanded, setExpanded, children }: { expanded: boolean; setExpanded: (value: boolean) => void; children: React.ReactNode }) {
+  return <aside className={`live-panel${expanded ? ' is-expanded' : ' is-contracted'}`} aria-label="Live view">
+    <header className="live-panel-header">
+      <button type="button" aria-label={expanded ? 'Contract Live view' : 'Expand Live view'} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><SiteIcon name={expanded ? 'collapsePanel' : 'expandPanel'} size={24} /></button>
+      <div><span>LIVE</span><strong>Live view</strong></div>
+      <i aria-hidden="true" />
+    </header>
+    <div className="live-panel-content">{children}</div>
+  </aside>
 }
 
 function Picker({ me, navigate }: { me: Account; navigate: (p: string) => void }) {
@@ -300,7 +316,7 @@ function spotifyWebPlaybackSdk() {
   return spotifySdkPromise
 }
 
-function PlayerDock({ campaignId, csrfToken, navigate }: { campaignId: string; csrfToken: string; navigate: (p: string) => void }) {
+function LiveMusic({ campaignId, csrfToken, navigate }: { campaignId: string; csrfToken: string; navigate: (p: string) => void }) {
   const [track, setTrack] = useState<MusicTrack | null>(null)
   const [sourceCampaignId, setSourceCampaignId] = useState(campaignId)
   const [playing, setPlaying] = useState(false)
@@ -420,12 +436,13 @@ function PlayerDock({ campaignId, csrfToken, navigate }: { campaignId: string; c
     if (playing) audio.current.pause(); else await audio.current.play()
     setPlaying(!playing)
   }
-  return <aside className="player-dock" aria-label="Browser campaign player">
+  return <section className="live-music" aria-label="Browser campaign player">
     <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
+    <div className="live-module-label"><SiteIcon name="music" /><span>MUSIC</span></div>
     <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{playerError || (track ? `${track.artist} · This browser` : 'Open Music to set the scene')}</small></span></Link>
     {track && <span className="player-progress">{trackTime(progress)} / {trackTime(track.durationMs)}</span>}
     <div className="player-controls"><button className="player-primary" disabled={!track} aria-label={playing ? 'Pause music in this browser' : 'Play music in this browser'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button></div>
-  </aside>
+  </section>
 }
 
 function PlaylistAdder({ track, playlists, disabled, add }: { track: MusicTrack; playlists: MusicPlaylist[]; disabled: boolean; add: (track: MusicTrack, playlist: MusicPlaylist) => void }) {

@@ -92,11 +92,17 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
   </section>
 }
 
-export function VisualDock({ campaignId, navigate }: { campaignId: string; navigate: (path: string) => void }) {
+export function LiveVisual({ campaignId, navigate }: { campaignId: string; navigate: (path: string) => void }) {
   const [session, setSession] = useState<VisualSession | null>(null)
   useEffect(() => { let alive = true; const read = () => void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { if (alive) setSession(v) }).catch(() => {}); read(); const timer = window.setInterval(read, 3000); return () => { alive = false; window.clearInterval(timer) } }, [campaignId])
-  if (!session?.current && !session?.blackout) return null
-  return <button className={`visual-dock${session.blackout ? ' is-blackout' : ''}`} onClick={() => navigate(`/campaigns/${campaignId}/visuals`)}>{session.blackout ? <span className="visual-dock-thumb" /> : <img src={imageSource(session.current?.imageUrl)} alt="" />}<span><small>NOW SHOWING</small><strong>{session.blackout ? 'Blackout' : session.current?.name}</strong></span><SiteIcon name="projector" /></button>
+  const title = session?.blackout ? 'Blackout' : session?.current?.name || 'Nothing showing'
+  return <section className={`live-visual${session?.blackout ? ' is-blackout' : ''}`} aria-label="Live visuals">
+    <div className="live-module-label"><SiteIcon name="projector" /><span>VISUALS</span>{session?.playing && <i aria-label="Slideshow playing" />}</div>
+    <button className="live-visual-preview" onClick={() => navigate(`/campaigns/${campaignId}/visuals`)} aria-label={`Open Visuals. ${title}`}>
+      {session?.blackout ? <span className="live-visual-blank" /> : session?.current ? <img src={imageSource(session.current.imageUrl)} alt="" /> : <span className="live-visual-empty"><SiteIcon name="images" size={32} /></span>}
+      <span><small>{session?.playing ? 'SLIDESHOW PLAYING' : 'NOW SHOWING'}</small><strong>{title}</strong></span>
+    </button>
+  </section>
 }
 
 export function ProjectionView({ campaignId }: { campaignId: string }) {

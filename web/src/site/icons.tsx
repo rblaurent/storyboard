@@ -34,6 +34,8 @@ import { ProjectorScreenIcon } from '@phosphor-icons/react/dist/csr/ProjectorScr
 import { ImagesIcon } from '@phosphor-icons/react/dist/csr/Images'
 import { MoonIcon } from '@phosphor-icons/react/dist/csr/Moon'
 import { CornersOutIcon } from '@phosphor-icons/react/dist/csr/CornersOut'
+import { CaretLeftIcon } from '@phosphor-icons/react/dist/csr/CaretLeft'
+import { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -73,6 +75,8 @@ const icons = {
   images: ImagesIcon,
   blackout: MoonIcon,
   fullscreen: CornersOutIcon,
+  expandPanel: CaretLeftIcon,
+  collapsePanel: CaretRightIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */
