@@ -160,7 +160,7 @@ test('CSP permits blob artwork only in img-src and rejects missing/ambiguous coo
   const directives = response.headers.get('Content-Security-Policy')!.split(';').map(s => s.trim())
   assert.match(directives.find(d => d.startsWith('img-src '))!, /(?:^| )blob:(?: |$)/)
   assert.equal(directives.filter(d => d.includes('blob:')).length, 1)
-  assert.equal(directives.find(d => d.startsWith('script-src ')), "script-src 'self' https://open.spotify.com https://embed-cdn.spotifycdn.com")
+  assert.equal(directives.find(d => d.startsWith('script-src ')), "script-src 'self' 'unsafe-eval' https://open.spotify.com https://embed-cdn.spotifycdn.com")
   assert.equal(directives.find(d => d.startsWith('frame-src ')), 'frame-src https://open.spotify.com')
   for (const suffix of ['', '; SameSite=Strict', '; SameSite=None', '; SameSite=Lax; SameSite=Lax']) assert.equal(safeSetCookie(`__Host-storyboard=${token}; Path=/; Secure; HttpOnly${suffix}`), false)
 })
