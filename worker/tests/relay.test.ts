@@ -163,6 +163,6 @@ test('CSP permits blobs only for scoped images/media and rejects missing/ambiguo
   assert.equal(directives.find(d => d.startsWith('script-src ')), "script-src 'self' 'unsafe-eval' https://sdk.scdn.co")
   assert.equal(directives.find(d => d.startsWith('connect-src ')), "connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co")
   assert.equal(directives.find(d => d.startsWith('media-src ')), "media-src 'self' blob: https://*.scdn.co")
-  assert.equal(directives.some(d => d.startsWith('frame-src ')), false)
+  assert.equal(directives.find(d => d.startsWith('frame-src ')), 'frame-src https://sdk.scdn.co')
   for (const suffix of ['', '; SameSite=Strict', '; SameSite=None', '; SameSite=Lax; SameSite=Lax']) assert.equal(safeSetCookie(`__Host-storyboard=${token}; Path=/; Secure; HttpOnly${suffix}`), false)
 })

@@ -4,7 +4,7 @@ const upstream = 'https://redleaf.minititine.cc'
 const mount = '/api/public/storyboard'
 const id = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
 const cookies = new Set(['__Host-storyboard', '__Host-storyboard-login'])
-const csp = "default-src 'none'; script-src 'self' 'unsafe-eval' https://sdk.scdn.co; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co; media-src 'self' blob: https://*.scdn.co; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+const csp = "default-src 'none'; script-src 'self' 'unsafe-eval' https://sdk.scdn.co; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co; media-src 'self' blob: https://*.scdn.co; frame-src https://sdk.scdn.co; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 
 interface Route { target: string; static: boolean; immutable: boolean }
 export function route(url: URL, method: string): Route | null {
