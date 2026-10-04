@@ -70,7 +70,8 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
     {
         await campaigns.MembershipAsync(campaign, account, ct: ct);
         var query = StoryJson.Bounded(input?.Query, 180, true);
-        try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 24, ct)).Items.Select(SpotifyProjection).ToArray() }; }
+        // Spotify Search accepts at most ten results per type since February 2026.
+        try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 10, ct)).Items.Select(SpotifyProjection).ToArray() }; }
         catch (Exception e) { throw ServiceError(e); }
     }
 
