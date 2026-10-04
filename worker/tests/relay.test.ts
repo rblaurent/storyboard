@@ -29,6 +29,9 @@ test('narrow route/method/query matrix includes only the frozen product boundary
   for (const [path, methods] of routes) {
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) assert.equal(!!route(url(path), method), methods.includes(method), `${method} ${path}`)
   }
+  for (const path of ['/', `/campaigns/${campaign}/description`, `/campaigns/${campaign}/players`, `/campaigns/${campaign}/music`]) {
+    assert.equal(route(url(path), 'GET')?.target, '/api/public/storyboard/site/', path)
+  }
   for (const path of ['/api/entities', '/api/apps/storyboard/manage/accounts', '/api/settings', '/api/campaigns?archived=false', '/api/campaigns?archived=true&archived=true', '/api/me?token=x', `/api/campaigns/${campaign}/accounts?email=a%40b&all=true`, `/api/campaigns/${campaign}/accounts`, '/assets/index.js', '/assets/index-abcdefgh.js?bypass=1', '/assets/%2e%2e%2fsecret.js', '/api//me', '/auth/google?return=https://evil.test', '/api/public/storyboard/me', `/api/campaigns/${campaign}/delete`, '/campaigns/not-an-id/description']) assert.equal(route(url(path), 'GET'), null, path)
   assert.ok(route(url(`/api/campaigns/${campaign}/music/queue`), 'GET'))
 })

@@ -16,7 +16,9 @@ export function route(url: URL, method: string): Route | null {
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
   if (p === '/' || match(`/campaigns/${id}/(?:description|players|music)`)) {
-    return method === 'GET' && query([]) ? { target: mount + '/site' + p, static: true, immutable: false } : null
+    // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
+    // Leaf instead of asking the static host for a file at the browser route.
+    return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
   }
   if (/^\/assets\/[A-Za-z0-9_-]+-[A-Za-z0-9_-]{8,}\.(?:js|css|woff2|svg|png|webp|jpg)$/.test(p)) {
     return method === 'GET' && query([]) ? { target: mount + '/site' + p, static: true, immutable: true } : null
