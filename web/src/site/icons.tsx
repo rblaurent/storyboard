@@ -29,6 +29,7 @@ import { PlaylistIcon } from '@phosphor-icons/react/dist/csr/Playlist'
 import { SpotifyLogoIcon } from '@phosphor-icons/react/dist/csr/SpotifyLogo'
 import { DotsSixVerticalIcon } from '@phosphor-icons/react/dist/csr/DotsSixVertical'
 import { XIcon } from '@phosphor-icons/react/dist/csr/X'
+import { ListIcon } from '@phosphor-icons/react/dist/csr/List'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -63,6 +64,7 @@ const icons = {
   spotify: SpotifyLogoIcon,
   drag: DotsSixVerticalIcon,
   close: XIcon,
+  menu: ListIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */
