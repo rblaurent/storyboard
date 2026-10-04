@@ -102,7 +102,7 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {me && playerCampaignId && <PlayerDock campaignId={playerCampaignId} navigate={navigate} />}
+    {me && playerCampaignId && <PlayerDock campaignId={playerCampaignId} csrfToken={me.csrfToken} navigate={navigate} />}
     <footer><span>Storyboard</span><span>A place for stories shared.</span></footer>
   </div>
 }
@@ -252,75 +252,141 @@ function MusicArtwork({ src, title, source }: { src: string | null; title: strin
   return safe && !failed ? <img className="music-art" src={safe} alt={`${title} cover`} onError={() => setFailed(true)} /> : <span className={`music-art music-art-empty${source ? ` is-${source}` : ''}`} aria-label={`${title} has no cover`}><SiteIcon name={source === 'spotify' ? 'spotify' : 'music'} /></span>
 }
 
-interface SpotifyEmbedController {
-  loadEntity(uri: string): void
-  play(): void
-  pause(): void
-  addListener(event: 'ready' | 'playback_started' | 'playback_update', listener: (event: { data?: { isPaused?: boolean; position?: number; duration?: number } }) => void): void
-  destroy(): void
+interface SpotifyWebPlaybackState { paused: boolean; position: number; duration: number }
+interface SpotifyWebPlayer {
+  addListener(event: string, listener: (value: any) => void): boolean
+  connect(): Promise<boolean>
+  disconnect(): void
+  activateElement(): Promise<void>
+  togglePlay(): Promise<void>
+  pause(): Promise<void>
 }
-interface SpotifyIframeApi { createController(element: HTMLElement, options: { uri: string; width: string; height: string }, ready: (controller: SpotifyEmbedController) => void): void }
-declare global { interface Window { onSpotifyIframeApiReady?: (api: SpotifyIframeApi) => void; __storyboardSpotifyIframeApi?: SpotifyIframeApi; __storyboardSpotifyControllerReady?: boolean } }
-let spotifyIframePromise: Promise<SpotifyIframeApi> | null = null
-function spotifyIframeApi() {
-  if (window.__storyboardSpotifyIframeApi) return Promise.resolve(window.__storyboardSpotifyIframeApi)
-  if (spotifyIframePromise) return spotifyIframePromise
-  spotifyIframePromise = new Promise(resolve => {
-    window.onSpotifyIframeApiReady = api => { window.__storyboardSpotifyIframeApi = api; resolve(api) }
-    const existing = document.querySelector<HTMLScriptElement>('script[data-storyboard-spotify-iframe]')
-    if (!existing) { const script = document.createElement('script'); script.src = 'https://open.spotify.com/embed/iframe-api/v1'; script.async = true; script.dataset.storyboardSpotifyIframe = ''; document.body.appendChild(script) }
-  })
-  return spotifyIframePromise
+interface SpotifyWebPlayerConstructor {
+  new(options: { name: string; getOAuthToken: (callback: (token: string) => void) => void; volume: number; enableMediaSession: boolean }): SpotifyWebPlayer
+}
+declare global {
+  interface Window {
+    Spotify?: { Player: SpotifyWebPlayerConstructor }
+    onSpotifyWebPlaybackSDKReady?: () => void
+    __storyboardSpotifyPlayerReady?: boolean
+  }
+}
+let spotifySdkPromise: Promise<void> | null = null
+function spotifyWebPlaybackSdk() {
+  if (window.Spotify) return Promise.resolve()
+  if (spotifySdkPromise) return spotifySdkPromise
+  spotifySdkPromise = new Promise<void>((resolve, reject) => {
+    const previous = window.onSpotifyWebPlaybackSDKReady
+    const timer = window.setTimeout(() => reject(new Error('spotify_sdk_timeout')), 15000)
+    const failed = () => { window.clearTimeout(timer); reject(new Error('spotify_sdk_unavailable')) }
+    window.onSpotifyWebPlaybackSDKReady = () => { window.clearTimeout(timer); previous?.(); resolve() }
+    const existing = document.querySelector<HTMLScriptElement>('script[data-storyboard-spotify-sdk]')
+    if (existing) existing.addEventListener('error', failed, { once: true })
+    else {
+      const script = document.createElement('script')
+      script.src = 'https://sdk.scdn.co/spotify-player.js'
+      script.async = true
+      script.dataset.storyboardSpotifySdk = ''
+      script.addEventListener('error', failed, { once: true })
+      document.body.appendChild(script)
+    }
+  }).catch(error => { spotifySdkPromise = null; throw error })
+  return spotifySdkPromise
 }
 
-function PlayerDock({ campaignId, navigate }: { campaignId: string; navigate: (p: string) => void }) {
+function PlayerDock({ campaignId, csrfToken, navigate }: { campaignId: string; csrfToken: string; navigate: (p: string) => void }) {
   const [track, setTrack] = useState<MusicTrack | null>(null)
   const [sourceCampaignId, setSourceCampaignId] = useState(campaignId)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [playerError, setPlayerError] = useState('')
   const audio = useRef<HTMLAudioElement>(null)
-  const embed = useRef<HTMLDivElement>(null)
-  const spotify = useRef<SpotifyEmbedController | null>(null)
-  const spotifyCreating = useRef(false)
-  const pendingSpotifyUri = useRef('')
+  const spotify = useRef<SpotifyWebPlayer | null>(null)
+  const spotifyCreating = useRef<Promise<SpotifyWebPlayer> | null>(null)
+  const spotifyDeviceId = useRef('')
+  const tokenCampaignId = useRef(campaignId)
+  const playerErrorRef = useRef('')
   useEffect(() => {
     let disposed = false
-    const announceReady = (ready: boolean) => {
-      window.__storyboardSpotifyControllerReady = ready
-      window.dispatchEvent(new CustomEvent('storyboard:spotify-player-ready', { detail: { ready } }))
+    const announceReady = (ready: boolean, error = '') => {
+      window.__storyboardSpotifyPlayerReady = ready
+      playerErrorRef.current = error
+      setPlayerError(error)
+      window.dispatchEvent(new CustomEvent('storyboard:spotify-player-ready', { detail: { ready, error } }))
     }
-    const prepare = (uri: string) => {
-      if (!uri) return
-      pendingSpotifyUri.current = uri
-      if (spotify.current) { announceReady(true); return }
-      if (spotifyCreating.current) return
-      spotifyCreating.current = true
-      void spotifyIframeApi().then(api => {
-        if (disposed || !embed.current || !pendingSpotifyUri.current) return
-        const initialUri = pendingSpotifyUri.current
-        api.createController(embed.current, { uri: initialUri, width: '100%', height: '80' }, controller => {
-          if (disposed) { controller.destroy(); return }
-          spotify.current = controller
-          spotifyCreating.current = false
-          controller.addListener('playback_started', () => setPlaying(true))
-          controller.addListener('playback_update', event => { setPlaying(!event.data?.isPaused); setProgress(event.data?.position || 0) })
-          if (pendingSpotifyUri.current !== initialUri) controller.loadEntity(pendingSpotifyUri.current)
-          announceReady(true)
+    const ensurePlayer = () => {
+      if (spotify.current && spotifyDeviceId.current) return Promise.resolve(spotify.current)
+      if (spotifyCreating.current) return spotifyCreating.current
+      announceReady(false)
+      spotifyCreating.current = spotifyWebPlaybackSdk().then(() => new Promise<SpotifyWebPlayer>((resolve, reject) => {
+        if (disposed || !window.Spotify) { reject(new Error('spotify_sdk_unavailable')); return }
+        const player = new window.Spotify.Player({
+          name: 'Storyboard · This browser',
+          volume: 0.72,
+          enableMediaSession: true,
+          getOAuthToken: callback => {
+            void api<{ accessToken: string }>(`/campaigns/${tokenCampaignId.current}/music/browser-player`, csrfToken, 'POST', {})
+              .then(value => callback(value.accessToken))
+              .catch(cause => { announceReady(false, explain(cause)); callback('') })
+          },
         })
-      })
+        spotify.current = player
+        let settled = false
+        const failed = (message: string) => {
+          announceReady(false, message)
+          if (!settled) { settled = true; reject(new Error('spotify_player_unavailable')) }
+        }
+        player.addListener('ready', ({ device_id }: { device_id: string }) => {
+          if (disposed) { player.disconnect(); return }
+          spotifyDeviceId.current = device_id
+          announceReady(true)
+          if (!settled) { settled = true; resolve(player) }
+        })
+        player.addListener('not_ready', () => { spotifyDeviceId.current = ''; announceReady(false, 'The browser player went offline. Tap Play to reconnect it.') })
+        player.addListener('player_state_changed', (state: SpotifyWebPlaybackState | null) => {
+          if (!state) return
+          setPlaying(!state.paused)
+          setProgress(state.position || 0)
+        })
+        player.addListener('initialization_error', () => failed('This browser cannot start protected Spotify playback.'))
+        player.addListener('authentication_error', () => failed('Reconnect Spotify once in Smart Home settings to enable full browser playback.'))
+        player.addListener('account_error', () => failed('Full browser playback requires a Spotify Premium account.'))
+        player.addListener('playback_error', () => announceReady(true, 'Spotify could not play that track. Try another track.'))
+        player.addListener('autoplay_failed', () => announceReady(true, 'Tap Play once more to allow audio in this browser.'))
+        void player.connect().then(connected => { if (!connected) failed('Spotify could not connect this browser player.') }).catch(() => failed('Spotify could not connect this browser player.'))
+      })).catch(error => {
+        spotify.current?.disconnect()
+        spotify.current = null
+        spotifyDeviceId.current = ''
+        if (!playerErrorRef.current) announceReady(false, 'Spotify could not prepare the browser player. Tap Play to retry.')
+        throw error
+      }).finally(() => { spotifyCreating.current = null })
+      return spotifyCreating.current
     }
-    const warm = (event: Event) => prepare((event as CustomEvent<{ uri: string }>).detail?.uri || '')
-    const play = (event: Event) => {
+    const warm = (event: Event) => {
+      const detail = (event as CustomEvent<{ uri: string; campaignId: string }>).detail
+      if (!detail?.uri) return
+      tokenCampaignId.current = detail.campaignId
+      void ensurePlayer().catch(() => {})
+    }
+    const play = async (event: Event) => {
       const detail = (event as CustomEvent<{ track: MusicTrack; campaignId: string }>).detail
       if (!detail?.track) return
+      tokenCampaignId.current = detail.campaignId
       setTrack(detail.track); setSourceCampaignId(detail.campaignId); setProgress(0)
       if (detail.track.sourceKind === 'generated' && detail.track.audioUrl) {
-        spotify.current?.pause(); pendingSpotifyUri.current = ''
+        void spotify.current?.pause()
         if (audio.current) { audio.current.src = detail.track.audioUrl; audio.current.currentTime = 0; void audio.current.play().then(() => setPlaying(true)).catch(() => setPlaying(false)) }
       } else if (detail.track.sourceKind === 'spotify' && detail.track.uri) {
-        audio.current?.pause(); pendingSpotifyUri.current = detail.track.uri; setPlaying(false)
-        if (spotify.current) { spotify.current.loadEntity(detail.track.uri); spotify.current.play() }
-        else prepare(detail.track.uri)
+        audio.current?.pause(); setPlaying(false)
+        const active = spotify.current
+        if (active) void active.activateElement()
+        try {
+          const player = await ensurePlayer()
+          if (player !== active) await player.activateElement()
+          await api(`/campaigns/${detail.campaignId}/music/playback`, csrfToken, 'POST', { action: 'play', trackUris: [detail.track.uri], deviceId: spotifyDeviceId.current })
+          setPlaying(true)
+        } catch (cause) { announceReady(false, cause instanceof ApiError ? explain(cause) : playerErrorRef.current || 'Spotify could not play in this browser.'); setPlaying(false) }
       }
     }
     window.addEventListener('storyboard:prepare-spotify-track', warm)
@@ -329,21 +395,24 @@ function PlayerDock({ campaignId, navigate }: { campaignId: string; navigate: (p
       disposed = true
       window.removeEventListener('storyboard:prepare-spotify-track', warm)
       window.removeEventListener('storyboard:play-track', play)
-      spotify.current?.destroy(); spotify.current = null; announceReady(false)
+      spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; announceReady(false)
     }
-  }, [])
+  }, [csrfToken])
   async function toggle() {
     if (!track) return
-    if (track.sourceKind === 'spotify') { if (playing) spotify.current?.pause(); else spotify.current?.play(); return }
+    if (track.sourceKind === 'spotify') {
+      if (!spotify.current) return
+      await spotify.current.activateElement()
+      await spotify.current.togglePlay()
+      return
+    }
     if (!audio.current) return
     if (playing) audio.current.pause(); else await audio.current.play()
     setPlaying(!playing)
   }
-  const spotifyTrack = track?.sourceKind === 'spotify'
-  return <aside className={`player-dock${spotifyTrack ? ' is-spotify' : ''}`} aria-label="Browser campaign player">
+  return <aside className="player-dock" aria-label="Browser campaign player">
     <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
-    <div className={`spotify-embed${spotifyTrack ? '' : ' is-hidden'}`} ref={embed} aria-label="Spotify browser player" aria-hidden={!spotifyTrack} />
-    <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{track ? `${track.artist} · This browser` : 'Open Music to set the scene'}</small></span></Link>
+    <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{playerError || (track ? `${track.artist} · This browser` : 'Open Music to set the scene')}</small></span></Link>
     {track && <span className="player-progress">{trackTime(progress)} / {trackTime(track.durationMs)}</span>}
     <div className="player-controls"><button className="player-primary" disabled={!track} aria-label={playing ? 'Pause music in this browser' : 'Play music in this browser'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button></div>
   </aside>
@@ -378,17 +447,20 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [spotifyPlayerReady, setSpotifyPlayerReady] = useState(() => !!window.__storyboardSpotifyControllerReady)
+  const [spotifyPlayer, setSpotifyPlayer] = useState(() => ({ ready: !!window.__storyboardSpotifyPlayerReady, error: '' }))
   const visible = results.length ? results : selected ? playlistTracks : pool
   const firstSpotifyUri = visible.find(track => track.sourceKind === 'spotify' && track.uri)?.uri || ''
   useEffect(() => {
-    const changed = (event: Event) => setSpotifyPlayerReady(!!(event as CustomEvent<{ ready: boolean }>).detail?.ready)
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ ready: boolean; error?: string }>).detail
+      setSpotifyPlayer({ ready: !!detail?.ready, error: detail?.error || '' })
+    }
     window.addEventListener('storyboard:spotify-player-ready', changed)
     return () => window.removeEventListener('storyboard:spotify-player-ready', changed)
   }, [])
   useEffect(() => {
-    if (firstSpotifyUri) window.dispatchEvent(new CustomEvent('storyboard:prepare-spotify-track', { detail: { uri: firstSpotifyUri } }))
-  }, [firstSpotifyUri])
+    if (gm && firstSpotifyUri) window.dispatchEvent(new CustomEvent('storyboard:prepare-spotify-track', { detail: { uri: firstSpotifyUri, campaignId: id } }))
+  }, [firstSpotifyUri, gm, id])
   useEffect(() => {
     const c = new AbortController(); setError('')
     Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal), api<MusicQueueItem[]>(base + '/queue', '', 'GET', undefined, c.signal)])
@@ -420,7 +492,7 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const saved = (track: MusicTrack) => pool.find(item => item.id === track.id || !!track.uri && item.uri === track.uri)
   return <section className="music-workspace">
     <div className="music-heading"><div><span className="eyebrow">SCORE THE SESSION</span><h2>Music</h2><p>Curate mixed-source playlists, search Spotify, generate scores, and run one campaign queue.</p></div><div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? 'Spotify catalogue connected' : status?.error || 'Checking music service…'}</div></div>
-    <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
+    <ErrorMessage error={error} />{spotifyPlayer.error && <Feedback tone="error">{spotifyPlayer.error}</Feedback>}{notice && <Feedback tone="notice">{notice}</Feedback>}
     <form className="scene-composer panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="music-situation">What is happening right now?</label><textarea id="music-situation" value={situation} onChange={e => setSituation(e.target.value)} maxLength={2000} rows={3} placeholder="The party enters the drowned throne room while something enormous moves below the water…" /><div className="scene-actions"><button className="primary" disabled={!gm || !situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the room…' : 'Find music'}</button><button type="button" className="accent" disabled={!gm || !situation.trim() || !!busy} onClick={() => void compose()}><SiteIcon name="generate" />{busy === 'brief' ? 'Shaping the score…' : 'Compose new'}</button><span className="quiet">Find uses Fast. Compose uses Deep and stops before any paid generation.</span></div></form>
     {brief && <section className="music-brief panel" aria-label="Generation brief"><div><span className="eyebrow">READY TO COMPOSE</span><h3>{brief.title}</h3><p>{brief.prompt}</p></div><dl><div><dt>Mood</dt><dd>{brief.mood}</dd></div><div><dt>Energy</dt><dd>{brief.energy}</dd></div><div><dt>Tempo</dt><dd>{brief.tempo}</dd></div><div><dt>Length</dt><dd>{trackTime(brief.durationSeconds * 1000)}</dd></div></dl><p className="brief-style"><strong>Style</strong> {brief.style}</p><p className="quiet">{brief.instruments.join(' · ')}</p>{!generation && !confirming && <button className="accent" onClick={() => setConfirming(true)} disabled={!!busy}><SiteIcon name="generate" />Generate candidates</button>}{confirming && <div className="generation-confirm"><strong>This submits paid music generation.</strong><span>The brief above is the exact prompt snapshot. Retrying this confirmation reuses the same operation ID.</span><div><button className="accent" onClick={() => void generate()} disabled={!!busy}>{busy === 'generate' ? 'Submitting…' : 'Confirm and generate'}</button><button onClick={() => setConfirming(false)} disabled={!!busy}>Cancel</button></div></div>}{!generation && <p className="quiet">No credits have been spent.</p>}</section>}
     {generation && <section className="candidate-panel panel" aria-live="polite"><div className="music-section-title"><div><span className="eyebrow">GENERATED CANDIDATES</span><h3>{generation.state === 'completed' ? 'Choose what becomes part of the campaign' : generation.state === 'failed' ? 'Generation stopped' : 'Your score is being created'}</h3></div><span>{generation.state}</span></div>{generation.error && <Feedback tone="error">{generation.error}</Feedback>}{!['completed', 'failed'].includes(generation.state) && <p role="status">{generation.state === 'ingesting' ? 'Saving every candidate into Leaf Assets…' : 'Generating with the confirmed brief…'}</p>}{generation.candidates.map(candidate => <article className="candidate-row" key={candidate.id}><MusicArtwork src={candidate.cover} title={candidate.title} source="generated" /><div><strong>{candidate.title}</strong><small>{candidate.tags || brief?.style || 'generated score'} · {trackTime(candidate.durationSeconds * 1000)}</small><audio controls preload="metadata" src={candidate.audio}>Your browser cannot play this audio.</audio></div><button disabled={!!candidate.promotedTrack || !!busy} onClick={() => void promote(candidate.id)}><SiteIcon name="plus" />{candidate.promotedTrack ? 'Saved to pool' : 'Save to pool'}</button></article>)}{generation.state === 'failed' && generationCommand.current && <button disabled={!!busy} onClick={() => void generate()}>Retry same operation</button>}{generation.state === 'completed' && <p className="quiet">Credits recorded: {generation.creditsConsumed}. Every candidate is already stored durably, even before promotion.</p>}</section>}
@@ -430,13 +502,13 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
       <section className="music-tracks">
         <div className="music-section-title">
           <div><span className="eyebrow">{results.length ? 'SPOTIFY RESULTS' : selected ? 'PLAYLIST' : 'CAMPAIGN LIBRARY'}</span><h3>{results.length ? `For “${query}”` : selected?.name || 'Track pool'}</h3></div>
-          <span>{!spotifyPlayerReady && firstSpotifyUri ? 'Preparing player…' : `${visible.length} tracks`}</span>
+          <span>{!spotifyPlayer.ready && !spotifyPlayer.error && gm && firstSpotifyUri ? 'Preparing player…' : spotifyPlayer.error ? 'Player needs attention' : `${visible.length} tracks`}</span>
         </div>
         {results.length > 0 && <button className="back-to-pool" onClick={() => setResults([])}><SiteIcon name="back" />Back to {selected ? selected.name : 'track pool'}</button>}
         {busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist is empty. Add tracks from the pool.' : 'Search Spotify or save a generated candidate to begin.'}</p></div> : <div className="track-list">{visible.map((track, i) => {
           const stored = saved(track)
           const draggable = stored || (!results.length && track)
-          const preparingSpotify = track.sourceKind === 'spotify' && !spotifyPlayerReady
+          const preparingSpotify = track.sourceKind === 'spotify' && !spotifyPlayer.ready && !spotifyPlayer.error
           return <article className="track-row" key={`${track.id}-${i}`} draggable={!!gm && !!draggable} onDragStart={event => draggable && drag(event, { kind: 'track', id: draggable.id, label: draggable.name })}>
             <span className="drag-handle" aria-hidden="true"><SiteIcon name="drag" size={16} /></span>
             <MusicArtwork src={track.imageUrl} title={track.name} source={track.sourceKind} />

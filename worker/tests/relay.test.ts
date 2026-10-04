@@ -21,7 +21,7 @@ test('narrow route/method/query matrix includes only the frozen product boundary
     [`/api/campaigns/${campaign}/music/status`, ['GET']], [`/api/campaigns/${campaign}/music/playlists?offset=0&limit=50`, ['GET']], [`/api/campaigns/${campaign}/music/playlists`, ['GET', 'POST']],
     [`/api/campaigns/${campaign}/music/playlists/${member}/tracks?offset=0&limit=100`, ['GET']], [`/api/campaigns/${campaign}/music/playlists/${member}/tracks`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/playlists/${member}/tracks/${member}/remove`, ['POST']],
     [`/api/campaigns/${campaign}/music/tracks`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/search`, ['POST']], [`/api/campaigns/${campaign}/music/find`, ['POST']], [`/api/campaigns/${campaign}/music/brief`, ['POST']],
-    [`/api/campaigns/${campaign}/music/playback`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/queue`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/queue/clear`, ['POST']], [`/api/campaigns/${campaign}/music/queue/${member}/remove`, ['POST']],
+    [`/api/campaigns/${campaign}/music/playback`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/browser-player`, ['POST']], [`/api/campaigns/${campaign}/music/queue`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/queue/clear`, ['POST']], [`/api/campaigns/${campaign}/music/queue/${member}/remove`, ['POST']],
     [`/api/campaigns/${campaign}/music/generations`, ['POST']], [`/api/campaigns/${campaign}/music/generations/${member}`, ['GET']], [`/api/campaigns/${campaign}/music/candidates/${member}/promote`, ['POST']],
     [`/api/campaigns/${campaign}/music/candidates/${member}/audio`, ['GET']], [`/api/campaigns/${campaign}/music/candidates/${member}/cover`, ['GET']], [`/api/campaigns/${campaign}/music/tracks/${member}/audio`, ['GET']], [`/api/campaigns/${campaign}/music/tracks/${member}/cover`, ['GET']],
     ['/assets/index-abcdefgh.js', ['GET']],
@@ -155,12 +155,14 @@ test('actual Access issue/login-cleanup/logout headers propagate through relay',
     assert.deepEqual(response.headers.getSetCookie(), [cookie])
   }
 })
-test('CSP permits blob artwork only in img-src and rejects missing/ambiguous cookie SameSite', async () => {
+test('CSP permits blobs only for scoped images/media and rejects missing/ambiguous cookie SameSite', async () => {
   const response = await relay(new Request(origin + '/'), env, (async () => new Response('<html></html>')) as typeof fetch)
   const directives = response.headers.get('Content-Security-Policy')!.split(';').map(s => s.trim())
   assert.match(directives.find(d => d.startsWith('img-src '))!, /(?:^| )blob:(?: |$)/)
-  assert.equal(directives.filter(d => d.includes('blob:')).length, 1)
-  assert.equal(directives.find(d => d.startsWith('script-src ')), "script-src 'self' 'unsafe-eval' https://open.spotify.com https://embed-cdn.spotifycdn.com")
-  assert.equal(directives.find(d => d.startsWith('frame-src ')), 'frame-src https://open.spotify.com')
+  assert.deepEqual(directives.filter(d => d.includes('blob:')).map(d => d.split(' ')[0]), ['img-src', 'media-src'])
+  assert.equal(directives.find(d => d.startsWith('script-src ')), "script-src 'self' 'unsafe-eval' https://sdk.scdn.co")
+  assert.equal(directives.find(d => d.startsWith('connect-src ')), "connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co")
+  assert.equal(directives.find(d => d.startsWith('media-src ')), "media-src 'self' blob: https://*.scdn.co")
+  assert.equal(directives.some(d => d.startsWith('frame-src ')), false)
   for (const suffix of ['', '; SameSite=Strict', '; SameSite=None', '; SameSite=Lax; SameSite=Lax']) assert.equal(safeSetCookie(`__Host-storyboard=${token}; Path=/; Secure; HttpOnly${suffix}`), false)
 })

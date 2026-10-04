@@ -37,6 +37,7 @@ public sealed class FakeCompute:IAiInference,IComfyUiWorkflows,IComputeJobs,IAss
 public sealed class FakeMusic:IMusicPlayback {
  public List<string> Commands=[];public Exception? Failure;public int LastSearchLimit;public MusicTrack Track=new("fixture-track","Fixture track","Fixture artist","Fixture album",null,180000,"spotify:track:1234567890123456789012");
  public Task<MusicServiceStatus> GetStatusAsync(CancellationToken ct=default)=>Task.FromResult(new MusicServiceStatus(true,true,"Fixture Spotify"));
+ public Task<MusicBrowserPlaybackAccess> GetBrowserPlaybackAccessAsync(CancellationToken ct=default)=>Task.FromResult(new MusicBrowserPlaybackAccess("fixture-browser-token",DateTimeOffset.UtcNow.AddMinutes(30)));
  public Task<MusicPage<MusicPlaylist>> GetPlaylistsAsync(int offset,int limit,CancellationToken ct=default)=>Task.FromResult(new MusicPage<MusicPlaylist>([new("fixture-playlist","Fixture playlist",null,1,"spotify:playlist:fixture")],offset,limit,78,offset+1<78));
  public Task<MusicPage<MusicTrack>> GetPlaylistTracksAsync(string id,int offset,int limit,CancellationToken ct=default)=>Task.FromResult(new MusicPage<MusicTrack>([Track],offset,limit,1,false));
  public Task<MusicPage<MusicTrack>> SearchTracksAsync(string query,int limit,CancellationToken ct=default){LastSearchLimit=limit;return Task.FromResult(new MusicPage<MusicTrack>([Track],0,limit,1,false));}

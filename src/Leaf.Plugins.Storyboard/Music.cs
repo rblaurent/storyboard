@@ -209,6 +209,17 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         catch (Exception e) { return new(false, false, null, 0, null, null, 0, e.Message); }
     }
 
+    public async Task<object> BrowserPlaybackAsync(string campaign, string account, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        try
+        {
+            var access = await Playback.GetBrowserPlaybackAccessAsync(ct);
+            return new { accessToken = access.AccessToken, expiresAt = access.ExpiresAt };
+        }
+        catch (Exception e) { throw ServiceError(e); }
+    }
+
     public async Task<object> QueueAsync(string campaign, string account, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, ct: ct);
