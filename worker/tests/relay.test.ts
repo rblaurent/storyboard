@@ -69,15 +69,24 @@ test('generated audio preserves one bounded byte range and the upstream partial 
   const response = await relay(new Request(origin + path, { headers: { Range: 'bytes=10-19', Cookie: `__Host-storyboard=${token}` } }), env, send)
   assert.equal(response.status, 206); assert.equal(response.headers.get('Accept-Ranges'), 'bytes'); assert.equal(response.headers.get('Content-Range'), 'bytes 10-19/100'); assert.equal(response.headers.get('Content-Length'), '10'); assert.equal(response.headers.get('X-Private'), null)
 })
-test('mutation requires same-origin JSON and forwards CSRF exactly; rejected routes never fetch', async () => {
+test('mutation requires same-origin JSON, buffers its body, and forwards CSRF exactly; rejected routes never fetch', async () => {
   let calls = 0
-  const send = (async (_: unknown, init?: RequestInit) => { calls++; const h = new Headers(init?.headers); assert.equal(h.get('Origin'), origin); assert.equal(h.get('X-CSRF-Token'), 'b'.repeat(64)); assert.equal(h.get('Content-Type'), 'application/json'); assert.equal(h.get('Authorization'), null); return new Response('{}') }) as typeof fetch
+  const send = (async (_: unknown, init?: RequestInit) => { calls++; const h = new Headers(init?.headers); assert.equal(h.get('Origin'), origin); assert.equal(h.get('X-CSRF-Token'), 'b'.repeat(64)); assert.equal(h.get('Content-Type'), 'application/json'); assert.equal(h.get('Authorization'), null); assert.ok(init?.body instanceof ArrayBuffer); assert.equal(new TextDecoder().decode(init.body), '{}'); return new Response('{}') }) as typeof fetch
   const headers = { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(64), Authorization: 'Bearer secret' }
   assert.equal((await relay(new Request(origin + '/api/campaigns', { method: 'POST', headers, body: '{}' }), env, send)).status, 200)
   assert.equal((await relay(new Request(origin + '/api/campaigns', { method: 'POST', headers: { ...headers, Origin: 'https://evil.test' }, body: '{}' }), env, send)).status, 403)
   assert.equal((await relay(new Request(origin + '/api/entities'), env, send)).status, 404)
   assert.equal((await relay(new Request('https://evil.test/api/me'), env, send)).status, 403)
   assert.equal(calls, 1)
+})
+
+test('mutation body is bounded before the origin fetch', async () => {
+  let calls = 0
+  const headers = { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(64) }
+  const response = await relay(new Request(origin + '/api/campaigns', { method: 'POST', headers, body: JSON.stringify({ value: 'x'.repeat(65536) }) }), env, (async () => { calls++; return new Response('{}') }) as typeof fetch)
+  assert.equal(response.status, 413)
+  assert.deepEqual(await response.json(), { error: 'request_too_large' })
+  assert.equal(calls, 0)
 })
 test('redirects restricted to exact Google auth endpoint and callback root', async () => {
   const google = 'https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=' + encodeURIComponent(origin + '/auth/callback') + '&state=bound'

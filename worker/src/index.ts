@@ -102,6 +102,16 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   if (!env.STORYBOARD_PROXY_KEY || env.STORYBOARD_PROXY_KEY.length < 32) return error('site_connection_unavailable', 503)
   const mutation = request.method !== 'GET'
   if (mutation && (request.headers.get('Origin') !== origin || !/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') || ''))) return error('request_origin_rejected', 403)
+  // Do not relay the incoming request stream across the public-to-origin hop. Mobile clients can
+  // leave that stream coupled to the client connection, which makes an otherwise valid mutation
+  // fail while the origin is reading it. Storyboard commands are deliberately small JSON payloads.
+  let body: ArrayBuffer | undefined
+  if (mutation) {
+    const declared = Number(request.headers.get('Content-Length') || 0)
+    if (!Number.isFinite(declared) || declared < 0 || declared > 65536) return error('request_too_large', 413)
+    body = await request.arrayBuffer()
+    if (body.byteLength > 65536) return error('request_too_large', 413)
+  }
   const headers = new Headers({ Accept: chosen.static ? '*/*' : 'application/json' })
   if (!chosen.static) {
     const cookie = productCookies(request.headers.get('Cookie') || '')
@@ -123,7 +133,7 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   headers.set('X-Storyboard-Time', seconds); headers.set('X-Storyboard-Origin', origin)
   headers.set('X-Storyboard-Proof', await proof(env.STORYBOARD_PROXY_KEY, `${request.method}\n${chosen.target}${url.search}\n${seconds}\n${origin}`))
   let response: Response
-  try { response = await send(upstream + chosen.target + url.search, { method: request.method, headers, body: mutation ? request.body : undefined, redirect: 'manual' }) }
+  try { response = await send(upstream + chosen.target + url.search, { method: request.method, headers, body, redirect: 'manual' }) }
   catch { return error('storyboard_unavailable', 502) }
   const out = new Headers()
   security(out); out.set('Cache-Control', chosen.immutable && response.ok ? 'public, max-age=31536000, immutable' : 'no-store')
