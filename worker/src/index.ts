@@ -36,7 +36,13 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/players/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
   if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query([])
-  if (match(`/api/campaigns/${id}/workspace/entities`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/workspace/entities`)) {
+    const types = url.searchParams.get('types') ?? ''
+    const cursor = url.searchParams.get('cursor')
+    const limit = url.searchParams.get('limit')
+    const search = url.searchParams.get('query')
+    allowed = method === 'POST' && query([]) || method === 'GET' && query(['types', 'query', 'cursor', 'limit']) && keys.includes('types') && types.length <= 4000 && /^[a-z0-9-]+(?:,[a-z0-9-]+)*$/.test(types) && (cursor === null || /^\d{1,9}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit)) && (search === null || search.length <= 200)
+  }
   if (match(`/api/campaigns/${id}/workspace/entities/${id}`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
