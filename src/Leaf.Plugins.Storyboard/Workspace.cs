@@ -179,6 +179,9 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             var allowed = schema
                 ? new HashSet<string>(target.TypeSlug == "entity-type" ? ["description", "folder"] : ["description"], StringComparer.Ordinal)
                 : type?.Fields.Where(Localizable).Select(field => field.Key).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
+            if (!schema)
+                foreach (var field in target.Data.Where(field => LocalizableKey(field.Key) && field.Value is JsonObject or JsonArray || LocalizableKey(field.Key) && field.Value is JsonValue scalar && scalar.TryGetValue<string>(out _)))
+                    allowed.Add(field.Key);
             var fields = new JsonObject();
             foreach (var field in input.Fields ?? new JsonObject())
             {
@@ -313,12 +316,18 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         if (localization.Data.Text("localized_name").Contains(needle, StringComparison.OrdinalIgnoreCase)) return true;
         return localization.Data["fields"] is JsonObject fields && fields.Any(field => field.Value?.ToString().Contains(needle, StringComparison.OrdinalIgnoreCase) == true);
     }
-    private static bool Localizable(WorkspaceField field) => field.FieldType is "string" or "text" or "markdown" or "json" or "any" && field.Key is not ("slug" or "code" or "key" or "status" or "state" or "locale" or "language" or "url" or "image" or "image_url" or "audio" or "video" or "asset" or "public_slug");
+    private static bool Localizable(WorkspaceField field) => field.FieldType is "string" or "text" or "markdown" or "json" or "any" && LocalizableKey(field.Key);
+    private static bool LocalizableKey(string key) => key is not (
+        "slug" or "code" or "key" or "status" or "state" or "locale" or "language" or "url" or "image" or "image_url" or "audio" or "video" or "asset" or "public_slug" or
+        "parent" or "event" or "world" or "body" or "system" or "platform" or "to_system" or "from_system" or "featured_world" or "account" or "campaign" or "workspace" or
+        "source_name" or "target_system_key" or "axis_target_system_key" or "system_key" or "body_key" or "route_key" or "platform_key" or "forecast_key" or "site_key" or "designation");
     private static string Fingerprint(LeafEntity entity, WorkspaceType? type)
     {
         var source = new JsonObject { ["name"] = entity.Name };
-        if (type is not null) foreach (var field in type.Fields.Where(Localizable).OrderBy(field => field.Key, StringComparer.Ordinal))
-            if (entity.Data.TryGetPropertyValue(field.Key, out var value)) source[field.Key] = value?.DeepClone();
+        var declared = type?.Fields.Where(Localizable).Select(field => field.Key) ?? [];
+        var extra = entity.Data.Where(field => LocalizableKey(field.Key) && field.Value is JsonObject or JsonArray || LocalizableKey(field.Key) && field.Value is JsonValue scalar && scalar.TryGetValue<string>(out _)).Select(field => field.Key);
+        foreach (var key in declared.Concat(extra).Distinct(StringComparer.Ordinal).OrderBy(key => key, StringComparer.Ordinal))
+            if (entity.Data.TryGetPropertyValue(key, out var value)) source[key] = value?.DeepClone();
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToJsonString()))).ToLowerInvariant();
     }
     private static object Project(LeafEntity entity, WorkspaceType? type, LeafEntity? localization, string locale)
