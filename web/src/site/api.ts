@@ -22,6 +22,10 @@ export interface VisualGeneration { id: string; state: 'pending' | 'generating' 
 export interface VisualSet { id: string; name: string; description: string; imageCount: number }
 export interface VisualQueueItem { queueId: string; visual: Visual }
 export interface VisualSession { campaignId: string; revision: number; playing: boolean; blackout: boolean; loop: boolean; intervalSeconds: number; transition: 'cut' | 'crossfade'; current: Visual | null; currentQueueId: string }
+export interface TranscriptSession { id: string; name: string; state: 'active' | 'ended'; startedAt: string; endedAt: string | null; startedBy: string; roleplayAnchor: string; roleplayAnchorAt: string }
+export interface TranscriptActor { type: 'player' | 'character' | 'gm' | 'npc' | 'agent' | 'system' | 'table'; name: string; id?: string | null; avatar?: string | null; characterId?: string | null }
+export interface TranscriptEvent { id: string; sequence: number; irlAt: string; roleplayTime: string; roleplayConfidence: 'explicit' | 'estimated' | 'unknown'; kind: string; channel: 'roleplay' | 'irl' | 'meta'; text: string; actor: TranscriptActor; corrects: string | null; sourceEvent: string | null; durationMs: number; derivationState: string | null; audioUrl: string | null }
+export interface TranscriptPage { session: TranscriptSession; events: TranscriptEvent[]; nextCursor: string | null; hasEarlier: boolean }
 export class ApiError extends Error { constructor(public code: string, public status: number) { super(code) } }
 const messages: Record<string, string> = {
   campaign_changed: 'This campaign changed elsewhere. Your draft is kept. Review the latest saved version before trying again.',

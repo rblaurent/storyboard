@@ -13,11 +13,12 @@ const url = (p: string) => new URL(origin + p)
 
 test('narrow route/method/query matrix includes only the frozen product boundary', () => {
   const routes: [string, string[]][] = [
-    ['/', ['GET']], [`/campaigns/${campaign}/description`, ['GET']], [`/campaigns/${campaign}/players`, ['GET']], [`/campaigns/${campaign}/music`, ['GET']], [`/campaigns/${campaign}/visuals`, ['GET']], [`/campaigns/${campaign}/workspace`, ['GET']], [`/campaigns/${campaign}/projection`, ['GET']],
+    ['/', ['GET']], [`/campaigns/${campaign}/description`, ['GET']], [`/campaigns/${campaign}/players`, ['GET']], [`/campaigns/${campaign}/transcript`, ['GET']], [`/campaigns/${campaign}/music`, ['GET']], [`/campaigns/${campaign}/visuals`, ['GET']], [`/campaigns/${campaign}/workspace`, ['GET']], [`/campaigns/${campaign}/projection`, ['GET']],
     ['/auth/google', ['GET']], ['/auth/callback?code=code&state=state&scope=openid&authuser=0&prompt=none', ['GET']], ['/api/me', ['GET']], ['/api/logout', ['POST']],
     ['/api/campaigns', ['GET', 'POST']], ['/api/campaigns?archived=true', ['GET']], [`/api/campaigns/${campaign}`, ['GET', 'PUT']], [`/api/campaigns/${campaign}/players`, ['GET', 'POST']],
     [`/api/campaigns/${campaign}/accounts?email=someone%40example.com`, ['GET']], [`/api/campaigns/${campaign}/archive`, ['POST']], [`/api/campaigns/${campaign}/restore`, ['POST']], [`/api/campaigns/${campaign}/generate`, ['POST']],
     [`/api/campaigns/${campaign}/players/${member}/presence`, ['POST']], [`/api/campaigns/${campaign}/players/${member}/remove`, ['POST']], [`/api/campaigns/${campaign}/operations/${member}`, ['GET']], [`/api/campaigns/${campaign}/media/cover`, ['GET']], [`/api/campaigns/${campaign}/media/characters/${member}`, ['GET']],
+    [`/api/campaigns/${campaign}/transcript/current`, ['GET']], [`/api/campaigns/${campaign}/transcript/sessions`, ['GET', 'POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/end`, ['POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/roleplay-time`, ['POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/audio`, ['POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/events`, ['GET', 'POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/events?cursor=abcdefghijklmnopqrst&limit=100`, ['GET']], [`/api/campaigns/${campaign}/transcript/audio/${member}`, ['GET']],
     [`/api/campaigns/${campaign}/music/status`, ['GET']], [`/api/campaigns/${campaign}/music/playlists?offset=0&limit=50`, ['GET']], [`/api/campaigns/${campaign}/music/playlists`, ['GET', 'POST']],
     [`/api/campaigns/${campaign}/music/playlists/${member}/tracks?offset=0&limit=100`, ['GET']], [`/api/campaigns/${campaign}/music/playlists/${member}/tracks`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/playlists/${member}/tracks/${member}/remove`, ['POST']],
     [`/api/campaigns/${campaign}/music/tracks`, ['GET', 'POST']], [`/api/campaigns/${campaign}/music/search`, ['POST']], [`/api/campaigns/${campaign}/music/find`, ['POST']], [`/api/campaigns/${campaign}/music/brief`, ['POST']],
@@ -33,10 +34,10 @@ test('narrow route/method/query matrix includes only the frozen product boundary
   for (const [path, methods] of routes) {
     for (const method of ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) assert.equal(!!route(url(path), method), methods.includes(method), `${method} ${path}`)
   }
-  for (const path of ['/', `/campaigns/${campaign}/description`, `/campaigns/${campaign}/players`, `/campaigns/${campaign}/music`, `/campaigns/${campaign}/visuals`, `/campaigns/${campaign}/workspace`, `/campaigns/${campaign}/projection`]) {
+  for (const path of ['/', `/campaigns/${campaign}/description`, `/campaigns/${campaign}/players`, `/campaigns/${campaign}/transcript`, `/campaigns/${campaign}/music`, `/campaigns/${campaign}/visuals`, `/campaigns/${campaign}/workspace`, `/campaigns/${campaign}/projection`]) {
     assert.equal(route(url(path), 'GET')?.target, '/api/public/storyboard/site/', path)
   }
-  for (const path of ['/api/entities', '/api/apps/storyboard/manage/accounts', '/api/settings', '/api/campaigns?archived=false', '/api/campaigns?archived=true&archived=true', '/api/me?token=x', `/api/campaigns/${campaign}/accounts?email=a%40b&all=true`, `/api/campaigns/${campaign}/accounts`, `/api/campaigns/${campaign}/workspace/entities`, `/api/campaigns/${campaign}/workspace/entities?types=page&limit=1000`, `/api/campaigns/${campaign}/workspace/entities?types=page&cursor=-1`, `/api/campaigns/${campaign}/workspace/entities?types=page!`, '/assets/index.js', '/assets/index-abcdefgh.js?bypass=1', '/assets/%2e%2e%2fsecret.js', '/api//me', '/auth/google?return=https://evil.test', '/api/public/storyboard/me', `/api/campaigns/${campaign}/delete`, '/campaigns/not-an-id/description']) assert.equal(route(url(path), 'GET'), null, path)
+  for (const path of ['/api/entities', '/api/apps/storyboard/manage/accounts', '/api/settings', '/api/campaigns?archived=false', '/api/campaigns?archived=true&archived=true', '/api/me?token=x', `/api/campaigns/${campaign}/accounts?email=a%40b&all=true`, `/api/campaigns/${campaign}/accounts`, `/api/campaigns/${campaign}/workspace/entities`, `/api/campaigns/${campaign}/workspace/entities?types=page&limit=1000`, `/api/campaigns/${campaign}/workspace/entities?types=page&cursor=-1`, `/api/campaigns/${campaign}/workspace/entities?types=page!`, `/api/campaigns/${campaign}/transcript/sessions/${member}/events?cursor=bad`, `/api/campaigns/${campaign}/transcript/sessions/${member}/events?limit=1000`, '/assets/index.js', '/assets/index-abcdefgh.js?bypass=1', '/assets/%2e%2e%2fsecret.js', '/api//me', '/auth/google?return=https://evil.test', '/api/public/storyboard/me', `/api/campaigns/${campaign}/delete`, '/campaigns/not-an-id/description']) assert.equal(route(url(path), 'GET'), null, path)
   assert.ok(route(url(`/api/campaigns/${campaign}/music/queue`), 'GET'))
 })
 test('request cookies are product only and ambiguous duplicate product values are removed', () => {
@@ -68,13 +69,14 @@ test('relay constructs fresh headers and exact HMAC proof; bearer and provenance
   assert.equal(calls, 1); assert.equal(res.status, 200); assert.equal(res.headers.get('Cache-Control'), 'no-store'); assert.equal(res.headers.get('X-Leak'), null); assert.equal(res.headers.get('Access-Control-Allow-Origin'), null)
 })
 test('generated audio preserves one bounded byte range and the upstream partial response contract', async () => {
-  const path = `/api/campaigns/${campaign}/music/candidates/${member}/audio`
-  const send = (async (_: unknown, init?: RequestInit) => {
-    const headers = new Headers(init?.headers); assert.equal(headers.get('Range'), 'bytes=10-19'); assert.equal(headers.get('Accept'), '*/*')
-    return new Response(new Uint8Array(10), { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes 10-19/100', 'Content-Length': '10', 'X-Private': 'no' } })
-  }) as typeof fetch
-  const response = await relay(new Request(origin + path, { headers: { Range: 'bytes=10-19', Cookie: `__Host-storyboard=${token}` } }), env, send)
-  assert.equal(response.status, 206); assert.equal(response.headers.get('Accept-Ranges'), 'bytes'); assert.equal(response.headers.get('Content-Range'), 'bytes 10-19/100'); assert.equal(response.headers.get('Content-Length'), '10'); assert.equal(response.headers.get('X-Private'), null)
+  for (const path of [`/api/campaigns/${campaign}/music/candidates/${member}/audio`, `/api/campaigns/${campaign}/transcript/audio/${member}`]) {
+    const send = (async (_: unknown, init?: RequestInit) => {
+      const headers = new Headers(init?.headers); assert.equal(headers.get('Range'), 'bytes=10-19'); assert.equal(headers.get('Accept'), '*/*')
+      return new Response(new Uint8Array(10), { status: 206, headers: { 'Content-Type': 'audio/mpeg', 'Accept-Ranges': 'bytes', 'Content-Range': 'bytes 10-19/100', 'Content-Length': '10', 'X-Private': 'no' } })
+    }) as typeof fetch
+    const response = await relay(new Request(origin + path, { headers: { Range: 'bytes=10-19', Cookie: `__Host-storyboard=${token}` } }), env, send)
+    assert.equal(response.status, 206); assert.equal(response.headers.get('Accept-Ranges'), 'bytes'); assert.equal(response.headers.get('Content-Range'), 'bytes 10-19/100'); assert.equal(response.headers.get('Content-Length'), '10'); assert.equal(response.headers.get('X-Private'), null)
+  }
 })
 test('mutation requires same-origin JSON, buffers its body, and forwards CSRF exactly; rejected routes never fetch', async () => {
   let calls = 0
@@ -94,6 +96,16 @@ test('mutation body is bounded before the origin fetch', async () => {
   assert.equal(response.status, 413)
   assert.deepEqual(await response.json(), { error: 'request_too_large' })
   assert.equal(calls, 0)
+})
+test('microphone chunks get a dedicated bounded relay allowance without widening other commands', async () => {
+  let bytes = 0
+  const headers = { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(64) }
+  const body = JSON.stringify({ audioBase64: 'x'.repeat(100_000) })
+  const path = `/api/campaigns/${campaign}/transcript/sessions/${member}/audio`
+  const response = await relay(new Request(origin + path, { method: 'POST', headers, body }), env, (async (_input: unknown, init?: RequestInit) => { bytes = (init?.body as ArrayBuffer).byteLength; return new Response('{}') }) as typeof fetch)
+  assert.equal(response.status, 200); assert.equal(bytes, body.length)
+  const rejected = await relay(new Request(origin + path, { method: 'POST', headers: { ...headers, 'Content-Length': '8500001' }, body: '{}' }), env, (async () => { throw Error('must not fetch') }) as typeof fetch)
+  assert.equal(rejected.status, 413)
 })
 test('redirects restricted to exact Google auth endpoint and callback root', async () => {
   const google = 'https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=' + encodeURIComponent(origin + '/auth/callback') + '&state=bound'
@@ -171,5 +183,6 @@ test('CSP permits blobs only for scoped images/media and rejects missing/ambiguo
   assert.equal(directives.find(d => d.startsWith('connect-src ')), "connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co")
   assert.equal(directives.find(d => d.startsWith('media-src ')), "media-src 'self' blob: https://*.scdn.co")
   assert.equal(directives.find(d => d.startsWith('frame-src ')), 'frame-src https://sdk.scdn.co')
+  assert.equal(response.headers.get('Permissions-Policy'), 'camera=(), microphone=(self), geolocation=()')
   for (const suffix of ['', '; SameSite=Strict', '; SameSite=None', '; SameSite=Lax; SameSite=Lax']) assert.equal(safeSetCookie(`__Host-storyboard=${token}; Path=/; Secure; HttpOnly${suffix}`), false)
 })

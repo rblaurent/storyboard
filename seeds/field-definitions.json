@@ -1491,5 +1491,32 @@
   { "parentType": "storyboard-visual-session", "slug": "revision", "name": "Revision", "fieldType": "number", "sortOrder": 8 },
   { "parentType": "storyboard-visual-session", "slug": "next_at", "name": "Next at", "fieldType": "number", "sortOrder": 9 },
   { "parentType": "storyboard-visual-session", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 10 },
-  { "parentType": "storyboard-visual-session", "slug": "updated_by", "name": "Updated by", "fieldType": "entity_ref", "sortOrder": 11, "constraints": "{\"target_type\": \"storyboard-account\"}" }
+  { "parentType": "storyboard-visual-session", "slug": "updated_by", "name": "Updated by", "fieldType": "entity_ref", "sortOrder": 11, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+
+  { "parentType": "storyboard-campaign-session", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
+  { "parentType": "storyboard-campaign-session", "slug": "state", "name": "State", "fieldType": "string", "sortOrder": 1, "isRequired": true },
+  { "parentType": "storyboard-campaign-session", "slug": "started_at", "name": "Started at", "fieldType": "string", "sortOrder": 2, "isRequired": true },
+  { "parentType": "storyboard-campaign-session", "slug": "ended_at", "name": "Ended at", "fieldType": "string", "sortOrder": 3 },
+  { "parentType": "storyboard-campaign-session", "slug": "started_by", "name": "Started by", "fieldType": "entity_ref", "sortOrder": 4, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+  { "parentType": "storyboard-campaign-session", "slug": "roleplay_anchor", "name": "Roleplay anchor", "fieldType": "string", "sortOrder": 5, "isRequired": true },
+  { "parentType": "storyboard-campaign-session", "slug": "roleplay_anchor_at", "name": "Roleplay anchor at", "fieldType": "string", "sortOrder": 6, "isRequired": true },
+  { "parentType": "storyboard-campaign-session", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 7 },
+
+  { "parentType": "storyboard-transcript-job", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
+  { "parentType": "storyboard-transcript-job", "slug": "session", "name": "Session", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign-session\"}" },
+  { "parentType": "storyboard-transcript-job", "slug": "kind", "name": "Kind", "fieldType": "string", "sortOrder": 2, "isRequired": true },
+  { "parentType": "storyboard-transcript-job", "slug": "state", "name": "State", "fieldType": "string", "sortOrder": 3, "isRequired": true },
+  { "parentType": "storyboard-transcript-job", "slug": "source_event", "name": "Source event", "fieldType": "string", "sortOrder": 4, "isRequired": true },
+  { "parentType": "storyboard-transcript-job", "slug": "audio_asset", "name": "Audio asset", "fieldType": "entity_ref", "sortOrder": 5, "constraints": "{\"target_type\": \"asset\"}" },
+  { "parentType": "storyboard-transcript-job", "slug": "text", "name": "Text", "fieldType": "string", "sortOrder": 6 },
+  { "parentType": "storyboard-transcript-job", "slug": "voice", "name": "Voice", "fieldType": "string", "sortOrder": 7 },
+  { "parentType": "storyboard-transcript-job", "slug": "language", "name": "Language", "fieldType": "string", "sortOrder": 8 },
+  { "parentType": "storyboard-transcript-job", "slug": "actor", "name": "Actor", "fieldType": "json", "sortOrder": 9 },
+  { "parentType": "storyboard-transcript-job", "slug": "roleplay_time", "name": "Roleplay time", "fieldType": "string", "sortOrder": 10 },
+  { "parentType": "storyboard-transcript-job", "slug": "roleplay_confidence", "name": "Roleplay confidence", "fieldType": "string", "sortOrder": 11 },
+  { "parentType": "storyboard-transcript-job", "slug": "compute_job", "name": "Compute job", "fieldType": "string", "sortOrder": 12 },
+  { "parentType": "storyboard-transcript-job", "slug": "attempts", "name": "Attempts", "fieldType": "number", "sortOrder": 13 },
+  { "parentType": "storyboard-transcript-job", "slug": "retry_at", "name": "Retry at", "fieldType": "number", "sortOrder": 14 },
+  { "parentType": "storyboard-transcript-job", "slug": "error", "name": "Error", "fieldType": "string", "sortOrder": 15 },
+  { "parentType": "storyboard-transcript-job", "slug": "account", "name": "Requested by", "fieldType": "entity_ref", "sortOrder": 16, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-account\"}" }
 ]

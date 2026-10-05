@@ -38,6 +38,11 @@ import { CaretLeftIcon } from '@phosphor-icons/react/dist/csr/CaretLeft'
 import { CaretRightIcon } from '@phosphor-icons/react/dist/csr/CaretRight'
 import { FolderOpenIcon } from '@phosphor-icons/react/dist/csr/FolderOpen'
 import { InfoIcon } from '@phosphor-icons/react/dist/csr/Info'
+import { MicrophoneIcon } from '@phosphor-icons/react/dist/csr/Microphone'
+import { WaveformIcon } from '@phosphor-icons/react/dist/csr/Waveform'
+import { RobotIcon } from '@phosphor-icons/react/dist/csr/Robot'
+import { ClockIcon } from '@phosphor-icons/react/dist/csr/Clock'
+import { StopCircleIcon } from '@phosphor-icons/react/dist/csr/StopCircle'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -81,6 +86,11 @@ const icons = {
   collapsePanel: CaretRightIcon,
   workspace: FolderOpenIcon,
   info: InfoIcon,
+  microphone: MicrophoneIcon,
+  transcript: WaveformIcon,
+  agent: RobotIcon,
+  clock: ClockIcon,
+  stop: StopCircleIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */

@@ -2,9 +2,9 @@ import type { HTMLAttributes, ReactNode } from 'react'
 import { SiteIcon } from './icons'
 
 type LiveFoldoutProps = Omit<HTMLAttributes<HTMLElement>, 'children' | 'className'> & {
-  module: 'players' | 'visuals' | 'music'
+  module: 'players' | 'transcript' | 'visuals' | 'music'
   label: string
-  icon: 'players' | 'projector' | 'music'
+  icon: 'players' | 'microphone' | 'projector' | 'music'
   open: boolean
   panelExpanded: boolean
   toggle: () => void

@@ -78,24 +78,27 @@ public sealed class TestRecords : IRecordStreams
 {
     private readonly List<LeafRecord> records = [];
     private readonly Dictionary<string, LeafRecord> keys = [];
+    private long revision;
     public Task<bool> AppendOnceAsync(string stream, string operationId, JsonObject data, Guid? entityId = null, string? userId = null, CancellationToken ct = default)
     {
         lock(records) {
             if(keys.ContainsKey(stream+":"+operationId)) return Task.FromResult(false);
-            var record=new LeafRecord(records.Count+1,stream,entityId,userId,data.DeepClone().AsObject(),DateTimeOffset.UtcNow);
+            var record=new LeafRecord(records.Count+1,stream,entityId,userId,data.DeepClone().AsObject(),DateTimeOffset.UtcNow.AddTicks(Interlocked.Increment(ref revision)));
             keys[stream+":"+operationId]=record;records.Add(record);return Task.FromResult(true);
         }
     }
     public Task AppendAsync(string stream, JsonObject data, Guid? entityId = null, string? userId = null, CancellationToken ct = default)
     {
-        lock (records) records.Add(new(records.Count + 1, stream, entityId, userId, data.DeepClone().AsObject(), DateTimeOffset.UtcNow));
+        lock (records) records.Add(new(records.Count + 1, stream, entityId, userId, data.DeepClone().AsObject(), DateTimeOffset.UtcNow.AddTicks(Interlocked.Increment(ref revision))));
         return Task.CompletedTask;
     }
     public Task<IReadOnlyList<LeafRecord>> QueryAsync(string stream, RecordQuery? q = null, CancellationToken ct = default)
     {
         lock (records) {
             IEnumerable<LeafRecord> source = q?.ExternalId is null ? records : keys.TryGetValue(stream+":"+q.ExternalId,out var record) ? [record] : [];
-            return Task.FromResult<IReadOnlyList<LeafRecord>>(source.Where(r => r.Stream == stream && (q?.EntityId is null || r.EntityId == q.EntityId)).Reverse().Take(q?.Limit ?? 100).ToArray());
+            source=source.Where(r=>r.Stream==stream&&(q?.EntityId is null||r.EntityId==q.EntityId)&&(q?.UserId is null||r.UserId==q.UserId)&&(q?.Since is null||r.CreatedAt>=q.Since)&&(q?.Until is null||r.CreatedAt<q.Until));
+            source=q?.Ascending==true?source.OrderBy(r=>r.Id):source.OrderByDescending(r=>r.Id);
+            return Task.FromResult<IReadOnlyList<LeafRecord>>(source.Take(q?.Limit??100).ToArray());
         }
     }
 }

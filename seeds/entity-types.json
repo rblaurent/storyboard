@@ -200,5 +200,17 @@
     "slug": "storyboard-visual-session",
     "name": "Storyboard visual session",
     "data": { "icon": "ph-bold ph-projector-screen", "color": "orange", "versioning": true, "description": "Server-authoritative campaign projection state." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-campaign-session",
+    "name": "Storyboard campaign session",
+    "data": { "icon": "ph-bold ph-waveform", "color": "orange", "versioning": true, "description": "A bounded real-world play session with an explicit approximate roleplay-time anchor." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-transcript-job",
+    "name": "Storyboard transcript job",
+    "data": { "icon": "ph-bold ph-waveform", "color": "orange", "versioning": false, "description": "Recoverable STT or TTS derivation linked to an immutable campaign transcript event." }
   }
 ]

@@ -4,6 +4,7 @@ import { api, ApiError, explain, imageSource, type Account, type Campaign, type 
 import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 import { CampaignWorkspace } from './Workspace'
 import { LiveFoldout } from './LiveFoldout'
+import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -85,8 +86,8 @@ export function App() {
   const [liveExpanded, setLiveExpanded] = useState(() => {
     try { const saved = localStorage.getItem('storyboard:live-expanded'); return saved === null ? window.matchMedia('(min-width: 1181px)').matches : saved === 'true' } catch { return true }
   })
-  const [liveModules, setLiveModules] = useState<Record<'players' | 'visuals' | 'music', boolean>>(() => {
-    try { return { players: true, visuals: true, music: true, ...JSON.parse(localStorage.getItem('storyboard:live-modules') || '{}') } } catch { return { players: true, visuals: true, music: true } }
+  const [liveModules, setLiveModules] = useState<Record<'players' | 'transcript' | 'visuals' | 'music', boolean>>(() => {
+    try { return { players: true, transcript: true, visuals: true, music: true, ...JSON.parse(localStorage.getItem('storyboard:live-modules') || '{}') } } catch { return { players: true, transcript: true, visuals: true, music: true } }
   })
   const navigate = useCallback((next: string) => { history.pushState(null, '', next); setPath(next); window.scrollTo(0, 0) }, [])
   useEffect(() => {
@@ -109,7 +110,7 @@ export function App() {
       setMe(null); navigate('/')
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
-  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|music|visuals|workspace)$/i.exec(path)
+  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|transcript|music|visuals|workspace)$/i.exec(path)
   const projectionMatch = /^\/campaigns\/([0-9a-f-]{36})\/projection$/i.exec(path)
   useEffect(() => { if (match?.[1] || projectionMatch?.[1]) setPlayerCampaignId((match || projectionMatch)![1]) }, [match?.[1], projectionMatch?.[1]])
   const campaignDashboard = !!(me && !loading && match)
@@ -124,7 +125,7 @@ export function App() {
     return () => controller.abort()
   }, [me, playerCampaignId])
   function setLive(value: boolean) { setLiveExpanded(value); try { localStorage.setItem('storyboard:live-expanded', String(value)) } catch { /* Browser storage may be disabled. */ } }
-  function toggleLiveModule(module: 'players' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
+  function toggleLiveModule(module: 'players' | 'transcript' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel${liveExpanded ? ' live-expanded' : ' live-contracted'}` : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
@@ -134,7 +135,7 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
@@ -294,10 +295,10 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
           </Menu>
         </div>
       </div>
-      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'music', 'visuals', ...(gm ? ['workspace'] : [])].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'music' ? 'music' : t === 'visuals' ? 'images' : 'workspace'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'music' ? 'Music' : t === 'visuals' ? 'Visuals' : 'Workspace'}</Link>)}</nav>
+      <nav className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', 'transcript', 'music', 'visuals', ...(gm ? ['workspace'] : [])].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'transcript' ? 'transcript' : t === 'music' ? 'music' : t === 'visuals' ? 'images' : 'workspace'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'transcript' ? 'Transcript' : t === 'music' ? 'Music' : t === 'visuals' ? 'Visuals' : 'Workspace'}</Link>)}</nav>
     </header>
     <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
-    {tab === 'workspace' ? gm ? <CampaignWorkspace id={id} me={me} /> : <section className="empty"><h2>Workspace unavailable</h2><p>Campaign workspace access is currently limited to Game Masters.</p></section> : tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
+    {tab === 'workspace' ? gm ? <CampaignWorkspace id={id} me={me} /> : <section className="empty"><h2>Workspace unavailable</h2><p>Campaign workspace access is currently limited to Game Masters.</p></section> : tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'transcript' ? <TranscriptWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
       <div>
         {gm ? <form className="description-form" onSubmit={e => { e.preventDefault(); if (active) return; void perform(async () => { const value = await api<Campaign>(base, me.csrfToken, 'PUT', draftRef.current); if (mounted.current) { accept(value, true); setNotice('Campaign saved.') } }) }}><label htmlFor="campaign-name">Campaign name</label><input id="campaign-name" value={draft.name} onChange={e => edit('name', e.target.value)} required maxLength={120} /><label htmlFor="campaign-description">Description</label><textarea id="campaign-description" rows={12} maxLength={40000} value={draft.description} onChange={e => edit('description', e.target.value)} placeholder="Set the scene. What kind of world will your players step into?" /><label htmlFor="campaign-summary">Summary</label><textarea id="campaign-summary" rows={4} maxLength={1500} value={draft.summary} onChange={e => edit('summary', e.target.value)} placeholder="A short introduction for your table" /><div className="form-actions"><button className="primary" disabled={busy || active || !draft.name.trim() || !dirty.current}><SiteIcon name={busy ? 'busy' : 'save'} className={busy ? 'is-spinning' : undefined} />{busy ? 'Saving…' : 'Save changes'}</button><span className="quiet">{active ? 'Wait for the current request before saving.' : dirty.current ? 'Unsaved changes' : 'All changes saved'}</span></div></form> : <article className="read-description"><p>{campaign.description || 'Your Game Master has not added a description yet.'}</p></article>}
         {gm && dirty.current && <details className="saved-version"><summary>Review latest saved version</summary><button disabled={busy || active} onClick={() => void perform(async () => { await refresh(); setNotice('The latest saved version is shown below. Your draft is kept.') })}>Refresh saved version</button><h3>{campaign.name}</h3><p>{campaign.description || 'No saved description.'}</p><p>{campaign.summary || 'No saved summary.'}</p>{draft.expectedRevision !== campaign.revision && <button disabled={busy || active} onClick={reviewLatest}>Keep draft against latest revision</button>}</details>}

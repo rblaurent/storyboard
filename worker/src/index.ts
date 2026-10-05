@@ -15,7 +15,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players|music|visuals|workspace|projection)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|transcript|music|visuals|workspace|projection)`)) {
     // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
     // Leaf instead of asking the static host for a file at the browser route.
     return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
@@ -35,6 +35,15 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/players/${id}/presence`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/players/${id}/remove`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
+  if (match(`/api/campaigns/${id}/transcript/current`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/(?:end|roleplay-time|audio)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/events`)) {
+    const cursor = url.searchParams.get('cursor')
+    const limit = url.searchParams.get('limit')
+    allowed = method === 'POST' && query([]) || method === 'GET' && query(['cursor', 'limit']) && (cursor === null || /^[A-Za-z0-9_-]{20,512}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit))
+  }
+  if (match(`/api/campaigns/${id}/transcript/audio/${id}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities`)) {
     const types = url.searchParams.get('types') ?? ''
@@ -98,7 +107,7 @@ function security(headers: Headers) {
   headers.set('Content-Security-Policy', csp)
   headers.set('X-Content-Type-Options', 'nosniff')
   headers.set('Referrer-Policy', 'no-referrer')
-  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  headers.set('Permissions-Policy', 'camera=(), microphone=(self), geolocation=()')
   headers.set('Strict-Transport-Security', 'max-age=31536000')
 }
 function error(code: string, status: number) {
@@ -128,10 +137,11 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   // fail while the origin is reading it. Storyboard commands are deliberately small JSON payloads.
   let body: ArrayBuffer | undefined
   if (mutation) {
+    const maxBody = /\/transcript\/sessions\/.+\/audio$/.test(url.pathname) ? 8_500_000 : 65_536
     const declared = Number(request.headers.get('Content-Length') || 0)
-    if (!Number.isFinite(declared) || declared < 0 || declared > 65536) return error('request_too_large', 413)
+    if (!Number.isFinite(declared) || declared < 0 || declared > maxBody) return error('request_too_large', 413)
     body = await request.arrayBuffer()
-    if (body.byteLength > 65536) return error('request_too_large', 413)
+    if (body.byteLength > maxBody) return error('request_too_large', 413)
   }
   const headers = new Headers({ Accept: chosen.static ? '*/*' : 'application/json' })
   if (!chosen.static) {
@@ -144,7 +154,7 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
     const csrf = request.headers.get('X-CSRF-Token')
     if (csrf && /^[a-f0-9]{64}$/i.test(csrf)) headers.set('X-CSRF-Token', csrf)
   }
-  const media = /\/music\/(?:candidates|tracks)\/.+\/(?:audio|cover)$/.test(url.pathname)
+  const media = /\/music\/(?:candidates|tracks)\/.+\/(?:audio|cover)$/.test(url.pathname) || /\/transcript\/audio\/.+$/.test(url.pathname)
   const range = request.headers.get('Range')
   if (media) {
     headers.set('Accept', '*/*')
