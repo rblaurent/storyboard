@@ -134,7 +134,7 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} navigate={navigate} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
@@ -150,7 +150,7 @@ function LivePanel({ expanded, setExpanded, children }: { expanded: boolean; set
   </aside>
 }
 
-function LivePlayers({ campaignId, navigate, open, panelExpanded, toggleFoldout }: { campaignId: string; navigate: (path: string) => void; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
+function LivePlayers({ campaignId, open, panelExpanded, toggleFoldout }: { campaignId: string; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
   const [players, setPlayers] = useState<Player[]>([])
   useEffect(() => {
     let alive = true
@@ -164,11 +164,11 @@ function LivePlayers({ campaignId, navigate, open, panelExpanded, toggleFoldout 
   }, [campaignId])
   const present = players.filter(player => player.present)
   return <LiveFoldout module="players" label="Players" icon="players" summary={present.length ? `${present.length} at the table` : 'No one at the table'} open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className="live-players" aria-label="Live players" status={<b className="live-module-count">{present.length}</b>}>
-    <Link className="live-players-summary" href={`/campaigns/${campaignId}/players`} navigate={navigate}>
-      <span className="live-presence-stack">{present.length ? present.slice(0, 3).map(player => <Avatar key={player.id} person={player} />) : <SiteIcon name="players" />}</span>
-      <span><strong>{present.length ? `${present.length} at the table` : 'No one at the table'}</strong><small>Open Players to update presence</small></span>
-    </Link>
-    {present.length > 0 && <ul className="live-player-list">{present.map(player => <li key={player.id}><div className="live-player-person"><Avatar person={player} /><span><strong>{player.name}</strong><small>{roleName(player.role)}</small></span></div><div className="live-character-match">{player.characters.length ? player.characters.map(character => <span key={character.id}>{imageSource(character.portrait) ? <img src={imageSource(character.portrait)} alt="" /> : <i>{character.name.slice(0, 1).toUpperCase()}</i>}<strong>{character.name}</strong></span>) : <small>No character matched</small>}</div></li>)}</ul>}
+    <span className="live-presence-compact">{present.length ? present.slice(0, 3).map(player => <Avatar key={player.id} person={player} />) : <SiteIcon name="players" />}</span>
+    {present.length > 0 && <ul className="live-player-list">{present.map(player => <li key={player.id} aria-label={`${player.name}${player.characters.length ? `, ${player.characters.map(character => character.name).join(', ')}` : ''}`}>
+      {player.characters.length > 0 && <span className="live-character-avatars">{player.characters.map(character => imageSource(character.portrait) ? <img key={character.id} src={imageSource(character.portrait)} alt={character.name} /> : <i key={character.id} role="img" aria-label={character.name}>{character.name.slice(0, 1).toUpperCase()}</i>)}</span>}
+      <span className="live-player-account"><Avatar person={player} /><strong>{player.name}</strong></span>
+    </li>)}</ul>}
   </LiveFoldout>
 }
 
