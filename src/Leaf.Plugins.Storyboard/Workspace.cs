@@ -179,15 +179,13 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             var allowed = schema
                 ? new HashSet<string>(target.TypeSlug == "entity-type" ? ["description", "folder"] : ["description"], StringComparer.Ordinal)
                 : type?.Fields.Where(Localizable).Select(field => field.Key).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
-            if (!schema)
-                foreach (var field in target.Data.Where(field => LocalizableKey(field.Key) && field.Value is JsonObject or JsonArray || LocalizableKey(field.Key) && field.Value is JsonValue scalar && scalar.TryGetValue<string>(out _)))
-                    allowed.Add(field.Key);
             var fields = new JsonObject();
             foreach (var field in input.Fields ?? new JsonObject())
             {
                 var pointer = field.Key.StartsWith("/", StringComparison.Ordinal) ? field.Key : "/" + EscapePointer(field.Key);
                 var rootField = PointerParts(pointer).FirstOrDefault();
-                if (rootField is null || !allowed.Contains(rootField) || field.Value is not JsonValue value || !value.TryGetValue<string>(out var text)) throw new StoryException("invalid_localization_field");
+                var permitted = rootField is not null && (schema ? allowed.Contains(rootField) : LocalizableKey(rootField) && target.Data.ContainsKey(rootField));
+                if (!permitted || field.Value is not JsonValue value || !value.TryGetValue<string>(out var text)) throw new StoryException("invalid_localization_field");
                 fields[pointer] = StoryJson.Bounded(text, 100000);
             }
             var localizedName = StoryJson.Bounded(input.LocalizedName ?? "", 300);
