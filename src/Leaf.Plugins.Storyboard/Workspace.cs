@@ -316,7 +316,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
     }
     private static bool Localizable(WorkspaceField field) => field.FieldType is "string" or "text" or "markdown" or "json" or "any" && LocalizableKey(field.Key);
     private static bool LocalizableKey(string key) => key is not (
-        "slug" or "code" or "key" or "status" or "state" or "locale" or "language" or "url" or "image" or "image_url" or "audio" or "video" or "asset" or "public_slug" or
+        "slug" or "code" or "key" or "locale" or "language" or "url" or "image" or "image_url" or "audio" or "video" or "asset" or "public_slug" or
         "parent" or "event" or "world" or "system" or "platform" or "to_system" or "from_system" or "featured_world" or "account" or "campaign" or "workspace" or
         "source_name" or "target_system_key" or "axis_target_system_key" or "system_key" or "body_key" or "route_key" or "platform_key" or "forecast_key" or "site_key" or "designation");
     private static string Fingerprint(LeafEntity entity, WorkspaceType? type)
