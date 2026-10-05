@@ -53,6 +53,7 @@ const messages: Record<string, string> = {
   workspace_entity_read_only: 'This system record is read-only here.',
   workspace_type_read_only: 'System records cannot be created from the campaign workspace.',
   workspace_entity_changed: 'This record changed elsewhere. Your draft is kept; reopen the record to load the latest version.',
+  invalid_workspace_query: 'That workspace view could not be loaded. Refresh and try again.',
   account_disabled: 'This account is disabled. Contact the Storyboard administrator.',
   not_found: 'This item is unavailable, or you no longer have access.',
   storyboard_not_configured: 'Storyboard is still being prepared. Please try again later.',

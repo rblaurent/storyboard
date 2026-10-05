@@ -27,7 +27,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         return new
         {
             root = Project(context.Root, null),
-            entities = context.Entities.OrderBy(e => e.TypeSlug == "page" ? 0 : 1).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Select(e => Project(e, context.Types.GetValueOrDefault(e.TypeSlug))),
+            entities = context.Entities.OrderBy(e => e.TypeSlug == "page" ? 0 : 1).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Take(50).Select(e => Project(e, context.Types.GetValueOrDefault(e.TypeSlug))),
             types = context.Types.Values.OrderBy(t => t.System).ThenBy(t => t.Folder).ThenBy(t => t.Name).Select(t => new
             {
                 slug = t.Slug, name = t.Name, description = t.Description, icon = t.Icon, color = t.Color,
@@ -35,6 +35,28 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
                 fields = t.Fields.Select(f => new { key = f.Key, name = f.Name, fieldType = f.FieldType, sortOrder = f.SortOrder, required = f.Required, description = f.Description, constraints = f.Constraints, displayHints = f.DisplayHints })
             })
         };
+    }
+
+    public async Task<object> ListAsync(string campaign, string account, string? types, string? query, string? cursor, int? requestedLimit, CancellationToken ct = default)
+    {
+        var context = await ContextAsync(campaign, account, ct);
+        var requested = (types ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToArray();
+        if (requested.Length is 0 or > 100 || requested.Any(type => !context.Types.ContainsKey(type))) throw new StoryException("invalid_workspace_query");
+        var offset = 0;
+        if (!string.IsNullOrWhiteSpace(cursor) && (!int.TryParse(cursor, out offset) || offset < 0)) throw new StoryException("invalid_workspace_query");
+        var limit = Math.Clamp(requestedLimit ?? 50, 1, 100);
+        var needle = StoryJson.Bounded(query ?? "", 200).Trim();
+        var allowed = requested.ToHashSet(StringComparer.Ordinal);
+        var matches = context.Entities.Where(entity => allowed.Contains(entity.TypeSlug));
+        if (needle.Length > 0) matches = matches.Where(entity =>
+            entity.Name.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+            entity.Slug.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+            entity.TypeSlug.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+            (context.Types.GetValueOrDefault(entity.TypeSlug)?.Name?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false));
+        var ordered = matches.OrderBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase).ThenBy(entity => entity.TypeSlug, StringComparer.Ordinal).ThenBy(entity => entity.Id).ToArray();
+        var items = ordered.Skip(offset).Take(limit).Select(entity => Project(entity, context.Types.GetValueOrDefault(entity.TypeSlug))).ToArray();
+        var next = offset + items.Length;
+        return new { items, total = ordered.Length, nextCursor = next < ordered.Length ? next.ToString() : null };
     }
 
     public async Task<object> SaveAsync(string campaign, string account, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
