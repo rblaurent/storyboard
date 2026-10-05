@@ -330,7 +330,7 @@ body { margin: 0; }
 .storyboard-site .live-panel-header span { color: #d8d0c4; font-size: 10px; letter-spacing: .18em; }
 .storyboard-site .live-panel-header strong { font: 25px var(--font-display); font-weight: 400; }
 .storyboard-site .live-panel-header > i { width: 8px; height: 8px; border-radius: 50%; background: #72a887; box-shadow: 0 0 0 4px #72a88720; }
-.storyboard-site .live-panel-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-5) var(--space-6); scrollbar-color: #ffffff38 transparent; }
+.storyboard-site .live-panel-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-2) var(--space-5) var(--space-6); scrollbar-color: #ffffff38 transparent; }
 .storyboard-site :is(.live-players,.live-visual,.live-music) { min-width: 0; padding: var(--space-4) 0; }
 .storyboard-site .live-foldout.is-module-closed { padding-block: var(--space-1); }
 .storyboard-site .live-foldout.is-module-closed .live-module-toggle { margin-bottom: 0; }
@@ -341,7 +341,7 @@ body { margin: 0; }
 .storyboard-site .live-module-summary { min-width: 0; overflow: hidden; color: #a9a49c; font-size: 11px; font-weight: 500; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; }
 .storyboard-site .live-module-count { min-width: 24px; padding: 2px 7px; color: var(--ivory); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; border: 1px solid #ffffff2d; border-radius: 999px; }
 .storyboard-site .live-module-active { width: 7px; height: 7px; border-radius: 50%; background: #72a887; box-shadow: 0 0 0 4px #72a88720; }
-.storyboard-site .live-module-chevron { transition: transform var(--motion-fast); }
+.storyboard-site .live-module-chevron { grid-column: 4; justify-self: end; transition: transform var(--motion-fast); }
 .storyboard-site .live-foldout.is-module-open .live-module-chevron { transform: rotate(180deg); }
 .storyboard-site .live-module-body { min-width: 0; animation: live-foldout-in var(--motion-fast) ease-out; }
 @keyframes live-foldout-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
