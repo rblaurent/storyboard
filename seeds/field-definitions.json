@@ -1501,6 +1501,7 @@
   { "parentType": "storyboard-campaign-session", "slug": "roleplay_anchor", "name": "Roleplay anchor", "fieldType": "string", "sortOrder": 5, "isRequired": true },
   { "parentType": "storyboard-campaign-session", "slug": "roleplay_anchor_at", "name": "Roleplay anchor at", "fieldType": "string", "sortOrder": 6, "isRequired": true },
   { "parentType": "storyboard-campaign-session", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 7 },
+  { "parentType": "storyboard-campaign-session", "slug": "speaker_map", "name": "Speaker map", "fieldType": "json", "sortOrder": 8 },
 
   { "parentType": "storyboard-transcript-job", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
   { "parentType": "storyboard-transcript-job", "slug": "session", "name": "Session", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign-session\"}" },

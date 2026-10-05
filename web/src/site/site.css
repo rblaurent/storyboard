@@ -461,6 +461,10 @@ body { margin: 0; }
 .storyboard-site .transcript-toolbar > div button[aria-pressed=true] { border-color: var(--field-border); background: var(--ivory); }
 .storyboard-site .transcript-toolbar form { display: flex; gap: var(--space-2); }
 .storyboard-site .transcript-toolbar form input { width: min(280px, 28vw); }
+.storyboard-site .transcript-speakers { display: grid; gap: var(--space-3); margin-bottom: var(--space-5); }
+.storyboard-site .transcript-speakers > .eyebrow { margin-bottom: var(--space-1); }
+.storyboard-site .transcript-speakers > div { display: grid; grid-template-columns: minmax(120px,auto) minmax(180px,1fr) auto; align-items: center; gap: var(--space-3); }
+.storyboard-site .transcript-speakers strong { font-size: var(--text-small); }
 .storyboard-site .load-earlier { width: 100%; margin-bottom: var(--space-4); border-style: dashed; }
 .storyboard-site .transcript-events { margin: 0; padding: 0; list-style: none; }
 .storyboard-site .transcript-event { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: var(--space-5); padding: var(--space-4) 0; border-top: 1px solid var(--rule); }
@@ -556,6 +560,8 @@ body { margin: 0; }
   .storyboard-site .transcript-page { padding-right: 0; }
   .storyboard-site .transcript-times { grid-template-columns: 1fr; gap: 2px; }
   .storyboard-site .transcript-entry-fields { grid-template-columns: 1fr; }
+  .storyboard-site .transcript-speakers > div { grid-template-columns: 1fr; }
+  .storyboard-site .transcript-speakers select { width: 100%; min-width: 0; }
   .storyboard-site .transcript-tts { align-items: stretch; flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

@@ -37,7 +37,7 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
   if (match(`/api/campaigns/${id}/transcript/current`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/transcript/sessions`)) allowed = ['GET', 'POST'].includes(method) && query([])
-  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/(?:end|roleplay-time|audio)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/(?:end|roleplay-time|speakers|audio)`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/transcript/sessions/${id}/events`)) {
     const cursor = url.searchParams.get('cursor')
     const limit = url.searchParams.get('limit')
