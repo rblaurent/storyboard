@@ -459,6 +459,8 @@ body { margin: 0; }
 .storyboard-site .account-menu > div button { width: 100%; justify-content: flex-start; }
 .storyboard-site .campaign-menu > div button { width: 100%; }
 .storyboard-site .live-panel :is(.live-panel-header button,.live-visual-preview):not(:disabled):hover { color: var(--ivory); background: #ffffff0b; border-color: #ffffff55; }
+.storyboard-site .live-panel .live-module-toggle:not(:disabled):is(:hover,:focus-visible) { color: var(--ivory); background: #ffffff12; border-color: transparent; }
+.storyboard-site .live-panel .live-module-toggle:not(:disabled):is(:hover,:focus-visible) :is(.live-module-label,.live-module-summary) { color: var(--ivory); }
 .storyboard-site .is-spinning { animation: notebook-spin 1s linear infinite; }
 @keyframes notebook-spin { to { transform: rotate(360deg); } }
 @media (max-width: 1100px) { .storyboard-site { padding: 0 var(--space-8); } .storyboard-site .campaign-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .storyboard-site .description-grid { gap: var(--space-8); } .storyboard-site .wordmark-caption { display: none; } .storyboard-site .player-row { grid-template-columns: 1fr 1fr; } .storyboard-site .member-actions { grid-column: 1 / -1; } .storyboard-site .music-layout,.storyboard-site .visuals-layout { grid-template-columns: 230px minmax(0,1fr); } }
