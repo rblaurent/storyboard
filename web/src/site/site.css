@@ -332,6 +332,8 @@ body { margin: 0; }
 .storyboard-site .live-panel-header > i { width: 8px; height: 8px; border-radius: 50%; background: #72a887; box-shadow: 0 0 0 4px #72a88720; }
 .storyboard-site .live-panel-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--space-5) var(--space-6); scrollbar-color: #ffffff38 transparent; }
 .storyboard-site :is(.live-players,.live-visual,.live-music) { min-width: 0; padding: var(--space-4) 0; }
+.storyboard-site .live-foldout.is-module-closed { padding-block: var(--space-1); }
+.storyboard-site .live-foldout.is-module-closed .live-module-toggle { margin-bottom: 0; }
 .storyboard-site .live-module-toggle { width: 100%; min-width: 0; min-height: 42px; display: grid; grid-template-columns: auto minmax(0,1fr) auto auto; align-items: center; gap: var(--space-2); margin-bottom: var(--space-3); padding: var(--space-2); color: var(--ivory); text-align: left; border: 0; border-radius: var(--radius-control); background: transparent; }
 .storyboard-site .live-module-toggle:not(:disabled):hover { color: var(--ivory); background: #ffffff0b; }
 .storyboard-site .live-module-toggle:focus-visible { outline-color: var(--ivory); outline-offset: -2px; }
