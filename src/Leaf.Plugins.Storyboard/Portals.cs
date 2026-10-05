@@ -8,7 +8,7 @@ namespace Leaf.Plugins.Storyboard;
 
 // Delegation is confined to one registered campaign. No account directory or
 // legacy account write API is exposed to a portal server.
-public sealed class StoryPortals(StoryStore store,StoryCampaigns campaigns,StoryAccess access,IGoogleIdentity google) {
+public sealed class StoryPortals(StoryStore store,StoryCampaigns campaigns,StoryAccess access,StoryPreferences preferences,IGoogleIdentity google) {
  public static bool SafeSecret(string value)=>Regex.IsMatch(value,"^[A-Za-z0-9_-]{43}$")&&Convert.ToBase64String(Convert.FromBase64String(value.Replace('-','+').Replace('_','/')+"=")).TrimEnd('=').Replace('+','-').Replace('/','_')==value;
  public async Task<LeafEntity> AuthorizeAsync(string key,HttpContext h,IAuthContext auth,CancellationToken ct=default){
   if(string.IsNullOrWhiteSpace(auth.UserId))throw new StoryException("leaf_authentication_required",401);
@@ -41,10 +41,11 @@ public sealed class StoryPortals(StoryStore store,StoryCampaigns campaigns,Story
    }
    await campaigns.MembershipAsync(campaign.Id.ToString(),a.Id.ToString(),ct:ct);
    await store.AuditAsync("portal.signed_in",a.Id.ToString(),portal.Id.ToString(),ct:ct);
-   return new{accountId=a.Id,ownerId=Owner(a),email=a.Data.Text("email"),name=a.Name,avatar=a.Data.Text("avatar"),role=member.Data.Text("role")};
+   return new{accountId=a.Id,ownerId=Owner(a),email=a.Data.Text("email"),name=a.Name,avatar=a.Data.Text("avatar"),role=member.Data.Text("role"),preferredLocale=StoryPreferences.Normalize(a.Data.Text("preferred_locale"))};
   }finally{store.Commands.Release();}
  }
  public static string Owner(LeafEntity a)=>a.Data.Text("legacy_owner")==""?a.Id.ToString():StoryJson.Id(a.Data.Text("legacy_owner")).ToString();
+ public async Task<object> LocaleAsync(LeafEntity portal,string owner,LocaleWrite input,CancellationToken ct=default){var actor=await ActorAsync(portal,owner,ct);return await preferences.SaveLocaleAsync(actor.Id.ToString(),input,ct);}
  public async Task<LeafEntity> ActorAsync(LeafEntity portal,string owner,CancellationToken ct=default){
   var id=StoryJson.Id(owner).ToString();var direct=await store.Entities.GetAsync(Guid.Parse(id),ct);
   var candidates=await store.AllAsync("storyboard-account",new Dictionary<string,object?>{["legacy_owner"]=id},ct);

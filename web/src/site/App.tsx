@@ -5,6 +5,7 @@ import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 import { CampaignWorkspace } from './Workspace'
 import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
+import { LanguageSwitch, useLocale } from './i18n'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -55,7 +56,8 @@ function Menu({ className, label, trigger, children }: { className: string; labe
   return <div className={`${className}${open ? ' is-open' : ''}`} ref={root}><button type="button" className="menu-trigger" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>{trigger}</button>{open && <div className="menu-popover" role="menu" onClick={event => { if ((event.target as HTMLElement).closest('button,a')) setOpen(false) }}>{children}</div>}</div>
 }
 function AccountMenu({ me, signingOut, signout, showAbout }: { me: Account; signingOut: boolean; signout: () => Promise<void>; showAbout: () => void }) {
-  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}><div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>Storyboard account</span></div></div><button className="menu-row" role="menuitem" onClick={showAbout}><SiteIcon name="info" />About Storyboard</button><button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{signingOut ? 'Signing out…' : 'Sign out'}</button></Menu>
+  const { t } = useLocale()
+  return <Menu className="account-menu" label={`Account menu for ${me.name}`} trigger={<SiteIcon name="menu" size={24} weight="bold" />}><div className="menu-account"><Avatar person={me} /><div><strong>{me.name}</strong><span>{t('Storyboard account')}</span></div></div><div className="menu-language"><LanguageSwitch /></div><button className="menu-row" role="menuitem" onClick={showAbout}><SiteIcon name="info" />{t('About Storyboard')}</button><button className="menu-row" role="menuitem" onClick={() => void signout()} disabled={signingOut}><SiteIcon name={signingOut ? 'busy' : 'signout'} className={signingOut ? 'is-spinning' : undefined} />{t(signingOut ? 'Signing out…' : 'Sign out')}</button></Menu>
 }
 function AboutDialog({ close }: { close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
@@ -75,6 +77,7 @@ function RolePicker({ value, disabled, label, onChange }: { value: 'gm' | 'playe
   return <div className={`role-picker${open ? ' is-open' : ''}`} ref={root}><button type="button" className="select-trigger" aria-label={label} aria-haspopup="listbox" aria-expanded={open} disabled={disabled} onClick={() => setOpen(v => !v)}><span>{roleName(value)}</span><SiteIcon name="chevron" size={16} className="menu-chevron" /></button>{open && <div className="select-popover" role="listbox" aria-label={label}>{(['player', 'gm'] as const).map(option => <button type="button" role="option" aria-selected={option === value} key={option} onClick={() => { setOpen(false); if (option !== value) onChange(option) }}>{roleName(option)}{option === value && <SiteIcon name="check" size={16} />}</button>)}</div>}</div>
 }
 export function App() {
+  const { syncAccount } = useLocale()
   const [me, setMe] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -98,9 +101,9 @@ export function App() {
   }, [])
   useEffect(() => {
     const controller = new AbortController()
-    api<Account>('/me', '', 'GET', undefined, controller.signal).then(setMe).catch(c => { if (!controller.signal.aborted && !(c instanceof ApiError && c.status === 401)) setError(explain(c)) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    api<Account>('/me', '', 'GET', undefined, controller.signal).then(account => { setMe(account); syncAccount(account.locale, account.csrfToken) }).catch(c => { if (!controller.signal.aborted && !(c instanceof ApiError && c.status === 401)) setError(explain(c)) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [])
+  }, [syncAccount])
   async function signout() {
     setSigningOut(true); setError('')
     try {
@@ -129,7 +132,7 @@ export function App() {
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel${liveExpanded ? ' live-expanded' : ' live-contracted'}` : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
-      {me && <AccountMenu me={me} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} />}
+      {me ? <AccountMenu me={me} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <LanguageSwitch />}
     </header>}
     <main id="main" className={campaignDashboard ? 'campaign-main' : undefined} tabIndex={-1}>
       {error && <ErrorMessage error={error} />}

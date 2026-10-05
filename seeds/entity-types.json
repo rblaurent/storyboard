@@ -212,5 +212,11 @@
     "slug": "storyboard-transcript-job",
     "name": "Storyboard transcript job",
     "data": { "icon": "ph-bold ph-waveform", "color": "orange", "versioning": false, "description": "Recoverable STT or TTS derivation linked to an immutable campaign transcript event." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-localization",
+    "name": "Storyboard localization",
+    "data": { "icon": "ph-bold ph-translate", "color": "orange", "versioning": true, "description": "Revision-aware localized presentation for one campaign workspace entity." }
   }
 ]

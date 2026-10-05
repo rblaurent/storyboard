@@ -1519,5 +1519,19 @@
   { "parentType": "storyboard-transcript-job", "slug": "attempts", "name": "Attempts", "fieldType": "number", "sortOrder": 13 },
   { "parentType": "storyboard-transcript-job", "slug": "retry_at", "name": "Retry at", "fieldType": "number", "sortOrder": 14 },
   { "parentType": "storyboard-transcript-job", "slug": "error", "name": "Error", "fieldType": "string", "sortOrder": 15 },
-  { "parentType": "storyboard-transcript-job", "slug": "account", "name": "Requested by", "fieldType": "entity_ref", "sortOrder": 16, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-account\"}" }
+  { "parentType": "storyboard-transcript-job", "slug": "account", "name": "Requested by", "fieldType": "entity_ref", "sortOrder": 16, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+
+  { "parentType": "storyboard-account", "slug": "preferred_locale", "name": "Preferred locale", "fieldType": "string", "sortOrder": 120 },
+
+  { "parentType": "storyboard-localization", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
+  { "parentType": "storyboard-localization", "slug": "workspace", "name": "Workspace", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"page\"}" },
+  { "parentType": "storyboard-localization", "slug": "target", "name": "Target entity", "fieldType": "entity_ref", "sortOrder": 2, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "target_type", "name": "Target type", "fieldType": "string", "sortOrder": 3, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "locale", "name": "Locale", "fieldType": "string", "sortOrder": 4, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "localized_name", "name": "Localized name", "fieldType": "string", "sortOrder": 5 },
+  { "parentType": "storyboard-localization", "slug": "fields", "name": "Localized fields", "fieldType": "json", "sortOrder": 6, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "source_fingerprint", "name": "Source fingerprint", "fieldType": "string", "sortOrder": 7, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "status", "name": "Status", "fieldType": "string", "sortOrder": 8, "isRequired": true },
+  { "parentType": "storyboard-localization", "slug": "reviewed_by", "name": "Reviewed by", "fieldType": "entity_ref", "sortOrder": 9, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+  { "parentType": "storyboard-localization", "slug": "reviewed_at", "name": "Reviewed at", "fieldType": "string", "sortOrder": 10 }
 ]

@@ -1,4 +1,4 @@
-export interface Account { id: string; name: string; avatar: string; canCreate: boolean; csrfToken: string }
+export interface Account { id: string; name: string; avatar: string; canCreate: boolean; locale: 'en' | 'fr'; csrfToken: string }
 export interface Person { id: string; name: string; avatar: string }
 export interface Campaign { id: string; name: string; description: string; summary: string; summaryStale: boolean; image: string | null; archived: boolean; revision: number; role: 'gm' | 'player'; playerCount: number; players: Person[] }
 export interface Player extends Person { accountId: string; role: 'gm' | 'player'; present: boolean; characters: { id: string; name: string; portrait: string | null }[] }

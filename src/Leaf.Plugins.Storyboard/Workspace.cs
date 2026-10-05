@@ -1,4 +1,6 @@
 using Leaf.Sdk;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -7,6 +9,7 @@ namespace Leaf.Plugins.Storyboard;
 public sealed record WorkspaceEntityWrite(string Name, JsonObject Data, string ExpectedUpdatedAt);
 public sealed record WorkspaceEntityCreate(string TypeSlug, string Name, string? Parent, JsonObject? Data);
 public sealed record WorkspaceEntityDelete(string ExpectedUpdatedAt);
+public sealed record WorkspaceLocalizationWrite(string? LocalizedName, JsonObject? Fields, string? Status, string? ExpectedUpdatedAt = null);
 
 public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
 {
@@ -21,25 +24,30 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
     };
     private static readonly string[] ProtectedKeys = ["owner_id", "owner_agent_id", "owner_plugin", "installation", "confidential", "parent"];
 
-    public async Task<object> SnapshotAsync(string campaign, string account, CancellationToken ct = default)
+    public async Task<object> SnapshotAsync(string campaign, string account, string? requestedLocale = null, CancellationToken ct = default)
     {
         var context = await ContextAsync(campaign, account, ct);
+        var locale = StoryPreferences.Normalize(requestedLocale);
+        var localizations = await LocalizationsAsync(campaign, locale, ct);
         return new
         {
-            root = Project(context.Root, null),
-            entities = context.Entities.OrderBy(e => e.TypeSlug == "page" ? 0 : 1).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Take(50).Select(e => Project(e, context.Types.GetValueOrDefault(e.TypeSlug))),
+            locale,
+            root = Project(context.Root, null, localizations.GetValueOrDefault(context.Root.Id), locale),
+            entities = context.Entities.OrderBy(e => e.TypeSlug == "page" ? 0 : 1).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Take(50).Select(e => Project(e, context.Types.GetValueOrDefault(e.TypeSlug), localizations.GetValueOrDefault(e.Id), locale)),
             types = context.Types.Values.OrderBy(t => t.System).ThenBy(t => t.Folder).ThenBy(t => t.Name).Select(t => new
             {
-                slug = t.Slug, name = t.Name, description = t.Description, icon = t.Icon, color = t.Color,
-                folder = t.Folder, system = t.System,
-                fields = t.Fields.Select(f => new { key = f.Key, name = f.Name, fieldType = f.FieldType, sortOrder = f.SortOrder, required = f.Required, description = f.Description, constraints = f.Constraints, displayHints = f.DisplayHints })
+                slug = t.Slug, name = SchemaName(t.Definition, t.Name, localizations, locale), description = SchemaText(t.Definition, "description", t.Description, localizations, locale), icon = t.Icon, color = t.Color,
+                folder = SchemaText(t.Definition, "folder", t.Folder, localizations, locale), system = t.System,
+                fields = t.Fields.Select(f => new { key = f.Key, name = SchemaName(f.Definition, f.Name, localizations, locale), fieldType = f.FieldType, sortOrder = f.SortOrder, required = f.Required, description = SchemaText(f.Definition, "description", f.Description, localizations, locale), constraints = f.Constraints, displayHints = f.DisplayHints })
             })
         };
     }
 
-    public async Task<object> ListAsync(string campaign, string account, string? types, string? query, string? cursor, int? requestedLimit, CancellationToken ct = default)
+    public async Task<object> ListAsync(string campaign, string account, string? types, string? query, string? cursor, int? requestedLimit, string? requestedLocale = null, CancellationToken ct = default)
     {
         var context = await ContextAsync(campaign, account, ct);
+        var locale = StoryPreferences.Normalize(requestedLocale);
+        var localizations = await LocalizationsAsync(campaign, locale, ct);
         var requested = (types ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal).ToArray();
         if (requested.Length is 0 or > 100 || requested.Any(type => !context.Types.ContainsKey(type))) throw new StoryException("invalid_workspace_query");
         var offset = 0;
@@ -50,11 +58,12 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         var matches = context.Entities.Where(entity => allowed.Contains(entity.TypeSlug));
         if (needle.Length > 0) matches = matches.Where(entity =>
             entity.Name.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+            LocalizedSearch(localizations.GetValueOrDefault(entity.Id), needle) ||
             entity.Slug.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
             entity.TypeSlug.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
             (context.Types.GetValueOrDefault(entity.TypeSlug)?.Name?.Contains(needle, StringComparison.OrdinalIgnoreCase) ?? false));
         var ordered = matches.OrderBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase).ThenBy(entity => entity.TypeSlug, StringComparer.Ordinal).ThenBy(entity => entity.Id).ToArray();
-        var items = ordered.Skip(offset).Take(limit).Select(entity => Project(entity, context.Types.GetValueOrDefault(entity.TypeSlug))).ToArray();
+        var items = ordered.Skip(offset).Take(limit).Select(entity => Project(entity, context.Types.GetValueOrDefault(entity.TypeSlug), localizations.GetValueOrDefault(entity.Id), locale)).ToArray();
         var next = offset + items.Length;
         return new { items, total = ordered.Length, nextCursor = next < ordered.Length ? next.ToString() : null };
     }
@@ -79,7 +88,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             catch (InvalidOperationException) { throw new StoryException("workspace_entity_read_only", 409); }
             if (saved is null) throw new StoryException("workspace_entity_changed", 409);
             await store.AuditAsync("workspace.entity.updated", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug }, ct);
-            return Project(saved, type);
+            return Project(saved, type, null, "en");
         }
         finally { store.Commands.Release(); }
     }
@@ -107,7 +116,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             try { saved = await store.Entities.CreateAsync(type.Slug, StoryJson.Bounded(input.Name, 300, true), data, ct); }
             catch (InvalidOperationException) { throw new StoryException("workspace_entity_invalid", 409); }
             await store.AuditAsync("workspace.entity.created", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug }, ct);
-            return Project(saved, type);
+            return Project(saved, type, null, "en");
         }
         finally { store.Commands.Release(); }
     }
@@ -132,9 +141,81 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         finally { store.Commands.Release(); }
     }
 
+    public async Task<object> LocalizationsStatusAsync(string campaign, string account, string? requestedLocale, CancellationToken ct = default)
+    {
+        var context = await ContextAsync(campaign, account, ct);
+        var locale = StoryPreferences.Normalize(requestedLocale);
+        var translations = await LocalizationsAsync(campaign, locale, ct);
+        var targets = context.Entities.Prepend(context.Root).Concat(context.SchemaEntities).DistinctBy(entity => entity.Id).ToArray();
+        string fingerprint(LeafEntity entity) => entity.TypeSlug is "entity-type" or "field-definition" ? SchemaFingerprint(entity) : Fingerprint(entity, context.Types.GetValueOrDefault(entity.TypeSlug));
+        var translated = targets.Count(entity => translations.TryGetValue(entity.Id, out var value) && value.Data.Text("source_fingerprint") == fingerprint(entity));
+        var stale = targets.Count(entity => translations.TryGetValue(entity.Id, out var value) && value.Data.Text("source_fingerprint") != fingerprint(entity));
+        return new { locale, total = targets.Length, translated, stale, missing = targets.Length - translated - stale };
+    }
+
+    public Task<object> SaveLocalizationAsync(string campaign, string account, string entityId, string locale, WorkspaceLocalizationWrite input, CancellationToken ct = default)
+        => SaveLocalizationCoreAsync(campaign, entityId, locale, input, account, true, ct);
+
+    public Task<object> ImportLocalizationAsync(string campaign, string entityId, string locale, WorkspaceLocalizationWrite input, string actor, CancellationToken ct = default)
+        => SaveLocalizationCoreAsync(campaign, entityId, locale, input, actor, false, ct);
+
+    private async Task<object> SaveLocalizationCoreAsync(string campaign, string entityId, string requestedLocale, WorkspaceLocalizationWrite input, string actor, bool requireMembership, CancellationToken ct)
+    {
+        if (input is null || StoryPreferences.Normalize(requestedLocale) != "fr") throw new StoryException("invalid_locale");
+        var status = string.IsNullOrWhiteSpace(input.Status) ? "draft" : input.Status.Trim().ToLowerInvariant();
+        if (status is not "draft" and not "reviewed") throw new StoryException("invalid_localization_status");
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var context = requireMembership ? await ContextAsync(campaign, actor, ct) : await ContextCoreAsync(campaign, ct);
+            var targetId = StoryJson.Id(entityId);
+            var target = context.Root.Id == targetId ? context.Root : context.Entities.Concat(context.SchemaEntities).FirstOrDefault(entity => entity.Id == targetId) ?? throw new StoryException("not_found", 404);
+            if (!string.IsNullOrWhiteSpace(input.ExpectedUpdatedAt) &&
+                (!DateTimeOffset.TryParse(input.ExpectedUpdatedAt, out var expectedUpdatedAt) || target.UpdatedAt != expectedUpdatedAt))
+                throw new StoryException("localization_source_changed", 409);
+            var schema = target.TypeSlug is "entity-type" or "field-definition";
+            var type = schema ? null : context.Types.GetValueOrDefault(target.TypeSlug);
+            var allowed = schema
+                ? new HashSet<string>(target.TypeSlug == "entity-type" ? ["description", "folder"] : ["description"], StringComparer.Ordinal)
+                : type?.Fields.Where(Localizable).Select(field => field.Key).ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>(StringComparer.Ordinal);
+            var fields = new JsonObject();
+            foreach (var field in input.Fields ?? new JsonObject())
+            {
+                var pointer = field.Key.StartsWith("/", StringComparison.Ordinal) ? field.Key : "/" + EscapePointer(field.Key);
+                var rootField = PointerParts(pointer).FirstOrDefault();
+                if (rootField is null || !allowed.Contains(rootField) || field.Value is not JsonValue value || !value.TryGetValue<string>(out var text)) throw new StoryException("invalid_localization_field");
+                fields[pointer] = StoryJson.Bounded(text, 100000);
+            }
+            var localizedName = StoryJson.Bounded(input.LocalizedName ?? "", 300);
+            var slug = "loc-" + StoryJson.Hash(campaign + "|" + target.Id + "|fr");
+            var sourceFingerprint = schema ? SchemaFingerprint(target) : Fingerprint(target, type);
+            var seed = await store.ProtectAsync(new JsonObject
+            {
+                ["campaign"] = campaign, ["workspace"] = context.Root.Id.ToString(), ["target"] = target.Id.ToString(), ["target_type"] = target.TypeSlug,
+                ["locale"] = "fr", ["localized_name"] = localizedName, ["fields"] = fields, ["source_fingerprint"] = sourceFingerprint, ["status"] = status
+            }, ct);
+            var saved = await store.ChangeAsync("storyboard-localization", slug, "French · " + target.Name, current =>
+            {
+                var next = current?.Data.DeepClone().AsObject() ?? seed.DeepClone().AsObject();
+                next["localized_name"] = localizedName; next["fields"] = fields.DeepClone(); next["source_fingerprint"] = sourceFingerprint; next["status"] = status;
+                next["reviewed_by"] = status == "reviewed" && requireMembership ? actor : null; next["reviewed_at"] = status == "reviewed" ? DateTimeOffset.UtcNow.ToString("O") : null;
+                return next;
+            }, ct);
+            await store.AuditAsync("workspace.localization.updated", actor, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["target"] = target.Id.ToString(), ["locale"] = "fr", ["status"] = status }, ct);
+            return schema ? ProjectSchema(target, saved, "fr") : Project(target, type, saved, "fr");
+        }
+        finally { store.Commands.Release(); }
+    }
+
     private async Task<WorkspaceContext> ContextAsync(string campaign, string account, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, true, ct);
+        return await ContextCoreAsync(campaign, ct);
+    }
+
+    private async Task<WorkspaceContext> ContextCoreAsync(string campaign, CancellationToken ct)
+    {
         var campaignEntity = await store.RequireAsync("storyboard-campaign", campaign, ct);
         var root = await store.Entities.GetAsync(StoryJson.Id(campaignEntity.Data.Text("workspace")), ct);
         if (root is null || root.TypeSlug != "page") throw new StoryException("workspace_unavailable", 409);
@@ -181,13 +262,16 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         // the schema in order to create that first record.
         var usedTypes = entities.Values.Select(e => e.TypeSlug).Concat(scoped.Keys).Append("page").Distinct(StringComparer.Ordinal);
         var types = new Dictionary<string, WorkspaceType>(StringComparer.Ordinal);
+        var schemaEntities = new Dictionary<Guid, LeafEntity>();
         foreach (var slug in usedTypes)
         {
             var definition = scoped.GetValueOrDefault(slug) ?? typeDefinitions.FirstOrDefault(e => e.Slug == slug);
+            if (definition is not null) schemaEntities[definition.Id] = definition;
             var fields = (await QueryAsync("field-definition", new Dictionary<string, object?> { ["parent_type"] = slug }, ct)).Select(Field).Where(f => !f.Sensitive).OrderBy(f => f.SortOrder).ToArray();
-            types[slug] = new WorkspaceType(slug, definition?.Name ?? Humanize(slug), definition?.Data.Text("description"), definition?.Data.Text("icon"), definition?.Data.Text("color"), definition?.Data.Text("folder"), SystemTypes.Contains(slug), fields);
+            foreach (var field in fields) schemaEntities[field.Definition.Id] = field.Definition;
+            types[slug] = new WorkspaceType(slug, definition?.Name ?? Humanize(slug), definition?.Data.Text("description"), definition?.Data.Text("icon"), definition?.Data.Text("color"), definition?.Data.Text("folder"), SystemTypes.Contains(slug), fields, definition);
         }
-        return new(root, entities.Values.ToArray(), types);
+        return new(root, entities.Values.ToArray(), types, schemaEntities.Values.ToArray());
     }
 
     private async Task<IReadOnlyList<LeafEntity>> AllAsync(string type, CancellationToken ct)
@@ -206,7 +290,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
     {
         var key = entity.Slug.Contains("--", StringComparison.Ordinal) ? entity.Slug[(entity.Slug.IndexOf("--", StringComparison.Ordinal) + 2)..].Replace('-', '_') : entity.Slug.Replace('-', '_');
         var fieldType = entity.Data.Text("field_type", "string");
-        return new(key, entity.Name, fieldType, entity.Data.Number("sort_order"), entity.Data.Flag("is_required"), entity.Data.Text("description"), Parse(entity.Data["constraints"]), Parse(entity.Data["display_hints"]), Parse(entity.Data["default_value"]), Sensitive(key, fieldType));
+        return new(key, entity.Name, fieldType, entity.Data.Number("sort_order"), entity.Data.Flag("is_required"), entity.Data.Text("description"), Parse(entity.Data["constraints"]), Parse(entity.Data["display_hints"]), Parse(entity.Data["default_value"]), Sensitive(key, fieldType), entity);
     }
     private static JsonNode? Parse(JsonNode? node)
     {
@@ -215,15 +299,99 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         try { return JsonNode.Parse(text); } catch (JsonException) { return JsonValue.Create(text); }
     }
     private static bool Sensitive(string key, string type) => type is "secret" or "credential" || new[] { "secret", "token", "password", "credential", "api_key", "private_key" }.Any(part => key.Contains(part, StringComparison.OrdinalIgnoreCase));
-    private static object Project(LeafEntity entity, WorkspaceType? type)
+    private async Task<IReadOnlyDictionary<Guid, LeafEntity>> LocalizationsAsync(string campaign, string locale, CancellationToken ct)
+    {
+        if (locale == "en") return new Dictionary<Guid, LeafEntity>();
+        return (await store.AllAsync("storyboard-localization", new Dictionary<string, object?> { ["campaign"] = campaign, ["locale"] = locale }, ct))
+            .Where(entity => Guid.TryParse(entity.Data.Text("target"), out _))
+            .GroupBy(entity => Guid.Parse(entity.Data.Text("target")))
+            .ToDictionary(group => group.Key, group => group.OrderByDescending(entity => entity.UpdatedAt).First());
+    }
+    private static bool LocalizedSearch(LeafEntity? localization, string needle)
+    {
+        if (localization is null) return false;
+        if (localization.Data.Text("localized_name").Contains(needle, StringComparison.OrdinalIgnoreCase)) return true;
+        return localization.Data["fields"] is JsonObject fields && fields.Any(field => field.Value?.ToString().Contains(needle, StringComparison.OrdinalIgnoreCase) == true);
+    }
+    private static bool Localizable(WorkspaceField field) => field.FieldType is "string" or "text" or "markdown" or "json" or "any" && field.Key is not ("slug" or "code" or "key" or "status" or "state" or "locale" or "language" or "url" or "image" or "image_url" or "audio" or "video" or "asset" or "public_slug");
+    private static string Fingerprint(LeafEntity entity, WorkspaceType? type)
+    {
+        var source = new JsonObject { ["name"] = entity.Name };
+        if (type is not null) foreach (var field in type.Fields.Where(Localizable).OrderBy(field => field.Key, StringComparer.Ordinal))
+            if (entity.Data.TryGetPropertyValue(field.Key, out var value)) source[field.Key] = value?.DeepClone();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToJsonString()))).ToLowerInvariant();
+    }
+    private static object Project(LeafEntity entity, WorkspaceType? type, LeafEntity? localization, string locale)
     {
         var data = new JsonObject();
         if (type is not null) foreach (var field in type.Fields.Where(f => !f.Sensitive)) if (entity.Data.TryGetPropertyValue(field.Key, out var value)) data[field.Key] = value?.DeepClone();
         foreach (var key in new[] { "icon", "description", "parent" }) if (!data.ContainsKey(key) && entity.Data.TryGetPropertyValue(key, out var value)) data[key] = value?.DeepClone();
-        return new { id = entity.Id, typeSlug = entity.TypeSlug, slug = entity.Slug, name = entity.Name, data, createdAt = entity.CreatedAt, updatedAt = entity.UpdatedAt };
+        var fingerprint = Fingerprint(entity, type);
+        var exact = locale != "en" && localization is not null && localization.Data.Text("source_fingerprint") == fingerprint;
+        if (exact && localization!.Data["fields"] is JsonObject fields && type is not null)
+            foreach (var field in fields) ApplyPointer(data, field.Key.StartsWith("/", StringComparison.Ordinal) ? field.Key : "/" + EscapePointer(field.Key), field.Value);
+        var translatedName = exact ? localization!.Data.Text("localized_name") : "";
+        var localizationState = locale == "en" ? "source" : localization is null ? "missing" : exact ? localization.Data.Text("status", "draft") : "stale";
+        return new { id = entity.Id, typeSlug = entity.TypeSlug, slug = entity.Slug, name = translatedName == "" ? entity.Name : translatedName, data, createdAt = entity.CreatedAt, updatedAt = entity.UpdatedAt, localization = new { locale, status = localizationState, sourceFingerprint = fingerprint } };
+    }
+    private static string SchemaFingerprint(LeafEntity entity)
+    {
+        var source = new JsonObject { ["name"] = entity.Name };
+        foreach (var key in entity.TypeSlug == "entity-type" ? new[] { "description", "folder" } : new[] { "description" })
+            if (entity.Data.TryGetPropertyValue(key, out var value)) source[key] = value?.DeepClone();
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source.ToJsonString()))).ToLowerInvariant();
+    }
+    private static bool ExactSchema(LeafEntity definition, LeafEntity? localization, string locale)
+        => locale != "en" && localization is not null && localization.Data.Text("source_fingerprint") == SchemaFingerprint(definition);
+    private static string SchemaName(LeafEntity? definition, string fallback, IReadOnlyDictionary<Guid, LeafEntity> localizations, string locale)
+    {
+        if (definition is null || !localizations.TryGetValue(definition.Id, out var localization) || !ExactSchema(definition, localization, locale)) return fallback;
+        var translated = localization.Data.Text("localized_name");
+        return translated == "" ? fallback : translated;
+    }
+    private static string? SchemaText(LeafEntity? definition, string key, string? fallback, IReadOnlyDictionary<Guid, LeafEntity> localizations, string locale)
+    {
+        if (definition is null || !localizations.TryGetValue(definition.Id, out var localization) || !ExactSchema(definition, localization, locale)) return fallback;
+        if (localization.Data["fields"] is not JsonObject fields) return fallback;
+        var pointer = "/" + EscapePointer(key);
+        return fields[pointer]?.GetValue<string>() ?? fields[key]?.GetValue<string>() ?? fallback;
+    }
+    private static object ProjectSchema(LeafEntity entity, LeafEntity localization, string locale)
+    {
+        var exact = ExactSchema(entity, localization, locale);
+        var data = entity.Data.DeepClone().AsObject();
+        if (exact && localization.Data["fields"] is JsonObject fields)
+            foreach (var field in fields) ApplyPointer(data, field.Key.StartsWith("/", StringComparison.Ordinal) ? field.Key : "/" + EscapePointer(field.Key), field.Value);
+        var localizedName = exact ? localization.Data.Text("localized_name") : "";
+        return new { id = entity.Id, typeSlug = entity.TypeSlug, slug = entity.Slug, name = localizedName == "" ? entity.Name : localizedName, data, createdAt = entity.CreatedAt, updatedAt = entity.UpdatedAt, localization = new { locale, status = exact ? localization.Data.Text("status", "draft") : "stale", sourceFingerprint = SchemaFingerprint(entity) } };
+    }
+    private static string EscapePointer(string value) => value.Replace("~", "~0", StringComparison.Ordinal).Replace("/", "~1", StringComparison.Ordinal);
+    private static string[] PointerParts(string pointer)
+    {
+        if (!pointer.StartsWith("/", StringComparison.Ordinal)) return [];
+        return pointer.Split('/').Skip(1).Select(part => part.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal)).ToArray();
+    }
+    private static void ApplyPointer(JsonObject root, string pointer, JsonNode? value)
+    {
+        var parts = PointerParts(pointer);
+        if (parts.Length == 0) return;
+        JsonNode? current = root;
+        for (var index = 0; index < parts.Length - 1; index++)
+        {
+            current = current switch
+            {
+                JsonObject obj when obj.TryGetPropertyValue(parts[index], out var child) => child,
+                JsonArray array when int.TryParse(parts[index], out var item) && item >= 0 && item < array.Count => array[item],
+                _ => null
+            };
+            if (current is null) return;
+        }
+        var key = parts[^1];
+        if (current is JsonObject target) target[key] = value?.DeepClone();
+        else if (current is JsonArray array && int.TryParse(key, out var item) && item >= 0 && item < array.Count) array[item] = value?.DeepClone();
     }
     private static string Humanize(string slug) => string.Join(' ', slug.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
-    private sealed record WorkspaceContext(LeafEntity Root, IReadOnlyList<LeafEntity> Entities, IReadOnlyDictionary<string, WorkspaceType> Types);
-    private sealed record WorkspaceType(string Slug, string Name, string? Description, string? Icon, string? Color, string? Folder, bool System, IReadOnlyList<WorkspaceField> Fields);
-    private sealed record WorkspaceField(string Key, string Name, string FieldType, long SortOrder, bool Required, string? Description, JsonNode? Constraints, JsonNode? DisplayHints, JsonNode? DefaultValue, bool Sensitive);
+    private sealed record WorkspaceContext(LeafEntity Root, IReadOnlyList<LeafEntity> Entities, IReadOnlyDictionary<string, WorkspaceType> Types, IReadOnlyList<LeafEntity> SchemaEntities);
+    private sealed record WorkspaceType(string Slug, string Name, string? Description, string? Icon, string? Color, string? Folder, bool System, IReadOnlyList<WorkspaceField> Fields, LeafEntity? Definition);
+    private sealed record WorkspaceField(string Key, string Name, string FieldType, long SortOrder, bool Required, string? Description, JsonNode? Constraints, JsonNode? DisplayHints, JsonNode? DefaultValue, bool Sensitive, LeafEntity Definition);
 }
