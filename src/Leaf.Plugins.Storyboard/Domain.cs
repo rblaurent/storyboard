@@ -29,3 +29,7 @@ public sealed record TranscriptActorWrite(string Type,string Name,string? Id=nul
 public sealed record TranscriptEventWrite(string Kind,string Channel,string Text,TranscriptActorWrite Actor,string OperationId,string? RoleplayTime=null,string? RoleplayConfidence=null,string? Corrects=null,bool Speak=false,string? Voice=null,string? Language=null);
 public sealed record TranscriptAudioWrite(string AudioBase64,string ContentType,long DurationMs,string OperationId,TranscriptActorWrite? Actor=null,string? RoleplayTime=null,string? Language=null,string? CapturedAt=null);
 public sealed record TranscriptSpeakerWrite(string ClusterId,TranscriptActorWrite Actor,string OperationId);
+public sealed record CockpitPinWrite(string EntityId,string Phase,string OperationId,string? Lens=null);
+public sealed record CockpitMoveWrite(string Phase,string OperationId,string? Lens=null);
+public sealed record CockpitObserveWrite(string SessionId,string ObservationCursor);
+public sealed record CockpitDecisionWrite(string Decision,string OperationId);

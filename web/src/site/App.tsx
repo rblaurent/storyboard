@@ -3,6 +3,7 @@ import { SiteIcon } from './icons'
 import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
 import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 import { CampaignWorkspace } from './Workspace'
+import { Cockpit } from './Cockpit'
 import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 import { LanguageSwitch, useLocale } from './i18n'
@@ -86,8 +87,8 @@ export function App() {
   const [aboutOpen, setAboutOpen] = useState(false)
   const [playerCampaignId, setPlayerCampaignId] = useState('')
   const [liveCanControl, setLiveCanControl] = useState(false)
-  const [liveExpanded, setLiveExpanded] = useState(() => {
-    try { const saved = localStorage.getItem('storyboard:live-expanded'); return saved === null ? window.matchMedia('(min-width: 1181px)').matches : saved === 'true' } catch { return true }
+  const [liveMode, setLiveMode] = useState<'contracted' | 'rail' | 'cockpit'>(() => {
+    try { const saved = localStorage.getItem('storyboard:live-mode'); if (saved === 'contracted' || saved === 'rail' || saved === 'cockpit') return saved; const old = localStorage.getItem('storyboard:live-expanded'); return old === null ? window.matchMedia('(min-width: 1181px)').matches ? 'rail' : 'contracted' : old === 'true' ? 'rail' : 'contracted' } catch { return 'rail' }
   })
   const [liveModules, setLiveModules] = useState<Record<'players' | 'transcript' | 'visuals' | 'music', boolean>>(() => {
     try { return { players: true, transcript: true, visuals: true, music: true, ...JSON.parse(localStorage.getItem('storyboard:live-modules') || '{}') } } catch { return { players: true, transcript: true, visuals: true, music: true } }
@@ -127,9 +128,10 @@ export function App() {
       .catch(() => { if (!controller.signal.aborted) setLiveCanControl(false) })
     return () => controller.abort()
   }, [me, playerCampaignId])
-  function setLive(value: boolean) { setLiveExpanded(value); try { localStorage.setItem('storyboard:live-expanded', String(value)) } catch { /* Browser storage may be disabled. */ } }
+  useEffect(() => { if (!liveCanControl && liveMode === 'cockpit') setLive('rail') }, [liveCanControl, liveMode])
+  function setLive(value: 'contracted' | 'rail' | 'cockpit') { setLiveMode(value); try { localStorage.setItem('storyboard:live-mode', value); localStorage.setItem('storyboard:live-expanded', String(value !== 'contracted')) } catch { /* Browser storage may be disabled. */ } }
   function toggleLiveModule(module: 'players' | 'transcript' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
-  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel${liveExpanded ? ' live-expanded' : ' live-contracted'}` : ''}`}>
+  return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel live-${liveMode}${liveMode === 'contracted' ? ' live-contracted' : ' live-expanded'}` : ''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
       {me ? <AccountMenu me={me} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <LanguageSwitch />}
@@ -138,19 +140,20 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel expanded={liveExpanded} setExpanded={setLive}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveExpanded} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {live && <LivePanel mode={liveMode} setMode={setLive} canControl={liveCanControl} campaignId={playerCampaignId} csrfToken={me!.csrfToken}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
 
-function LivePanel({ expanded, setExpanded, children }: { expanded: boolean; setExpanded: (value: boolean) => void; children: React.ReactNode }) {
-  return <aside className={`live-panel${expanded ? ' is-expanded' : ' is-contracted'}`} aria-label="Live view">
+function LivePanel({ mode, setMode, canControl, campaignId, csrfToken, children }: { mode: 'contracted' | 'rail' | 'cockpit'; setMode: (value: 'contracted' | 'rail' | 'cockpit') => void; canControl: boolean; campaignId: string; csrfToken: string; children: React.ReactNode }) {
+  const contracted=mode==='contracted', cockpit=mode==='cockpit'
+  return <aside className={`live-panel is-${mode}${contracted ? ' is-contracted' : ' is-expanded'}`} aria-label={cockpit?'Game Master cockpit':'Live view'}>
     <header className="live-panel-header">
-      <button type="button" aria-label={expanded ? 'Contract Live view' : 'Expand Live view'} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}><SiteIcon name={expanded ? 'collapsePanel' : 'expandPanel'} size={24} /></button>
-      <div><span>LIVE</span><strong>Live view</strong></div>
-      <i aria-hidden="true" />
+      <button type="button" aria-label={cockpit?'Close cockpit':contracted?'Expand Live view':'Contract Live view'} aria-expanded={!contracted} onClick={() => setMode(cockpit?'rail':contracted?'rail':'contracted')}><SiteIcon name={contracted?'expandPanel':'collapsePanel'} size={24} /></button>
+      <div><span>{cockpit?'GAME MASTER':'LIVE'}</span><strong>{cockpit?'Cockpit':'Live view'}</strong></div>
+      {canControl&&!contracted&&!cockpit?<button type="button" className="live-cockpit-open" aria-label="Open live cockpit" onClick={()=>setMode('cockpit')}><SiteIcon name="fullscreen" size={24}/></button>:<i aria-hidden="true" />}
     </header>
-    <div className="live-panel-content">{children}</div>
+    <div className="live-panel-content">{cockpit?<div className="cockpit-shell"><Cockpit campaignId={campaignId} csrfToken={csrfToken}/><aside className="cockpit-command-deck" aria-label="Live controls"><header><span className="eyebrow">COMMAND DECK</span><h2>Live controls</h2></header>{children}</aside></div>:children}</div>
   </aside>
 }
 

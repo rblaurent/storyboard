@@ -10,6 +10,7 @@ public sealed record WorkspaceEntityWrite(string Name, JsonObject Data, string E
 public sealed record WorkspaceEntityCreate(string TypeSlug, string Name, string? Parent, JsonObject? Data);
 public sealed record WorkspaceEntityDelete(string ExpectedUpdatedAt);
 public sealed record WorkspaceLocalizationWrite(string? LocalizedName, JsonObject? Fields, string? Status, string? ExpectedUpdatedAt = null);
+internal sealed record CockpitWorkspaceEntity(LeafEntity Entity, string TypeName, object Projection);
 
 public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
 {
@@ -20,7 +21,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         "storyboard-music-candidate", "storyboard-music-queue-item", "storyboard-visual-profile",
         "storyboard-visual", "storyboard-visual-set", "storyboard-visual-set-item",
         "storyboard-visual-generation", "storyboard-visual-candidate", "storyboard-visual-queue-item",
-        "storyboard-visual-session"
+        "storyboard-visual-session", "storyboard-cockpit-item", "storyboard-cockpit-suggestion"
     };
     private static readonly string[] ProtectedKeys = ["owner_id", "owner_agent_id", "owner_plugin", "installation", "confidential", "parent"];
 
@@ -66,6 +67,19 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         var items = ordered.Skip(offset).Take(limit).Select(entity => Project(entity, context.Types.GetValueOrDefault(entity.TypeSlug), localizations.GetValueOrDefault(entity.Id), locale)).ToArray();
         var next = offset + items.Length;
         return new { items, total = ordered.Length, nextCursor = next < ordered.Length ? next.ToString() : null };
+    }
+
+    internal async Task<IReadOnlyList<CockpitWorkspaceEntity>> CockpitEntitiesAsync(string campaign, string account, string? query = null, int limit = 200, CancellationToken ct = default)
+    {
+        var context = await ContextAsync(campaign, account, ct);
+        var needle = (query ?? "").Trim();
+        var candidates = context.Entities.Where(entity => entity.TypeSlug != "page" && context.Types.TryGetValue(entity.TypeSlug, out var type) && !type.System);
+        if (needle.Length > 0) candidates = candidates.Where(entity => entity.Name.Contains(needle, StringComparison.OrdinalIgnoreCase) || entity.Slug.Contains(needle, StringComparison.OrdinalIgnoreCase) || entity.Data.ToJsonString().Contains(needle, StringComparison.OrdinalIgnoreCase));
+        return candidates.OrderBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase).Take(Math.Clamp(limit, 1, 500)).Select(entity =>
+        {
+            var type = context.Types[entity.TypeSlug];
+            return new CockpitWorkspaceEntity(entity, type.Name, Project(entity, type, null, "en"));
+        }).ToArray();
     }
 
     public async Task<object> SaveAsync(string campaign, string account, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)

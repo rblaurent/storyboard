@@ -54,6 +54,10 @@ export function route(url: URL, method: string): Route | null {
   }
   if (match(`/api/campaigns/${id}/workspace/entities/${id}`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/cockpit`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/cockpit/entities`)) allowed = method === 'GET' && query(['query']) && keys.length <= 1 && (url.searchParams.get('query')?.length ?? 0) <= 200
+  if (match(`/api/campaigns/${id}/cockpit/items`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/cockpit/items/${id}/move`) || match(`/api/campaigns/${id}/cockpit/observe`) || match(`/api/campaigns/${id}/cockpit/suggestions/${id}/decide`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/status`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/playback`)) allowed = ['GET', 'POST'].includes(method) && query([])

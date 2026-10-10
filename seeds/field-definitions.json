@@ -1533,5 +1533,28 @@
   { "parentType": "storyboard-localization", "slug": "source_fingerprint", "name": "Source fingerprint", "fieldType": "string", "sortOrder": 7, "isRequired": true },
   { "parentType": "storyboard-localization", "slug": "status", "name": "Status", "fieldType": "string", "sortOrder": 8, "isRequired": true },
   { "parentType": "storyboard-localization", "slug": "reviewed_by", "name": "Reviewed by", "fieldType": "entity_ref", "sortOrder": 9, "constraints": "{\"target_type\": \"storyboard-account\"}" },
-  { "parentType": "storyboard-localization", "slug": "reviewed_at", "name": "Reviewed at", "fieldType": "string", "sortOrder": 10 }
+  { "parentType": "storyboard-localization", "slug": "reviewed_at", "name": "Reviewed at", "fieldType": "string", "sortOrder": 10 },
+
+  { "parentType": "storyboard-cockpit-item", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
+  { "parentType": "storyboard-cockpit-item", "slug": "entity", "name": "Canonical entity", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true },
+  { "parentType": "storyboard-cockpit-item", "slug": "phase", "name": "Phase", "fieldType": "string", "sortOrder": 2, "isRequired": true },
+  { "parentType": "storyboard-cockpit-item", "slug": "lens", "name": "Knowledge lens", "fieldType": "string", "sortOrder": 3, "isRequired": true },
+  { "parentType": "storyboard-cockpit-item", "slug": "position", "name": "Position", "fieldType": "number", "sortOrder": 4, "isRequired": true },
+  { "parentType": "storyboard-cockpit-item", "slug": "active", "name": "Active", "fieldType": "boolean", "sortOrder": 5, "defaultValue": "true" },
+  { "parentType": "storyboard-cockpit-item", "slug": "created_by", "name": "Created by", "fieldType": "entity_ref", "sortOrder": 6, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+  { "parentType": "storyboard-cockpit-item", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 7 },
+
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "session", "name": "Session", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign-session\"}" },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "observation_cursor", "name": "Observation cursor", "fieldType": "string", "sortOrder": 2, "isRequired": true },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "state", "name": "State", "fieldType": "string", "sortOrder": 3, "isRequired": true },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "entity", "name": "Canonical entity", "fieldType": "entity_ref", "sortOrder": 4 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "title", "name": "Title", "fieldType": "string", "sortOrder": 5 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "summary", "name": "Summary", "fieldType": "string", "sortOrder": 6 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "evidence", "name": "Transcript evidence", "fieldType": "json", "sortOrder": 7 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "confidence", "name": "Confidence", "fieldType": "string", "sortOrder": 8 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "compute_job", "name": "Compute job", "fieldType": "string", "sortOrder": 9 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "created_by", "name": "Created by", "fieldType": "entity_ref", "sortOrder": 10, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "decided_by", "name": "Decided by", "fieldType": "entity_ref", "sortOrder": 11, "constraints": "{\"target_type\": \"storyboard-account\"}" },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 12 }
 ]

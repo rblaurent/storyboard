@@ -218,5 +218,17 @@
     "slug": "storyboard-localization",
     "name": "Storyboard localization",
     "data": { "icon": "ph-bold ph-translate", "color": "orange", "versioning": true, "description": "Revision-aware localized presentation for one campaign workspace entity." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-cockpit-item",
+    "name": "Storyboard cockpit item",
+    "data": { "icon": "ph-bold ph-push-pin", "color": "orange", "versioning": true, "description": "Session-board placement for a canonical campaign workspace entity." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-cockpit-suggestion",
+    "name": "Storyboard cockpit suggestion",
+    "data": { "icon": "ph-bold ph-sparkle", "color": "orange", "versioning": true, "description": "Grounded, transcript-evidenced AI proposal awaiting a GM decision." }
   }
 ]
