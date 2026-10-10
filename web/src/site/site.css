@@ -319,9 +319,9 @@ body { margin: 0; }
 .storyboard-site .visual-set-list small { color: var(--muted); }
 .storyboard-site .visual-empty { min-height: 260px; display: grid; place-content: center; justify-items: center; gap: var(--space-2); text-align: center; color: var(--muted); }
 .storyboard-site .visual-empty strong { color: var(--ink); }
-.storyboard-site.with-live-panel { --live-panel-width: 82px; --site-gutter: var(--space-16); max-width: none; margin: 0; padding-left: var(--site-gutter); padding-right: calc(var(--live-panel-width) + var(--site-gutter)); transition: padding-right 220ms ease; }
+.storyboard-site.with-live-panel { --live-panel-width: 82px; --site-gutter: var(--space-16); max-width: none; margin: 0; padding-left: var(--site-gutter); padding-right: calc(var(--live-panel-width) + var(--site-gutter)); }
 .storyboard-site.with-live-panel.live-expanded { --live-panel-width: 390px; }
-.storyboard-site.with-live-panel > :is(.masthead,main) { width: calc(100vw - var(--live-panel-width) - (2 * var(--site-gutter))); max-width: 1352px; margin-inline: auto; }
+.storyboard-site.with-live-panel > :is(.masthead,main) { width: calc(100vw - var(--live-panel-width) - (2 * var(--site-gutter)) - var(--space-1)); max-width: 1352px; margin-inline: auto; }
 .storyboard-site .live-panel { position: fixed; z-index: 18; top: 0; right: 0; bottom: 0; width: var(--live-panel-width); display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; border-left: 1px solid #ffffff18; background: #20252a; color: var(--ivory); box-shadow: -16px 0 42px #20252a18; transition: width 220ms ease; }
 .storyboard-site .live-panel-header { min-height: 86px; display: grid; grid-template-columns: 46px minmax(0,1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid #ffffff1f; }
 .storyboard-site .live-panel-header button { width: 46px; min-width: 46px; height: 46px; padding: 0; color: var(--ivory); border-color: #ffffff2d; }

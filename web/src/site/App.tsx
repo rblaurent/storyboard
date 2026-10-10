@@ -117,18 +117,20 @@ export function App() {
   }
   const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|agent|cockpit|transcript|music|visuals|workspace)$/i.exec(path)
   const projectionMatch = /^\/campaigns\/([0-9a-f-]{36})\/projection$/i.exec(path)
-  useEffect(() => { if (match?.[1] || projectionMatch?.[1]) setPlayerCampaignId((match || projectionMatch)![1]) }, [match?.[1], projectionMatch?.[1]])
+  const routedCampaignId = match?.[1] || projectionMatch?.[1] || ''
+  const liveCampaignId = routedCampaignId || playerCampaignId
+  useEffect(() => { if (routedCampaignId) setPlayerCampaignId(routedCampaignId) }, [routedCampaignId])
   const campaignDashboard = !!(me && !loading && match)
   const projection = !!(me && !loading && projectionMatch)
-  const live = !!(me && playerCampaignId && !projection)
+  const live = !!(me && liveCampaignId && !projection)
   useEffect(() => {
-    if (!me || !playerCampaignId) { setLiveCanControl(false); return }
+    if (!me || !liveCampaignId) { setLiveCanControl(false); return }
     const controller = new AbortController()
-    api<Campaign>(`/campaigns/${playerCampaignId}`, '', 'GET', undefined, controller.signal)
+    api<Campaign>(`/campaigns/${liveCampaignId}`, '', 'GET', undefined, controller.signal)
       .then(campaign => { if (!controller.signal.aborted) setLiveCanControl(campaign.role === 'gm') })
       .catch(() => { if (!controller.signal.aborted) setLiveCanControl(false) })
     return () => controller.abort()
-  }, [me, playerCampaignId])
+  }, [me, liveCampaignId])
   function setLive(value: 'contracted' | 'rail') { setLiveMode(value); try { localStorage.setItem('storyboard:live-mode', value); localStorage.setItem('storyboard:live-expanded', String(value !== 'contracted')) } catch { /* Browser storage may be disabled. */ } }
   function toggleLiveModule(module: 'players' | 'transcript' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel live-${liveMode}${liveMode === 'contracted' ? ' live-contracted' : ' live-expanded'}` : ''}`}>
@@ -140,7 +142,7 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel mode={liveMode} setMode={setLive}><LivePlayers campaignId={playerCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={playerCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {live && <LivePanel mode={liveMode} setMode={setLive}><LivePlayers campaignId={liveCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
@@ -250,7 +252,15 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
   }, [])
   const refresh = useCallback(async (signal?: AbortSignal) => { const value = await api<Campaign>(base, '', 'GET', undefined, signal); if (!signal?.aborted && mounted.current) accept(value); return value }, [base, accept])
   useEffect(() => { mounted.current = true; const controller = new AbortController(); void refresh(controller.signal).catch(c => { if (!controller.signal.aborted) setError(explain(c)) }); return () => { mounted.current = false; controller.abort() } }, [refresh])
-  useEffect(() => { tabsRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, [tab, gm])
+  useEffect(() => {
+    const tabs = tabsRef.current
+    const current = tabs?.querySelector<HTMLElement>('[aria-current="page"]')
+    if (!tabs || !current) return
+    const tabsBox = tabs.getBoundingClientRect()
+    const currentBox = current.getBoundingClientRect()
+    if (currentBox.left < tabsBox.left) tabs.scrollTo({ left: tabs.scrollLeft - (tabsBox.left - currentBox.left), behavior: 'auto' })
+    else if (currentBox.right > tabsBox.right) tabs.scrollTo({ left: tabs.scrollLeft + (currentBox.right - tabsBox.right), behavior: 'auto' })
+  }, [tab, gm])
   function retain(value: Receipt | null) { setReceipt(value); try { if (value) sessionStorage.setItem(receiptKey, JSON.stringify(value)); else sessionStorage.removeItem(receiptKey) } catch { /* resume hints are optional, never authority */ } }
   useEffect(() => {
     if (!receipt?.id || !gm) return
