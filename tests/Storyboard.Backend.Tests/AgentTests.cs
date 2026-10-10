@@ -71,6 +71,8 @@ public sealed class AgentTests
         Assert.Equal("chat", discussion.Data.Text("type"));
         Assert.Equal("storyboard-campaign", discussion.Data.Text("conversation_kind"));
         Assert.Equal(campaign.Id.ToString(), discussion.Data.Text("campaign"));
+        Assert.Equal(agent.Id.ToString(), discussion.Data.Text("agent"));
+        Assert.False(discussion.Data.Flag("confidential"));
 
         // Reconstructing the product service simulates a plugin restart. The durable
         // campaign binding must reopen no new model session.
@@ -83,6 +85,26 @@ public sealed class AgentTests
             fixture.Discussions,
             [fixture.AgentConversations]);
         await reconstructed.ReadAsync(campaign.Id.ToString(), fixture.Gm.Id.ToString(), null, null);
+        Assert.Equal(1, fixture.AgentConversations.Opens);
+    }
+
+    [Fact]
+    public async Task ExistingCampaignDiscussionBecomesOrdinaryWithoutChangingItsBinding()
+    {
+        await using var fixture = await Fixture.Create();
+        var first = StoryJson.Object(await fixture.Agent.ReadAsync(
+            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), null, null));
+        var campaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var discussionId = StoryJson.Id(campaign.Data.Text("agent_discussion"));
+        await fixture.Entities.PatchAsync(discussionId, new JsonObject { ["confidential"] = true });
+
+        var second = StoryJson.Object(await fixture.Agent.ReadAsync(
+            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), null, null));
+        var discussion = (await fixture.Entities.GetAsync(discussionId))!;
+
+        Assert.False(discussion.Data.Flag("confidential"));
+        Assert.Equal(first.Text("discussionId"), second.Text("discussionId"));
+        Assert.Equal(first.Text("sessionId"), second.Text("sessionId"));
         Assert.Equal(1, fixture.AgentConversations.Opens);
     }
 

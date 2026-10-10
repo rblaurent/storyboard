@@ -258,7 +258,7 @@ public sealed class StoryCampaignAgent(
                                      ["type"] = "chat",
                                      ["conversation_kind"] = "storyboard-campaign",
                                      ["status"] = "idle",
-                                     ["confidential"] = true,
+                                     ["confidential"] = false,
                                      ["title_source"] = "system",
                                      ["conversation_revision"] = 0,
                                      ["read_conversation_revision"] = 0,
@@ -300,6 +300,19 @@ public sealed class StoryCampaignAgent(
         var agent = await store.Entities.GetAsync(agentGuid, ct);
         var discussion = await store.Entities.GetAsync(discussionGuid, ct);
         if (agent?.TypeSlug != "agent" || discussion?.TypeSlug != "discussion") return null;
+        // Campaign conversations are ordinary user-visible Agent discussions. The
+        // campaign workspace remains confidential and Agent-bound independently;
+        // keeping the discussion itself confidential only hides it from Nova's
+        // normal activity/context surfaces and makes the same conversation look
+        // like a private exception.
+        if (discussion.Data.Flag("confidential"))
+        {
+            await store.Entities.PatchAsync(
+                discussion.Id,
+                new JsonObject { ["confidential"] = false },
+                ct: ct);
+            discussion = await store.Entities.GetAsync(discussion.Id, ct) ?? discussion;
+        }
         return new CampaignConversation(
             campaign,
             agent,

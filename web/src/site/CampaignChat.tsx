@@ -130,7 +130,7 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   }
 
   return <section className="campaign-agent-chat" aria-label={`Chat with ${agentName}`}>
-    <header><div><span className="eyebrow">CAMPAIGN AGENT</span><h3>{agentName}</h3></div><span className={`campaign-agent-state${quiescent ? '' : ' is-working'}`}><i />{quiescent ? 'Ready' : 'Working'}</span></header>
+    <header><div className="campaign-agent-identity"><span className="campaign-agent-avatar"><SiteIcon name="agent" /></span><div><span className="eyebrow">CAMPAIGN AGENT</span><h3>{agentName}</h3></div></div><span className={`campaign-agent-state${quiescent ? '' : ' is-working'}`}><i />{quiescent ? 'Ready' : 'Working'}</span></header>
     <div className="campaign-agent-messages" aria-live="polite">
       {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">Ask for preparation, challenge a plan, or work through what the table may need next.</p>}
       {messages.map(message => <ChatBlock key={message.id} message={message} />)}
