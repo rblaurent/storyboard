@@ -44,13 +44,14 @@ export function route(url: URL, method: string): Route | null {
     allowed = method === 'POST' && query([]) || method === 'GET' && query(['cursor', 'limit']) && (cursor === null || /^[A-Za-z0-9_-]{20,512}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit))
   }
   if (match(`/api/campaigns/${id}/transcript/audio/${id}`)) allowed = method === 'GET' && query([])
-  if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query(['locale']) && keys.length <= 1 && (url.searchParams.get('locale') === null || /^(?:en|fr)$/.test(url.searchParams.get('locale')!))
   if (match(`/api/campaigns/${id}/workspace/entities`)) {
     const types = url.searchParams.get('types') ?? ''
     const cursor = url.searchParams.get('cursor')
     const limit = url.searchParams.get('limit')
     const search = url.searchParams.get('query')
-    allowed = method === 'POST' && query([]) || method === 'GET' && query(['types', 'query', 'cursor', 'limit']) && keys.includes('types') && types.length <= 4000 && /^[a-z0-9-]+(?:,[a-z0-9-]+)*$/.test(types) && (cursor === null || /^\d{1,9}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit)) && (search === null || search.length <= 200)
+    const locale = url.searchParams.get('locale')
+    allowed = method === 'POST' && query([]) || method === 'GET' && query(['types', 'query', 'cursor', 'limit', 'locale']) && keys.includes('types') && types.length <= 4000 && /^[a-z0-9-]+(?:,[a-z0-9-]+)*$/.test(types) && (cursor === null || /^\d{1,9}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit)) && (search === null || search.length <= 200) && (locale === null || /^(?:en|fr)$/.test(locale))
   }
   if (match(`/api/campaigns/${id}/workspace/entities/${id}`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
