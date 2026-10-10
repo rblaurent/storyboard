@@ -82,6 +82,36 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         }).ToArray();
     }
 
+    internal async Task<object[]> AgentEntitiesAsync(string campaign, int limit = 200, CancellationToken ct = default)
+    {
+        var context = await ContextCoreAsync(campaign, ct);
+        return context.Entities
+            .Where(entity => entity.TypeSlug != "page"
+                             && context.Types.TryGetValue(entity.TypeSlug, out var type)
+                             && !type.System)
+            .OrderBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(entity => Project(entity, context.Types[entity.TypeSlug], null, "en"))
+            .ToArray();
+    }
+
+    internal async Task<IReadOnlyList<CockpitWorkspaceEntity>> AgentCockpitEntitiesAsync(string campaign, int limit = 500, CancellationToken ct = default)
+    {
+        var context = await ContextCoreAsync(campaign, ct);
+        return context.Entities
+            .Where(entity => entity.TypeSlug != "page"
+                             && context.Types.TryGetValue(entity.TypeSlug, out var type)
+                             && !type.System)
+            .OrderBy(entity => entity.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(entity =>
+            {
+                var type = context.Types[entity.TypeSlug];
+                return new CockpitWorkspaceEntity(entity, type.Name, Project(entity, type, null, "en"));
+            })
+            .ToArray();
+    }
+
     public async Task<object> SaveAsync(string campaign, string account, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
     {
         if (input is null || input.Data is null || !DateTimeOffset.TryParse(input.ExpectedUpdatedAt, out var expected)) throw new StoryException("invalid_workspace_write");

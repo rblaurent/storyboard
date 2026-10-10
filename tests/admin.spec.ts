@@ -9,7 +9,7 @@ async function harness(page: Page) {
     const json = (data: unknown, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (p.endsWith('/provision/agents')) return json([{ id: aid, name: 'Disposable Agent' }])
     if (p.endsWith('/provision')) { if (state.requireAgent && !body.ownerAgentId) return json({ error: 'owning_agent_required' }, 400); state.unconfigured = false; return json({ ok: true }) }
-    if (p.endsWith('/manage/status')) return state.unconfigured ? json({ error: 'extension_owner_required' }, 403) : json({ publicUrl: 'https://storyboard.minititine.cc', googleConfigured: true, workspace: cid, version: '0.2.0' })
+    if (p.endsWith('/manage/status')) return state.unconfigured ? json({ error: 'extension_owner_required' }, 403) : json({ publicUrl: 'https://storyboard.minititine.cc', googleConfigured: true, workspace: cid, version: '0.3.0' })
     if (p.endsWith('/eligibility')) { state.canCreate = body.canCreate; return json({ id: aid, canCreate: state.canCreate }) }
     if (p.endsWith('/manage/accounts')) return json([{ id: aid, name: 'Disposable account', email: 'fixture@example.com', enabled: true, canCreate: state.canCreate }])
     if (p.endsWith('/manage/campaigns')) return json([{ id: cid, name: 'Disposable campaign', state: 'ready', archived: false, workspace: cid }])

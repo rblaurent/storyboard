@@ -150,6 +150,72 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         return await SnapshotAsync(campaign, account, ct);
     }
 
+    internal async Task<object> ProposeAsync(string campaign, string agentId, CampaignAgentProposalWrite input, CancellationToken ct = default)
+    {
+        var operation = StoryJson.Id(input.OperationId).ToString();
+        var candidates = await workspace.AgentCockpitEntitiesAsync(campaign, 500, ct);
+        var target = candidates.SingleOrDefault(value => value.Entity.Id == StoryJson.Id(input.EntityId))
+                     ?? throw new StoryException("cockpit_entity_unavailable", 409);
+        var session = (await store.AllAsync(
+                "storyboard-campaign-session",
+                new Dictionary<string, object?> { ["campaign"] = campaign, ["state"] = "active" },
+                ct))
+            .OrderByDescending(value => value.CreatedAt)
+            .FirstOrDefault() ?? throw new StoryException("cockpit_session_required", 409);
+        var recent = await transcript.AgentEventsAsync(campaign, session.Id.ToString(), 50, ct);
+        var validEvidence = recent.Select(value => value.Data.Text("event_id"))
+            .Where(value => value != "")
+            .ToHashSet(StringComparer.Ordinal);
+        var evidence = (input.Evidence ?? [])
+            .Where(validEvidence.Contains)
+            .Distinct(StringComparer.Ordinal)
+            .Take(8)
+            .ToArray();
+        var confidence = (input.Confidence ?? "medium").Trim().ToLowerInvariant();
+        if (confidence is not "low" and not "medium" and not "high")
+            throw new StoryException("invalid_cockpit_confidence");
+
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var slug = "cockpit-agent-proposal-" + StoryJson.Hash(campaign + "|" + operation);
+            var seed = await store.ProtectAsync(new JsonObject
+            {
+                ["campaign"] = campaign,
+                ["session"] = session.Id.ToString(),
+                ["observation_cursor"] = evidence.FirstOrDefault() ?? "agent-proposal",
+                ["state"] = "proposed",
+                ["entity"] = target.Entity.Id.ToString(),
+                ["title"] = StoryJson.Bounded(input.Title, 120, true),
+                ["summary"] = StoryJson.Bounded(input.Summary, 500, true),
+                ["evidence"] = new JsonArray(evidence.Select(value => (JsonNode?)value).ToArray()),
+                ["confidence"] = confidence,
+                ["created_by_agent"] = agentId,
+                ["last_operation"] = operation,
+            }, ct);
+            var saved = await store.ChangeAsync(
+                "storyboard-cockpit-suggestion",
+                slug,
+                StoryJson.Bounded(input.Title, 120, true),
+                old => old?.Data.DeepClone().AsObject() ?? seed.DeepClone().AsObject(),
+                ct);
+            await store.AuditAsync(
+                "cockpit.suggestion.proposed",
+                agentId,
+                saved.Id.ToString(),
+                new JsonObject
+                {
+                    ["campaign"] = campaign,
+                    ["entity"] = target.Entity.Id.ToString(),
+                    ["evidence_count"] = evidence.Length,
+                },
+                ct);
+            return ProjectSuggestion(saved);
+        }
+        finally { store.Commands.Release(); }
+    }
+
     private static string Phase(string value) { value = StoryJson.Bounded(value, 24, true).ToLowerInvariant(); return Phases.Contains(value) ? value : throw new StoryException("invalid_cockpit_phase"); }
     private static string Lens(string? value) { value = string.IsNullOrWhiteSpace(value) ? "beat" : StoryJson.Bounded(value, 24, true).ToLowerInvariant(); return Lenses.Contains(value) ? value : throw new StoryException("invalid_cockpit_lens"); }
     private static int Relevance(CockpitWorkspaceEntity candidate, IReadOnlyList<string> terms) { var text = candidate.Entity.Name + " " + StoryJson.Object(candidate.Projection)["data"]?.ToJsonString(); return terms.Count(term => text.Contains(term, StringComparison.OrdinalIgnoreCase)); }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { presentWorkspaceEntity, type WorkspaceEntity } from '@redbamboo/workspace'
 import { api, explain } from './api'
+import { CampaignChat } from './CampaignChat'
 import { SiteIcon } from './icons'
 
 type Phase='played'|'now'|'prepared'
@@ -25,18 +26,9 @@ export function Cockpit({campaignId,csrfToken}:{campaignId:string;csrfToken:stri
   const [query,setQuery]=useState('')
   const [results,setResults]=useState<WorkspaceEntity[]>([])
   const [busy,setBusy]=useState('')
-  const observed=useRef(new Set<string>())
   const mounted=useRef(true)
   const load=useCallback(async()=>{try{const value=await api<CockpitSnapshot>(base);if(mounted.current){setSnapshot(value);setError('')}}catch(cause){if(mounted.current)setError(explain(cause))}},[base])
   useEffect(()=>{mounted.current=true;void load();const timer=window.setInterval(()=>void load(),4000);return()=>{mounted.current=false;window.clearInterval(timer)}},[load])
-  useEffect(()=>{
-    const session=snapshot?.session, cursor=snapshot?.observationCursor
-    if(!session||!cursor){return}
-    const key=`${session.id}:${cursor}`
-    if(observed.current.has(key))return
-    observed.current.add(key)
-    void api<CockpitSnapshot>(`${base}/observe`,csrfToken,'POST',{sessionId:session.id,observationCursor:cursor}).then(value=>{if(mounted.current)setSnapshot(value)}).catch(cause=>{if(mounted.current&&!(String(explain(cause)).includes('changed')))setError(explain(cause))})
-  },[base,csrfToken,snapshot?.session?.id,snapshot?.observationCursor])
   async function search(event:FormEvent){event.preventDefault();setBusy('search');setError('');try{const value=await api<CockpitSearch>(`${base}/entities?query=${encodeURIComponent(query.trim())}`);if(mounted.current)setResults(value.items)}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
   async function pin(entityId:string,phase:Phase='prepared'){setBusy(`pin:${entityId}`);setError('');try{await api(`${base}/items`,csrfToken,'POST',{entityId,phase,operationId:crypto.randomUUID()});setResults(values=>values.filter(value=>value.id!==entityId));await load()}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
   async function move(item:CockpitItem,phase:Phase,lens:Lens){if(item.phase===phase&&item.lens===lens)return;setBusy(`move:${item.id}`);try{await api(`${base}/items/${item.id}/move`,csrfToken,'POST',{phase,lens,operationId:crypto.randomUUID()});await load()}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
@@ -49,6 +41,7 @@ export function Cockpit({campaignId,csrfToken}:{campaignId:string;csrfToken:stri
         {(Object.keys(phaseCopy) as Phase[]).map(phase=><section className={`cockpit-lane is-${phase}`} key={phase} aria-labelledby={`cockpit-${phase}`}><header><div><span className="eyebrow">{phase==='now'?'LIVE CONTEXT':phase==='played'?'TABLE HISTORY':'NEXT IF NEEDED'}</span><h3 id={`cockpit-${phase}`}>{phaseCopy[phase].title}</h3><p>{phaseCopy[phase].description}</p></div><b>{snapshot?.items.filter(item=>item.phase===phase).length||0}</b></header><div className="cockpit-cards">{snapshot?.items.filter(item=>item.phase===phase).map(item=><EntityCard item={item} key={item.id} busy={busy===`move:${item.id}`} move={(nextPhase,nextLens)=>void move(item,nextPhase,nextLens)}/>)}{!snapshot?.items.some(item=>item.phase===phase)&&<p className="cockpit-lane-empty">{phase==='now'?'Pin what matters in this moment.':'Nothing here yet.'}</p>}</div></section>)}
       </section>
       <aside className="cockpit-context" aria-label="Live context">
+        <CampaignChat campaignId={campaignId} csrfToken={csrfToken}/>
         <section className="cockpit-context-section"><header><span className="eyebrow">AI COPILOT</span><h3>What you might need next</h3></header>{snapshot?.suggestions.length?snapshot.suggestions.map(suggestion=><article className="cockpit-suggestion" key={suggestion.id}><span><SiteIcon name="agent"/>{suggestion.confidence} confidence</span><h4>{suggestion.title}</h4><p>{suggestion.summary}</p><small>{suggestion.evidence.length} transcript {suggestion.evidence.length===1?'signal':'signals'}</small><div><button className="cockpit-accept" disabled={busy===`suggestion:${suggestion.id}`} onClick={()=>void decide(suggestion,'accept')}>Pin to Now</button><button disabled={busy===`suggestion:${suggestion.id}`} onClick={()=>void decide(suggestion,'dismiss')}>Dismiss</button></div></article>):<p className="cockpit-context-empty">I’ll surface grounded campaign context when the live transcript gives me a reason.</p>}</section>
         <section className="cockpit-context-section"><header><span className="eyebrow">TABLE SIGNAL</span><h3>What is happening</h3></header><ol className="cockpit-events">{snapshot?.events.slice(0,6).map(event=><li key={event.id}><span>{event.actor?.name||event.actor?.type||event.channel}</span><p>{event.text}</p></li>)}{!snapshot?.events.length&&<li className="cockpit-context-empty">Transcript events will appear here.</li>}</ol></section>
         <Knowledge title="What players have discovered" empty="No discoveries marked yet." items={snapshot?.items.filter(item=>item.lens==='discovery')||[]}/>

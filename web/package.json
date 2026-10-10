@@ -1,6 +1,6 @@
 {
   "name": "storyboard-web",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
+    "@redbamboo/chat": "link:../../redbamboo-packages/packages/chat",
     "@redbamboo/workspace": "link:../../redbamboo-packages/packages/workspace",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

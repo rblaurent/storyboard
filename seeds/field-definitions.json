@@ -1556,5 +1556,13 @@
   { "parentType": "storyboard-cockpit-suggestion", "slug": "compute_job", "name": "Compute job", "fieldType": "string", "sortOrder": 9 },
   { "parentType": "storyboard-cockpit-suggestion", "slug": "created_by", "name": "Created by", "fieldType": "entity_ref", "sortOrder": 10, "constraints": "{\"target_type\": \"storyboard-account\"}" },
   { "parentType": "storyboard-cockpit-suggestion", "slug": "decided_by", "name": "Decided by", "fieldType": "entity_ref", "sortOrder": 11, "constraints": "{\"target_type\": \"storyboard-account\"}" },
-  { "parentType": "storyboard-cockpit-suggestion", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 12 }
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "last_operation", "name": "Last operation", "fieldType": "string", "sortOrder": 12 },
+  { "parentType": "storyboard-cockpit-suggestion", "slug": "created_by_agent", "name": "Created by Agent", "fieldType": "entity_ref", "sortOrder": 13, "constraints": "{\"target_type\": \"agent\"}" },
+
+  { "parentType": "storyboard-campaign", "slug": "agent", "name": "Campaign Agent", "fieldType": "entity_ref", "sortOrder": 100, "constraints": "{\"target_type\": \"agent\"}" },
+  { "parentType": "storyboard-campaign", "slug": "agent_binding", "name": "Agent binding", "fieldType": "string", "sortOrder": 101 },
+  { "parentType": "storyboard-campaign", "slug": "agent_generation", "name": "Agent generation", "fieldType": "number", "sortOrder": 102 },
+  { "parentType": "storyboard-campaign", "slug": "agent_conversation", "name": "Agent conversation", "fieldType": "string", "sortOrder": 103 },
+  { "parentType": "storyboard-campaign", "slug": "agent_session", "name": "Agent session", "fieldType": "string", "sortOrder": 104 },
+  { "parentType": "storyboard-campaign", "slug": "agent_discussion", "name": "Agent discussion", "fieldType": "entity_ref", "sortOrder": 105, "constraints": "{\"target_type\": \"discussion\"}" }
 ]

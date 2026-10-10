@@ -43,6 +43,8 @@ import { WaveformIcon } from '@phosphor-icons/react/dist/csr/Waveform'
 import { RobotIcon } from '@phosphor-icons/react/dist/csr/Robot'
 import { ClockIcon } from '@phosphor-icons/react/dist/csr/Clock'
 import { StopCircleIcon } from '@phosphor-icons/react/dist/csr/StopCircle'
+import { PaperPlaneTiltIcon } from '@phosphor-icons/react/dist/csr/PaperPlaneTilt'
+import { WrenchIcon } from '@phosphor-icons/react/dist/csr/Wrench'
 import type { IconWeight } from '@phosphor-icons/react'
 
 const icons = {
@@ -91,6 +93,8 @@ const icons = {
   agent: RobotIcon,
   clock: ClockIcon,
   stop: StopCircleIcon,
+  send: PaperPlaneTiltIcon,
+  tool: WrenchIcon,
 } as const
 
 /** Presentation only: the surrounding text/control supplies its accessible name. */
