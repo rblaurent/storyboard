@@ -1,7 +1,7 @@
 {
   "id": "storyboard",
   "name": "Storyboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kernelApi": "^0.1.0",
   "description": "Campaigns, players and characters with a standalone GM portal.",
   "icon": "ph-bold ph-film-strip",
