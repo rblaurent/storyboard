@@ -319,10 +319,9 @@ body { margin: 0; }
 .storyboard-site .visual-set-list small { color: var(--muted); }
 .storyboard-site .visual-empty { min-height: 260px; display: grid; place-content: center; justify-items: center; gap: var(--space-2); text-align: center; color: var(--muted); }
 .storyboard-site .visual-empty strong { color: var(--ink); }
-.storyboard-site.with-live-panel { --live-panel-width: 82px; max-width: none; margin: 0; padding-left: var(--space-16); padding-right: calc(var(--live-panel-width) + var(--space-16)); transition: padding-right 220ms ease; }
+.storyboard-site.with-live-panel { --live-panel-width: 82px; --site-gutter: var(--space-16); max-width: none; margin: 0; padding-left: var(--site-gutter); padding-right: calc(var(--live-panel-width) + var(--site-gutter)); transition: padding-right 220ms ease; }
 .storyboard-site.with-live-panel.live-expanded { --live-panel-width: 390px; }
-.storyboard-site.with-live-panel.live-cockpit { --live-panel-width: 100vw; padding-right: var(--space-16); }
-.storyboard-site.with-live-panel > :is(.masthead,main) { width: 100%; max-width: 1352px; margin-inline: auto; }
+.storyboard-site.with-live-panel > :is(.masthead,main) { width: calc(100vw - var(--live-panel-width) - (2 * var(--site-gutter))); max-width: 1352px; margin-inline: auto; }
 .storyboard-site .live-panel { position: fixed; z-index: 18; top: 0; right: 0; bottom: 0; width: var(--live-panel-width); display: grid; grid-template-rows: auto minmax(0,1fr); overflow: hidden; border-left: 1px solid #ffffff18; background: #20252a; color: var(--ivory); box-shadow: -16px 0 42px #20252a18; transition: width 220ms ease; }
 .storyboard-site .live-panel-header { min-height: 86px; display: grid; grid-template-columns: 46px minmax(0,1fr) auto; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid #ffffff1f; }
 .storyboard-site .live-panel-header button { width: 46px; min-width: 46px; height: 46px; padding: 0; color: var(--ivory); border-color: #ffffff2d; }
@@ -331,7 +330,6 @@ body { margin: 0; }
 .storyboard-site .live-panel-header span { color: #d8d0c4; font-size: 10px; letter-spacing: .18em; }
 .storyboard-site .live-panel-header strong { font: 25px var(--font-display); font-weight: 400; }
 .storyboard-site .live-panel-header > i { width: 8px; height: 8px; border-radius: 50%; background: #72a887; box-shadow: 0 0 0 4px #72a88720; }
-.storyboard-site .live-panel-header .live-cockpit-open { justify-self: end; }
 .storyboard-site .live-panel-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-2) var(--space-5) var(--space-6); scrollbar-color: #ffffff38 transparent; }
 .storyboard-site :is(.live-players,.live-transcript,.live-visual,.live-music) { min-width: 0; padding: var(--space-4) 0; }
 .storyboard-site .live-foldout.is-module-closed { padding-block: var(--space-1); }
@@ -435,13 +433,11 @@ body { margin: 0; }
 .storyboard-site .live-panel.is-contracted .live-music .music-art { width: 60px; height: 60px; flex-basis: 60px; }
 .storyboard-site .live-panel.is-contracted .live-music .player-controls { grid-column: auto; grid-row: auto; }
 .storyboard-site .live-panel.is-contracted .live-music .player-controls button { width: 60px; }
-.storyboard-site .live-panel.is-cockpit { left: 0; width: 100vw; border-left: 0; box-shadow: none; }
-.storyboard-site .live-panel.is-cockpit .live-panel-header { min-height: 72px; padding-block: var(--space-3); }
-.storyboard-site .live-panel.is-cockpit .live-panel-content { overflow: hidden; padding: 0; }
-.storyboard-site .cockpit-shell { height: 100%; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 350px; }
+.storyboard-site .cockpit-page { min-width: 0; height: calc(100dvh - 210px); min-height: 640px; overflow: hidden; border: 1px solid #ffffff1f; border-radius: var(--radius-panel); box-shadow: 0 16px 44px #20252a18; }
 .storyboard-site .cockpit { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0,1fr); overflow: hidden; background: #171a1c; color: var(--ivory); }
+.storyboard-site .cockpit-page .cockpit { height: 100%; }
 .storyboard-site .cockpit-status { min-height: 96px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-6); padding: var(--space-5) var(--space-7); border-bottom: 1px solid #ffffff1f; }
-.storyboard-site .cockpit-status .eyebrow,.storyboard-site .cockpit-context-section .eyebrow,.storyboard-site .cockpit-command-deck .eyebrow { margin-bottom: var(--space-1); color: #a9a49c; font-size: 9px; }
+.storyboard-site .cockpit-status .eyebrow,.storyboard-site .cockpit-context-section .eyebrow { margin-bottom: var(--space-1); color: #a9a49c; font-size: 9px; }
 .storyboard-site .cockpit-status h2 { color: var(--ivory); font-size: 30px; }
 .storyboard-site .cockpit-status p { margin-top: var(--space-1); color: #bdb7ad; font-size: var(--text-small); }
 .storyboard-site .cockpit-pulse { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); color: #bdb7ad; font-size: var(--text-small); border: 1px solid #ffffff24; border-radius: 999px; }
@@ -474,20 +470,22 @@ body { margin: 0; }
 .storyboard-site .cockpit-context { min-height: 0; overflow-y: auto; padding: var(--space-4); border-left: 1px solid #ffffff1f; background: #20252a; scrollbar-color: #ffffff38 transparent; }
 .storyboard-site .cockpit-context-section { padding: var(--space-3) 0 var(--space-5); border-bottom: 1px solid #ffffff1f; }
 .storyboard-site .cockpit-context-section > header h3 { font: 21px var(--font-display); font-weight: 400; }
-.storyboard-site .campaign-agent-chat { min-height: 420px; max-height: min(62vh,680px); display: grid; grid-template-rows: auto minmax(180px,1fr) auto auto; margin: 0 0 var(--space-4); overflow: hidden; border: 1px solid #ffffff2d; background: #171a1c; }
-.storyboard-site .campaign-agent-chat > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid #ffffff1f; background: #1c2023; }
+.storyboard-site .agent-page { min-width: 0; }
+.storyboard-site .agent-page .campaign-page-header { margin-bottom: var(--space-5); }
+.storyboard-site .campaign-agent-chat { height: calc(100dvh - 286px); min-height: 580px; display: grid; grid-template-rows: auto minmax(260px,1fr) auto auto; overflow: hidden; color: var(--ivory); border: 1px solid #ffffff2d; border-radius: var(--radius-panel); background: #171a1c; box-shadow: 0 16px 44px #20252a18; }
+.storyboard-site .campaign-agent-chat > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: var(--space-4) var(--space-6); border-bottom: 1px solid #ffffff1f; background: #1c2023; }
 .storyboard-site .campaign-agent-chat > header .eyebrow { margin: 0 0 2px; color: #dca68b; font-size: 8px; }
-.storyboard-site .campaign-agent-chat > header h3 { font: 20px var(--font-display); font-weight: 400; }
+.storyboard-site .campaign-agent-chat > header h3 { font: 25px var(--font-display); font-weight: 400; }
 .storyboard-site .campaign-agent-state { display: inline-flex; align-items: center; gap: 6px; color: #a9a49c; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
 .storyboard-site .campaign-agent-state i { width: 7px; height: 7px; border-radius: 50%; background: #72a887; }
 .storyboard-site .campaign-agent-state.is-working i,.storyboard-site .campaign-agent-working i { background: #dca68b; animation: campaign-agent-pulse 1.2s ease-in-out infinite; }
-.storyboard-site .campaign-agent-messages { min-height: 0; display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; padding: var(--space-4); scrollbar-color: #ffffff38 transparent; }
-.storyboard-site .campaign-agent-empty { margin: auto; padding: var(--space-5); color: #8f8a83; font-size: 12px; line-height: 1.6; text-align: center; }
-.storyboard-site .campaign-agent-message { max-width: 92%; padding: var(--space-3); font-size: 12px; line-height: 1.55; border: 1px solid #ffffff1f; }
+.storyboard-site .campaign-agent-messages { min-height: 0; display: flex; flex-direction: column; gap: var(--space-4); overflow-y: auto; padding: var(--space-7); scrollbar-color: #ffffff38 transparent; }
+.storyboard-site .campaign-agent-empty { max-width: 540px; margin: auto; padding: var(--space-8); color: #a9a49c; font-size: 15px; line-height: 1.65; text-align: center; }
+.storyboard-site .campaign-agent-message { width: fit-content; max-width: min(82%,780px); padding: var(--space-4) var(--space-5); font-size: 14px; line-height: 1.62; border: 1px solid #ffffff1f; border-radius: var(--radius-control); }
 .storyboard-site .campaign-agent-message.is-user { align-self: flex-end; color: var(--ink); background: #f4e5d8; border-color: #f4e5d8; }
 .storyboard-site .campaign-agent-message.is-assistant { align-self: flex-start; color: #e6dfd5; background: #23282c; }
 .storyboard-site .campaign-agent-message p + p { margin-top: var(--space-2); }
-.storyboard-site .campaign-agent-message .is-commentary { color: #bdb7ad; font-size: 11px; }
+.storyboard-site .campaign-agent-message .is-commentary { color: #bdb7ad; font-size: 13px; }
 .storyboard-site .campaign-agent-message.is-pending { opacity: .72; }
 .storyboard-site .campaign-agent-message small { display: block; margin-top: var(--space-1); color: #745342; font-size: 9px; text-transform: uppercase; letter-spacing: .08em; }
 .storyboard-site .campaign-agent-tool { margin-top: var(--space-2); padding-top: var(--space-2); color: #dca68b; border-top: 1px solid #ffffff1f; }
@@ -495,13 +493,13 @@ body { margin: 0; }
 .storyboard-site .campaign-agent-tool p,.storyboard-site .campaign-agent-tool-result { margin-top: var(--space-2); color: #a9a49c; font-size: 10px; }
 .storyboard-site .campaign-agent-tool-result { display: flex; align-items: center; gap: var(--space-1); }
 .storyboard-site .campaign-agent-part-error,.storyboard-site .campaign-agent-error { color: #ffb8aa; }
-.storyboard-site .campaign-agent-working { display: flex; align-items: center; gap: var(--space-2); color: #a9a49c; font-size: 10px; }
+.storyboard-site .campaign-agent-working { display: flex; align-items: center; gap: var(--space-2); color: #a9a49c; font-size: 12px; }
 .storyboard-site .campaign-agent-working i { width: 7px; height: 7px; border-radius: 50%; }
 .storyboard-site .campaign-agent-error { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); font-size: 11px; border-top: 1px solid #6b332e; background: #4b211e; }
-.storyboard-site .campaign-agent-composer { display: grid; grid-template-columns: minmax(0,1fr) 42px; align-items: end; gap: var(--space-2); padding: var(--space-3); border-top: 1px solid #ffffff1f; }
-.storyboard-site .campaign-agent-composer textarea { min-height: 58px; max-height: 160px; padding: 10px 12px; resize: vertical; color: var(--ivory); border-color: #ffffff2d; background: #111416; font-size: 12px; line-height: 1.45; }
+.storyboard-site .campaign-agent-composer { display: grid; grid-template-columns: minmax(0,1fr) 48px; align-items: end; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-top: 1px solid #ffffff1f; }
+.storyboard-site .campaign-agent-composer textarea { min-height: 76px; max-height: 220px; padding: var(--space-3) var(--space-4); resize: vertical; color: var(--ivory); border-color: #ffffff2d; background: #111416; font-size: 14px; line-height: 1.5; }
 .storyboard-site .campaign-agent-composer textarea::placeholder { color: #8f8a83; }
-.storyboard-site .campaign-agent-composer button { width: 42px; min-width: 42px; height: 42px; min-height: 42px; padding: 0; color: var(--ink); border-color: #dca68b; background: #dca68b; }
+.storyboard-site .campaign-agent-composer button { width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; color: var(--ink); border-color: #dca68b; background: #dca68b; }
 @keyframes campaign-agent-pulse { 0%,100% { opacity: .45; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.12); } }
 .storyboard-site .cockpit-suggestion { margin-top: var(--space-3); padding: var(--space-4); color: var(--ink); background: #f4e5d8; border-left: 3px solid #d97c54; }
 .storyboard-site .cockpit-suggestion > span { display: flex; align-items: center; gap: var(--space-2); color: #745342; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
@@ -529,9 +527,6 @@ body { margin: 0; }
 .storyboard-site .cockpit-search-card strong { margin-top: 2px; }
 .storyboard-site .cockpit-search-card small { color: #a9a49c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .storyboard-site .cockpit-search-card button { min-height: 36px; padding: var(--space-2); color: var(--ivory); border-color: #ffffff2d; }
-.storyboard-site .cockpit-command-deck { min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-5) var(--space-7); border-left: 1px solid #ffffff1f; background: #20252a; scrollbar-color: #ffffff38 transparent; }
-.storyboard-site .cockpit-command-deck > header { padding: var(--space-2) 0 var(--space-3); border-bottom: 1px solid #ffffff1f; }
-.storyboard-site .cockpit-command-deck > header h2 { color: var(--ivory); font-size: 25px; }
 .storyboard-site.projection-site { max-width: none; padding: 0; background: #000; }
 .storyboard-site.projection-site main { min-height: 100vh; padding: 0; }
 .projection-view { position: fixed; inset: 0; display: grid; place-items: center; overflow: hidden; background: #000; color: #aaa; }
@@ -632,16 +627,16 @@ body { margin: 0; }
   .storyboard-site.live-expanded :is(.music-layout,.visuals-layout) { grid-template-columns: 220px minmax(0,1fr); }
 }
 @media (max-width: 1180px) {
-  .storyboard-site.with-live-panel { --live-panel-width: 82px; padding-left: var(--space-8); padding-right: calc(82px + var(--space-8)); }
+  .storyboard-site.with-live-panel { --live-panel-width: 82px; --site-gutter: var(--space-8); padding-left: var(--site-gutter); padding-right: calc(82px + var(--site-gutter)); }
   .storyboard-site.with-live-panel.live-expanded { --live-panel-width: min(390px, calc(100vw - 82px)); }
   .storyboard-site .live-panel.is-expanded { box-shadow: -24px 0 56px #20252a45; }
   .storyboard-site .transcript-layout { grid-template-columns: 200px minmax(0,1fr); gap: var(--space-5); }
   .storyboard-site .transcript-event { grid-template-columns: 170px minmax(0,1fr); }
-  .storyboard-site .cockpit-shell { grid-template-columns: minmax(0,1fr) 300px; }
   .storyboard-site .cockpit-workspace { grid-template-columns: minmax(620px,1fr) 340px; }
 }
 @media (max-width: 720px) {
-  .storyboard-site.with-live-panel { padding: 0 var(--space-5); }
+  .storyboard-site.with-live-panel { --site-gutter: var(--space-5); padding: 0 var(--site-gutter); }
+  .storyboard-site.with-live-panel > :is(.masthead,main) { width: 100%; }
   .storyboard-site .campaign-tabs { gap: 0; }
   .storyboard-site.with-live-panel.live-expanded { --live-panel-width: 100vw; }
   .storyboard-site.live-expanded :is(.music-layout,.visuals-layout) { grid-template-columns: 1fr; }
@@ -664,16 +659,20 @@ body { margin: 0; }
   .storyboard-site .transcript-speakers > div { grid-template-columns: 1fr; }
   .storyboard-site .transcript-speakers select { width: 100%; min-width: 0; }
   .storyboard-site .transcript-tts { align-items: stretch; flex-direction: column; }
-  .storyboard-site .live-panel.is-cockpit .live-panel-header { min-height: 64px; }
-  .storyboard-site .cockpit-shell { display: block; overflow-y: auto; }
-  .storyboard-site .cockpit { min-height: calc(100dvh - 64px); overflow: visible; }
+  .storyboard-site .cockpit-page { height: auto; min-height: 0; overflow: visible; }
+  .storyboard-site .cockpit-page .cockpit { min-height: calc(100dvh - 180px); overflow: visible; }
   .storyboard-site .cockpit-status { align-items: flex-start; padding: var(--space-4); }
   .storyboard-site .cockpit-status p { max-width: 260px; }
   .storyboard-site .cockpit-pulse { display: none; }
   .storyboard-site .cockpit-workspace { display: block; overflow: visible; }
   .storyboard-site .cockpit-board { grid-template-columns: repeat(3,78vw); overflow-x: auto; }
   .storyboard-site .cockpit-lane { min-height: 520px; max-height: 68vh; }
-  .storyboard-site .cockpit-context,.storyboard-site .cockpit-command-deck { overflow: visible; border-left: 0; border-top: 1px solid #ffffff1f; }
+  .storyboard-site .cockpit-context { overflow: visible; border-left: 0; border-top: 1px solid #ffffff1f; }
+  .storyboard-site .campaign-agent-chat { height: calc(100dvh - 230px); min-height: 620px; }
+  .storyboard-site .campaign-agent-chat > header { padding-inline: var(--space-4); }
+  .storyboard-site .campaign-agent-messages { padding: var(--space-4); }
+  .storyboard-site .campaign-agent-message { max-width: 94%; }
+  .storyboard-site .campaign-agent-composer { padding: var(--space-3); }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 .site-language-switch{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line,#d9d3c7);border-radius:999px}

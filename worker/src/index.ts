@@ -15,7 +15,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players|transcript|music|visuals|workspace|projection)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|agent|cockpit|transcript|music|visuals|workspace|projection)`)) {
     // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
     // Leaf instead of asking the static host for a file at the browser route.
     return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
