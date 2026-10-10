@@ -59,6 +59,16 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/cockpit/entities`)) allowed = method === 'GET' && query(['query']) && keys.length <= 1 && (url.searchParams.get('query')?.length ?? 0) <= 200
   if (match(`/api/campaigns/${id}/cockpit/items`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/cockpit/items/${id}/move`) || match(`/api/campaigns/${id}/cockpit/observe`) || match(`/api/campaigns/${id}/cockpit/suggestions/${id}/decide`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/agent/chat`)) {
+    const epoch = url.searchParams.get('afterEpoch')
+    const sequence = url.searchParams.get('afterSequence')
+    const cursor = keys.length === 0 || keys.length === 2
+      && keys.includes('afterEpoch') && keys.includes('afterSequence')
+      && /^[A-Za-z0-9_-]{1,128}$/.test(epoch ?? '')
+      && /^\d{1,19}$/.test(sequence ?? '')
+    allowed = method === 'POST' && query([])
+      || method === 'GET' && query(['afterEpoch', 'afterSequence']) && cursor
+  }
   if (match(`/api/campaigns/${id}/operations/${id}`) || match(`/api/campaigns/${id}/media/(?:cover|characters/${id})`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/status`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/music/playback`)) allowed = ['GET', 'POST'].includes(method) && query([])
