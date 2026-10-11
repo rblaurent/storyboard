@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, ApiError, explain, imageSource, type Account, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
+import { AgentDirection } from './AgentDirection'
 
 const operation = () => crypto.randomUUID()
 type VisualGenerationCommand = { operationId: string; situation: string; brief: VisualBrief; confirmed: true }
@@ -77,6 +78,7 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
 
   return <section className="visuals-workspace">
     <header className="campaign-page-header"><div><h2>Visuals</h2><p>Build the atmosphere, curate visual sets, and control what the table sees.</p></div><a className="button projection-link" href={`/campaigns/${id}/projection`} target="_blank" rel="noreferrer"><SiteIcon name="projector" />Open projection</a></header>
+    {gm && <AgentDirection campaignId={id} capability="visuals" csrfToken={me.csrfToken} title="Visual Agent direction" />}
     {error && <Message error>{error}</Message>}{notice && <Message>{notice}</Message>}
     {gm && <form className="visual-scene panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="visual-situation">What should the room look like?</label><textarea id="visual-situation" rows={3} maxLength={2000} value={situation} onChange={e => setSituation(e.target.value)} placeholder="The drowned throne room lies silent, moonlight filtering through black water above…" /><div className="scene-actions"><button className="primary" disabled={!situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the scene…' : 'Cue image'}</button><button type="button" className="accent" disabled={!situation.trim() || !!busy} onClick={() => void buildSet()}><SiteIcon name="generate" />{busy === 'brief' ? 'Designing the set…' : 'Build visual set'}</button><span className="quiet">Cue uses Fast. Build uses Deep and stops before image generation.</span></div></form>}
     {suggestions.length > 0 && <section className="visual-suggestions"><div className="visual-section-title"><div><span className="eyebrow">MATCHED FROM THE LIBRARY</span><h3>Ready without rendering</h3></div></div><div className="visual-grid">{suggestions.map(v => <VisualCard key={v.id} visual={v} actions={gm && <><button onClick={() => void command('show', { visualId: v.id })}><SiteIcon name="projector" />Show</button><button onClick={() => void enqueue({ visualId: v.id }, v.name)}><SiteIcon name="queue" />Queue</button></>} />)}</div></section>}

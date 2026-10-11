@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Form
 import { presentWorkspaceEntity, type WorkspaceEntity } from '@redbamboo/workspace'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
+import { AgentDirection } from './AgentDirection'
 
 type Phase='played'|'now'|'prepared'
 type Lens='beat'|'discovery'|'belief'
@@ -34,6 +35,7 @@ export function Cockpit({campaignId,csrfToken}:{campaignId:string;csrfToken:stri
   async function decide(suggestion:CockpitSuggestion,decision:'accept'|'dismiss'){setBusy(`suggestion:${suggestion.id}`);try{const value=await api<CockpitSnapshot>(`${base}/suggestions/${suggestion.id}/decide`,csrfToken,'POST',{decision,operationId:crypto.randomUUID()});if(mounted.current)setSnapshot(value)}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
   return <section className="cockpit" aria-label="Game Master cockpit">
     <header className="cockpit-status"><div><span className="eyebrow">TABLE STATE</span><h2>{snapshot?.session?.name||'Preparation board'}</h2><p>{snapshot?.session?`Live · ${snapshot.session.roleplayAnchor}`:'No active transcript session. Prepare the board now; it will become live when the session starts.'}</p></div><div className={`cockpit-pulse${snapshot?.session?' is-live':''}`}><i/>{snapshot?.session?'Listening to the table':'Prep mode'}</div></header>
+    <div className="cockpit-agent-directions"><AgentDirection campaignId={campaignId} capability="planning" csrfToken={csrfToken} title="Scenario planning direction"/><AgentDirection campaignId={campaignId} capability="information" csrfToken={csrfToken} title="Information and player-model direction"/></div>
     {error&&<p className="cockpit-error" role="alert"><SiteIcon name="warning"/><span>{error}</span></p>}
     <div className="cockpit-workspace">
       <section className="cockpit-board" aria-label="Cockpit timeline">

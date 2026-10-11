@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { WorkspaceExplorer, type WorkspaceCreateInput, type WorkspaceEntity, type WorkspaceEntityPage, type WorkspaceListInput, type WorkspaceSaveInput, type WorkspaceSnapshot, type WorkspaceTransport } from '@redbamboo/workspace'
 import { api, explain, type Account } from './api'
 import { useLocale, workspaceFrench } from './i18n'
+import { AgentDirection } from './AgentDirection'
 
 export function CampaignWorkspace({ id, me }: { id: string; me: Account }) {
   const { locale, t } = useLocale()
@@ -24,6 +25,7 @@ export function CampaignWorkspace({ id, me }: { id: string; me: Account }) {
   }), [base, me.csrfToken, locale])
   return <section className="workspace-page">
     <header className="campaign-page-header"><div><h2>{t('Workspace')}</h2><p>{t('The complete campaign database: worlds, characters, lore, jobs, and every custom record.')}</p></div></header>
+    {locale !== 'fr' && <AgentDirection campaignId={id} capability="handouts" csrfToken={me.csrfToken} title="Handout and document direction" />}
     {locale === 'fr' && <p className="quiet">Les traductions françaises sont affichées en lecture seule. Revenez à EN pour modifier la source canonique.</p>}
     {error && <p className="error" role="alert"><span>{error}</span></p>}
     {loading ? <p role="status">{t('Opening the campaign workspace…')}</p> : snapshot ? <WorkspaceExplorer snapshot={snapshot} transport={transport} onRefresh={load} locale={locale} messages={locale === 'fr' ? workspaceFrench : undefined} readOnly={locale === 'fr'} /> : <button onClick={() => void load()}>{t('Try again')}</button>}

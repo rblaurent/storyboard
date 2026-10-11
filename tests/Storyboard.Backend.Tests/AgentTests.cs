@@ -198,4 +198,55 @@ public sealed class AgentTests
             campaign.Id.ToString(), Context(campaign.Data.Text("agent"))));
         Assert.Equal(campaign.Id.ToString(), accepted["campaign"]!.AsObject().Text("id"));
     }
+
+    [Fact]
+    public async Task PlayModeOwnsOneAutomationHeartbeatDiscussionAndRevisionedPlaybooks()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaign = fixture.Campaign.Id.ToString();
+        var account = fixture.Gm.Id.ToString();
+        var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
+        var defaults = StoryJson.Object(await playbooks.ListAsync(campaign, account));
+        Assert.Equal(5, defaults["items"]!.AsArray().Count);
+
+        var saved = StoryJson.Object(await playbooks.SaveAsync(campaign, account, "music", new CampaignPlaybookWrite(
+            true, true, 90, ["scene-change", "queue-low"], "Brass motifs for the Concord.", "No generic trailer music.", 0, Guid.NewGuid().ToString())));
+        Assert.Equal(1, saved.Number("revision"));
+        Assert.True(saved.Flag("autoDrafts"));
+        Assert.NotEmpty(saved.Text("revisionHash"));
+
+        var workflows = new FakeWorkflowAutomations(fixture.Entities);
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, workflows);
+        var started = StoryJson.Object(await play.SetAsync(campaign, account, new CampaignPlayWrite(true, Guid.NewGuid().ToString())));
+        Assert.True(started.Flag("enabled"));
+        Assert.NotEmpty(started.Text("heartbeatDiscussionId"));
+        Assert.True(workflows.Last!.Enabled);
+        Assert.Equal(StoryCampaignPlay.ActionType, workflows.Last.NodeType);
+
+        var automation = await fixture.Entities.GetBySlugAsync("automation", workflows.Last.Slug);
+        var sends = fixture.AgentConversations.Sends;
+        var heartbeatResult = await new StoryCampaignHeartbeatHandler(play, playbooks, fixture.Agent).ExecuteAsync(new AutomationActionContext
+        {
+            Automation = automation!,
+            ActionConfig = workflows.Last.ActionConfig,
+            Beneficiary = new ComputeBeneficiary("user", account),
+            AttemptJobId = Guid.NewGuid(),
+            CorrelationId = Guid.NewGuid().ToString(),
+            Confidential = true,
+        }, default);
+        Assert.Equal(sends + 1, fixture.AgentConversations.Sends);
+        var heartbeat = heartbeatResult ?? throw new Xunit.Sdk.XunitException("Heartbeat returned no result");
+        Assert.Equal(started.Text("heartbeatDiscussionId"), heartbeat.Text("discussionId"));
+        Assert.False(string.IsNullOrWhiteSpace(heartbeat.Text("playbookHash")));
+
+        var index = StoryJson.Object(await fixture.Agent.ListAsync(campaign, account));
+        var heartbeatDiscussion = index["discussions"]!.AsArray().Select(value => StoryJson.Object(value!)).Single(value => value.Text("kind") == "heartbeat");
+        Assert.True(heartbeatDiscussion.Flag("readOnly"));
+        Assert.Equal(started.Text("heartbeatDiscussionId"), heartbeatDiscussion.Text("id"));
+
+        var stopped = StoryJson.Object(await play.SetAsync(campaign, account, new CampaignPlayWrite(false, Guid.NewGuid().ToString())));
+        Assert.False(stopped.Flag("enabled"));
+        Assert.False(workflows.Last.Enabled);
+        Assert.Equal(2, workflows.Upserts);
+    }
 }

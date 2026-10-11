@@ -11,7 +11,11 @@ public sealed record VisualSituationWrite(string Situation);
 public sealed record VisualProfileWrite(string ArtDirection, string NegativePrompt, int DefaultIntervalSeconds, string Transition);
 public sealed record VisualFrameWrite(string Title, string Prompt, string Mood, string[] Tags);
 public sealed record VisualBriefWrite(string Title, string Transition, int IntervalSeconds, VisualFrameWrite[] Frames);
-public sealed record VisualGenerationWrite(string OperationId, string Situation, VisualBriefWrite Brief, bool Confirmed);
+public sealed record VisualGenerationWrite(string OperationId, string Situation, VisualBriefWrite Brief, bool Confirmed)
+{
+    public string? PlaybookHash { get; init; }
+    public string? HeartbeatTurn { get; init; }
+}
 public sealed record VisualSetWrite(string Name, string? Description, string OperationId);
 public sealed record VisualSetItemWrite(string VisualId);
 public sealed record VisualQueueWrite(string? VisualId, string? SetId, string OperationId);
@@ -122,7 +126,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, IAi
             if (previous is not null)
             {
                 await store.CheckProtectionAsync(previous, ct);
-                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief)) throw new StoryException("operation_reused", 409);
+                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief) || previous.Data.Text("playbook_hash") != (input.PlaybookHash ?? "") || previous.Data.Text("heartbeat_turn") != (input.HeartbeatTurn ?? "")) throw new StoryException("operation_reused", 409);
                 if (previous.Data.Text("state") == "failed") previous = await PatchAsync(previous, new JsonObject { ["state"] = "pending", ["error"] = "" }, ct);
                 return await GenerationProjectionAsync(previous, ct);
             }
@@ -135,8 +139,9 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, IAi
             var seeds = new JsonArray(((JsonArray)brief["frames"]!).Select(_ => (JsonNode?)JsonValue.Create(Random.Shared.NextInt64(0, (long)uint.MaxValue + 1))).ToArray());
             var data = await store.ProtectAsync(new JsonObject
             {
-                ["campaign"] = campaign, ["account"] = account, ["situation"] = situation, ["brief"] = brief, ["profile"] = ProfileNode(profile),
+                ["campaign"] = campaign, ["account"] = account, ["operation_id"] = operation.ToString(), ["situation"] = situation, ["brief"] = brief, ["profile"] = ProfileNode(profile),
                 ["state"] = "pending", ["error"] = "", ["parent"] = c.Data.Text("workspace"), ["deadline"] = DateTimeOffset.UtcNow.AddMinutes(40).ToUnixTimeSeconds(),
+                ["agent_generated"] = !string.IsNullOrWhiteSpace(input.PlaybookHash), ["playbook_hash"] = StoryJson.Bounded(input.PlaybookHash ?? "", 128), ["heartbeat_turn"] = StoryJson.Bounded(input.HeartbeatTurn ?? "", 160),
                 ["workflow"] = workflow.Slug, ["workflow_id"] = workflow.Id.ToString(), ["workflow_revision"] = workflow.UpdatedAt.ToString("O"),
                 ["quality_mode"] = config.Data.Text("quality_mode", "deep"), ["width"] = 1216, ["height"] = 768, ["steps"] = 8, ["cfg"] = 1, ["seeds"] = seeds, ["jobs"] = new JsonObject()
             }, ct);
@@ -285,7 +290,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, IAi
             if (jobId == "")
             {
                 await CheckWorkflowAsync(op, ct); var inputs = new JsonObject { ["width"] = op.Data.Number("width"), ["height"] = op.Data.Number("height"), ["steps"] = op.Data.Number("steps"), ["cfg"] = op.Data.Number("cfg"), ["seed"] = seeds[index]!.GetValue<long>(), ["prompt"] = frame.Text("prompt") + "\nArt direction: " + profile.Text("artDirection") + "\nAvoid: " + profile.Text("negativePrompt") };
-                var job = await workflows.SubmitAsync(op.Data.Text("workflow_id"), inputs, new ComputeJobOptions { Async = true, IdempotencyKey = $"storyboard-visual-{op.Id}-{index}", JobName = "Storyboard visual: " + frame.Text("title"), Provenance = Provenance(op.Data.Text("campaign"), op.Data.Text("account"), "generate") }, ct);
+                var job = await workflows.SubmitAsync(op.Data.Text("workflow_id"), inputs, new ComputeJobOptions { Async = true, IdempotencyKey = $"storyboard-visual-{op.Id}-{index}", JobName = "Storyboard visual: " + frame.Text("title"), Provenance = Provenance(op.Data.Text("campaign"), op.Data.Text("account"), "generate", op.Data.Text("playbook_hash"), op.Data.Text("heartbeat_turn")) }, ct);
                 if (string.IsNullOrWhiteSpace(job.JobId)) throw new StoryException("image_job_missing", 502); jobId = job.JobId; capability = string.IsNullOrWhiteSpace(job.CapabilitySlug) ? "image-gen" : job.CapabilitySlug; jobsNode[key] = new JsonObject { ["id"] = jobId, ["capability"] = capability }; op = await PatchAsync(op, new JsonObject { ["jobs"] = jobsNode.DeepClone(), ["state"] = "generating" }, ct);
             }
             await jobs.WaitAsync(capability, jobId, options: new ComputeJobOptions { Timeout = TimeSpan.FromMinutes(20) }, ct: ct); await store.WritableAsync(ct); await campaigns.MembershipAsync(op.Data.Text("campaign"), op.Data.Text("account"), true, ct); using var image = await jobs.DownloadOutputAsync(capability, jobId, ct: ct) ?? throw new StoryException("image_output_missing", 502);
@@ -336,7 +341,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, IAi
     private async Task<object> SetProjectionAsync(LeafEntity set, CancellationToken ct) => new { id = set.Id, name = set.Name, description = set.Data.Text("description"), imageCount = (await SetItemsAsync(set.Data.Text("campaign"), set.Id.ToString(), ct)).Count };
     private async Task CheckWorkflowAsync(LeafEntity op, CancellationToken ct) { var workflow = await store.Entities.GetAsync(StoryJson.Id(op.Data.Text("workflow_id")), ct); if (workflow?.TypeSlug != "comfyui-workflow" || workflow.UpdatedAt.ToString("O") != op.Data.Text("workflow_revision")) throw new StoryException("workflow_changed", 409); }
     private async Task<LeafEntity> PatchAsync(LeafEntity entity, JsonObject patch, CancellationToken ct) => await store.ChangeAsync(entity.TypeSlug, entity.Slug, entity.Name, old => { var next = old!.Data.DeepClone().AsObject(); foreach (var p in patch) next[p.Key] = p.Value?.DeepClone(); return next; }, ct);
-    private async Task<object> GenerationProjectionAsync(LeafEntity op, CancellationToken ct) { var candidates = await store.AllAsync("storyboard-visual-candidate", new Dictionary<string, object?> { ["generation"] = op.Id.ToString() }, ct); return new { id = op.Id, state = op.Data.Text("state"), error = op.Data.Text("error"), candidates = candidates.OrderBy(c => c.Slug).Select(c => new { id = c.Id, title = c.Name, prompt = c.Data.Text("prompt"), mood = c.Data.Text("mood"), tags = Tags(c.Data["tags"]), imageUrl = $"/api/campaigns/{op.Data.Text("campaign")}/visuals/candidates/{c.Id}/image", promotedVisual = c.Data.Text("promoted_visual") }).ToArray() }; }
+    private async Task<object> GenerationProjectionAsync(LeafEntity op, CancellationToken ct) { var candidates = await store.AllAsync("storyboard-visual-candidate", new Dictionary<string, object?> { ["generation"] = op.Id.ToString() }, ct); return new { id = op.Id, state = op.Data.Text("state"), error = op.Data.Text("error"), agentGenerated = op.Data.Flag("agent_generated"), playbookHash = op.Data.Text("playbook_hash"), heartbeatTurn = op.Data.Text("heartbeat_turn"), candidates = candidates.OrderBy(c => c.Slug).Select(c => new { id = c.Id, title = c.Name, prompt = c.Data.Text("prompt"), mood = c.Data.Text("mood"), tags = Tags(c.Data["tags"]), imageUrl = $"/api/campaigns/{op.Data.Text("campaign")}/visuals/candidates/{c.Id}/image", promotedVisual = c.Data.Text("promoted_visual") }).ToArray() }; }
     private async Task<VisualProfileWrite> ProfileProjectionAsync(string campaign, CancellationToken ct) { var existing = await store.Entities.GetBySlugAsync("storyboard-visual-profile", "visual-profile-" + campaign, ct); if (existing is not null) { await store.CheckProtectionAsync(existing, ct); if (existing.Data.Text("campaign") == campaign) return new(existing.Data.Text("art_direction"), existing.Data.Text("negative_prompt"), (int)NumberOr(existing.Data, "default_interval_seconds", 30), existing.Data.Text("transition", "crossfade")); } var config = (await store.ConfigAsync(ct))!; return new(config.Data.Text("visual_brief", "Cinematic campaign artwork, clear composition, no lettering."), "lettering, captions, interface, watermark", 30, "crossfade"); }
     private static object ProfileProjection(LeafEntity e) => new { artDirection = e.Data.Text("art_direction"), negativePrompt = e.Data.Text("negative_prompt"), defaultIntervalSeconds = NumberOr(e.Data, "default_interval_seconds", 30), transition = e.Data.Text("transition", "crossfade") };
     private static object VisualProjection(LeafEntity v) => new { id = v.Id, name = v.Name, mood = v.Data.Text("mood"), tags = Tags(v.Data["tags"]), width = v.Data.Number("width"), height = v.Data.Number("height"), imageUrl = $"/api/campaigns/{v.Data.Text("campaign")}/visuals/images/{v.Id}" };
@@ -351,5 +356,12 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, IAi
     private static string[] Tags(JsonNode? node) => node is JsonArray a ? a.Select(v => v?.GetValue<string>() ?? "").Where(v => v != "").Take(12).ToArray() : [];
     private static long NumberOr(JsonObject data, string key, long fallback) => data[key] is null ? fallback : data.Number(key);
     private static HashSet<string> Tokens(string value) => value.ToLowerInvariant().Split([' ', ',', '.', ';', ':', '-', '_', '/', '\\', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries).Where(v => v.Length > 2).ToHashSet(StringComparer.OrdinalIgnoreCase);
-    private static ComputeProvenance Provenance(string campaign, string account, string action) => new(1, new ComputeOrigin("redleaf", new ComputeAppReference("plugin", "storyboard", null, "Storyboard"), new ComputeEntrypoint("api", "/api/public/storyboard/campaigns/visuals/" + action, "POST")), new ComputeActor("system", "Storyboard", Id: "storyboard"), new ComputeBeneficiary("system", Reason: "Requested by an authenticated Storyboard GM"), [new ComputeContextReference("campaign", EntityId: campaign), new ComputeContextReference("storyboard-account", EntityId: account)], new ComputeTrace(), ComputeProvenanceAssurance.Asserted, DateTimeOffset.UtcNow);
+    private static ComputeProvenance Provenance(string campaign, string account, string action, string? playbookHash = null, string? heartbeatTurn = null) => new(1, new ComputeOrigin("redleaf", new ComputeAppReference("plugin", "storyboard", null, "Storyboard"), new ComputeEntrypoint("api", "/api/public/storyboard/campaigns/visuals/" + action, "POST")), new ComputeActor("system", "Storyboard", Id: "storyboard"), new ComputeBeneficiary("system", Reason: "Requested by an authenticated Storyboard GM"), Context(campaign, account, playbookHash, heartbeatTurn), new ComputeTrace(), ComputeProvenanceAssurance.Asserted, DateTimeOffset.UtcNow);
+    private static IReadOnlyList<ComputeContextReference> Context(string campaign, string account, string? playbookHash, string? heartbeatTurn)
+    {
+        var values = new List<ComputeContextReference> { new("campaign", EntityId: campaign), new("storyboard-account", EntityId: account) };
+        if (!string.IsNullOrWhiteSpace(playbookHash)) values.Add(new("playbook-revision", EntityId: playbookHash));
+        if (!string.IsNullOrWhiteSpace(heartbeatTurn)) values.Add(new("heartbeat-turn", EntityId: heartbeatTurn));
+        return values;
+    }
 }

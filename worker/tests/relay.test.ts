@@ -32,6 +32,7 @@ test('narrow route/method/query matrix includes only the frozen product boundary
     [`/api/campaigns/${campaign}/cockpit`, ['GET']], [`/api/campaigns/${campaign}/cockpit/entities?query=glass`, ['GET']], [`/api/campaigns/${campaign}/cockpit/items`, ['POST']], [`/api/campaigns/${campaign}/cockpit/items/${member}/move`, ['POST']], [`/api/campaigns/${campaign}/cockpit/observe`, ['POST']], [`/api/campaigns/${campaign}/cockpit/suggestions/${member}/decide`, ['POST']],
     [`/api/campaigns/${campaign}/agent/chat`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/chat?afterEpoch=0123456789abcdef&afterSequence=42`, ['GET']],
     [`/api/campaigns/${campaign}/agent/discussions`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=0123456789abcdef&afterSequence=42`, ['GET']],
+    [`/api/campaigns/${campaign}/agent/playbooks`, ['GET']], [`/api/campaigns/${campaign}/agent/playbooks/music`, ['PUT']], [`/api/campaigns/${campaign}/play-mode`, ['GET', 'POST']],
     ['/assets/index-abcdefgh.js', ['GET']],
   ]
   for (const [path, methods] of routes) {
@@ -44,6 +45,9 @@ test('narrow route/method/query matrix includes only the frozen product boundary
   assert.ok(route(url(`/api/campaigns/${campaign}/music/queue`), 'GET'))
   for (const path of [`/api/campaigns/${campaign}/agent/discussions?all=true`, `/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=0123456789abcdef`, `/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterSequence=42`, `/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=bad%20epoch&afterSequence=42`, `/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=0123456789abcdef&afterSequence=-1`, `/api/campaigns/${campaign}/agent/discussions/xx/chat`, `/api/campaigns/${campaign}/agent/discussions/${'a'.repeat(81)}/chat`]) assert.equal(route(url(path), 'GET'), null, path)
   assert.equal(route(url(`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?all=true`), 'POST'), null)
+  assert.equal(route(url(`/api/campaigns/${campaign}/agent/playbooks/other`), 'PUT'), null)
+  assert.equal(route(url(`/api/campaigns/${campaign}/agent/playbooks/music?all=true`), 'PUT'), null)
+  assert.equal(route(url(`/api/campaigns/${campaign}/play-mode?all=true`), 'GET'), null)
 })
 test('request cookies are product only and ambiguous duplicate product values are removed', () => {
   assert.equal(productCookies(`leaf=secret; __Host-storyboard=${token}; Agent=secret; __Host-storyboard-login=${token}; __Host-storyboard-evil=${token}`), `__Host-storyboard=${token}; __Host-storyboard-login=${token}`)

@@ -5,6 +5,7 @@ import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 import { CampaignWorkspace } from './Workspace'
 import { Cockpit } from './Cockpit'
 import { CampaignChat } from './CampaignChat'
+import { AgentDirection } from './AgentDirection'
 import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 import { LanguageSwitch, useLocale } from './i18n'
@@ -143,7 +144,7 @@ export function App() {
       {error && <ErrorMessage error={error} />}
       {loading ? <div className="loading" role="status"><SiteIcon name="busy" className="is-spinning" />Opening your notebook…</div> : !me ? <section className="signin"><span className="eyebrow">YOUR NEXT CHAPTER</span><h1>Every great story<br />starts at the table.</h1><p>A place for your campaigns, the people in them,<br className="desktop-break" /> and the worlds you bring to life together.</p><a className="button primary" href="/auth/google"><SiteIcon name="google" />Sign in with Google <SiteIcon name="out" /></a><p className="quiet">Use the Google account you share with your Game Master.</p></section> : projectionMatch ? <ProjectionView campaignId={projectionMatch[1]} /> : path === '/' ? <Picker me={me} navigate={navigate} /> : match ? <CampaignView key={match[1]} id={match[1]} tab={match[2]} me={me} navigate={navigate} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <section className="empty"><h1>Page unavailable</h1><Link href="/" navigate={navigate}>Back to campaigns</Link></section>}
     </main>
-    {live && <LivePanel mode={liveMode} setMode={setLive}><LivePlayers campaignId={liveCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
+    {live && <LivePanel mode={liveMode} setMode={setLive}>{liveCanControl && <LivePlayMode campaignId={liveCampaignId} csrfToken={me!.csrfToken} panelExpanded={liveMode !== 'contracted'} />}<LivePlayers campaignId={liveCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} /><LiveTranscript campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} /><LiveVisual campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
   </div>
 }
@@ -158,6 +159,30 @@ function LivePanel({ mode, setMode, children }: { mode: 'contracted' | 'rail'; s
     </header>
     <div className="live-panel-content">{children}</div>
   </aside>
+}
+
+interface PlayModeStatus { enabled: boolean; revision: number; heartbeatDiscussionId: string; startedAt: string }
+function LivePlayMode({ campaignId, csrfToken, panelExpanded }: { campaignId: string; csrfToken: string; panelExpanded: boolean }) {
+  const [status, setStatus] = useState<PlayModeStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let alive = true
+    const read = () => void api<PlayModeStatus>(`/campaigns/${campaignId}/play-mode`).then(value => { if (alive) { setStatus(value); setError('') } }).catch(cause => { if (alive) setError(explain(cause)) })
+    read(); const timer = window.setInterval(read, 5000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [campaignId])
+  async function toggle() {
+    if (!status || busy) return
+    setBusy(true); setError('')
+    try { const next = await api<PlayModeStatus>(`/campaigns/${campaignId}/play-mode`, csrfToken, 'POST', { enabled: !status.enabled, operationId: crypto.randomUUID() }); setStatus(next); window.dispatchEvent(new CustomEvent('storyboard:play-mode-changed', { detail: { campaignId, enabled: next.enabled } })) }
+    catch (cause) { setError(explain(cause)) }
+    finally { setBusy(false) }
+  }
+  return <section className={`live-play-mode${status?.enabled ? ' is-active' : ''}`} aria-label="Campaign play mode">
+    <button onClick={() => void toggle()} disabled={!status || busy} aria-pressed={status?.enabled || false} aria-label={status?.enabled ? 'End play mode' : 'Start play mode'}><i />{panelExpanded && <span><strong>{status?.enabled ? 'Play mode active' : 'Start play mode'}</strong><small>{status?.enabled ? 'Campaign heartbeat is watching the table' : 'Heartbeat stays completely dormant'}</small></span>}</button>
+    {panelExpanded && error && <p role="alert">{error}</p>}
+  </section>
 }
 
 function LivePlayers({ campaignId, open, panelExpanded, toggleFoldout }: { campaignId: string; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
@@ -632,6 +657,7 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const saved = (track: MusicTrack) => pool.find(item => item.id === track.id || !!track.uri && item.uri === track.uri)
   return <section className="music-workspace">
     <CampaignPageHeader title="Music" description="Curate mixed-source playlists, search Spotify, generate scores, and run one campaign queue." aside={<div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? 'Spotify catalogue connected' : status?.error || 'Checking music service…'}</div>} />
+    {gm && <AgentDirection campaignId={id} capability="music" csrfToken={me.csrfToken} title="Music Agent direction" />}
     <ErrorMessage error={error} />{spotifyPlayer.error && <Feedback tone="error">{spotifyPlayer.error}</Feedback>}{notice && <Feedback tone="notice">{notice}</Feedback>}
     <form className="scene-composer panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="music-situation">What is happening right now?</label><textarea id="music-situation" value={situation} onChange={e => setSituation(e.target.value)} maxLength={2000} rows={3} placeholder="The party enters the drowned throne room while something enormous moves below the water…" /><div className="scene-actions"><button className="primary" disabled={!gm || !situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the room…' : 'Find music'}</button><button type="button" className="accent" disabled={!gm || !situation.trim() || !!busy} onClick={() => void compose()}><SiteIcon name="generate" />{busy === 'brief' ? 'Shaping the score…' : 'Compose new'}</button><span className="quiet">Find uses Fast. Compose uses Deep and stops before any paid generation.</span></div></form>
     {brief && <section className="music-brief panel" aria-label="Generation brief"><div><span className="eyebrow">READY TO COMPOSE</span><h3>{brief.title}</h3><p>{brief.prompt}</p></div><dl><div><dt>Mood</dt><dd>{brief.mood}</dd></div><div><dt>Energy</dt><dd>{brief.energy}</dd></div><div><dt>Tempo</dt><dd>{brief.tempo}</dd></div><div><dt>Length</dt><dd>{trackTime(brief.durationSeconds * 1000)}</dd></div></dl><p className="brief-style"><strong>Style</strong> {brief.style}</p><p className="quiet">{brief.instruments.join(' · ')}</p>{!generation && !confirming && <button className="accent" onClick={() => setConfirming(true)} disabled={!!busy}><SiteIcon name="generate" />Generate candidates</button>}{confirming && <div className="generation-confirm"><strong>This submits paid music generation.</strong><span>The brief above is the exact prompt snapshot. Retrying this confirmation reuses the same operation ID.</span><div><button className="accent" onClick={() => void generate()} disabled={!!busy}>{busy === 'generate' ? 'Submitting…' : 'Confirm and generate'}</button><button onClick={() => setConfirming(false)} disabled={!!busy}>Cancel</button></div></div>}{!generation && <p className="quiet">No credits have been spent.</p>}</section>}

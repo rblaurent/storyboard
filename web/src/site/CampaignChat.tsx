@@ -29,7 +29,7 @@ interface AgentChatPage {
 }
 interface AgentAdmission { messageUid: string; disposition: string }
 interface PendingMessage { id: string; content: string; messageUid?: string }
-interface AgentDiscussion { id: string; title: string; sessionId: string; status: string; lastActivity: string; messageCount: number }
+interface AgentDiscussion { id: string; title: string; sessionId: string; status: string; lastActivity: string; messageCount: number; kind?: 'chat' | 'heartbeat'; readOnly?: boolean }
 interface AgentDiscussionIndex { agent: { id: string; name: string }; discussions: AgentDiscussion[]; defaultDiscussionId: string }
 
 export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
@@ -52,6 +52,19 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
       setIndex(value); setSelected(chosen)
     }).catch(cause => { if (alive) setError(explain(cause)) })
     return () => { alive = false }
+  }, [base, campaignId])
+
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaignId?: string }>).detail
+      if (detail?.campaignId !== campaignId) return
+      void api<AgentDiscussionIndex>(base).then(value => {
+        setIndex(value)
+        setSelected(current => value.discussions.some(item => item.id === current) ? current : value.defaultDiscussionId || value.discussions[0]?.id || '')
+      }).catch(cause => setError(explain(cause)))
+    }
+    window.addEventListener('storyboard:play-mode-changed', changed)
+    return () => window.removeEventListener('storyboard:play-mode-changed', changed)
   }, [base, campaignId])
 
   function choose(id: string) {
@@ -84,7 +97,7 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   return <section className={`campaign-agent-workspace${showList ? ' is-list' : ' is-chat'}`} aria-label="Campaign Agent discussions">
     <aside className="campaign-agent-discussions" aria-label="Discussions">
       <div className="campaign-agent-discussions-bar"><strong>Discussions</strong><button onClick={() => void create()} disabled={creating}><SiteIcon name="plus" />{creating ? 'Creating…' : 'New'}</button></div>
-      {index?.discussions.length ? <nav>{index.discussions.map(discussion => <button key={discussion.id} className={discussion.id === selected ? 'is-selected' : ''} aria-current={discussion.id === selected ? 'true' : undefined} onClick={() => choose(discussion.id)}><strong>{discussion.title || 'New discussion'}</strong><span>{relative(discussion.lastActivity)}</span></button>)}</nav> : index ? <p>No discussions yet.</p> : <p role="status">Opening discussions…</p>}
+      {index?.discussions.length ? <nav>{index.discussions.map(discussion => <button key={discussion.id} className={discussion.id === selected ? 'is-selected' : ''} aria-current={discussion.id === selected ? 'true' : undefined} onClick={() => choose(discussion.id)}><strong><span>{discussion.title || 'New discussion'}</span>{discussion.kind === 'heartbeat' && <small>PLAY MODE</small>}</strong><span>{relative(discussion.lastActivity)}</span></button>)}</nav> : index ? <p>No discussions yet.</p> : <p role="status">Opening discussions…</p>}
     </aside>
     <div className="campaign-agent-detail">
       <button className="campaign-agent-mobile-discussions" onClick={() => setShowList(true)}><SiteIcon name="back" />Discussions</button>
@@ -196,7 +209,7 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
 
   return <section className="campaign-agent-chat" aria-label={`Discussion: ${discussion.title || 'New discussion'}`}>
     <div className="campaign-agent-messages" aria-live="polite">
-      {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">Ask for preparation, challenge a plan, or work through what the table may need next.</p>}
+      {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">{discussion.readOnly ? 'Play-mode work will appear here when the campaign heartbeat runs.' : 'Ask for preparation, challenge a plan, or work through what the table may need next.'}</p>}
       {timeline.map((row, index) => row.kind === 'activity'
         ? <AgentActivityRow key={row.key} parts={row.block.parts} active={!quiescent && index === lastActivity} />
         : <ChatBlock key={row.key} message={row.block} />)}
@@ -205,10 +218,10 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
       <div ref={end} aria-hidden="true" />
     </div>
     {error && <p className="campaign-agent-error" role="alert"><SiteIcon name="warning" />{error}</p>}
-    <form className="campaign-agent-composer" onSubmit={send}>
+    {discussion.readOnly ? <div className="campaign-agent-heartbeat-note"><SiteIcon name="agent" />The Agent works here while play mode is active.</div> : <form className="campaign-agent-composer" onSubmit={send}>
       <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Message the Agent…" rows={2} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
       <button aria-label="Send message" disabled={!draft.trim()}><SiteIcon name="send" /></button>
-    </form>
+    </form>}
   </section>
 }
 

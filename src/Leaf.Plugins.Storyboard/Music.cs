@@ -15,7 +15,11 @@ public sealed record MusicPlaylistTrackWrite(string TrackId);
 public sealed record MusicQueueWrite(string? TrackId, string? PlaylistId, string OperationId);
 public sealed record MusicCommand(string Action, string? Uri, string? ContextUri, string[]? TrackUris, string? DeviceId, string? TrackId = null);
 public sealed record MusicBriefWrite(string Title, string Prompt, string Style, string NegativeTags, string Mood, string Energy, string Tempo, string[] Instruments, string NarrativeArc, int DurationSeconds, bool Instrumental);
-public sealed record MusicGenerationWrite(string OperationId, string Situation, MusicBriefWrite Brief, bool Confirmed);
+public sealed record MusicGenerationWrite(string OperationId, string Situation, MusicBriefWrite Brief, bool Confirmed)
+{
+    public string? PlaybookHash { get; init; }
+    public string? HeartbeatTurn { get; init; }
+}
 
 public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, ILogger<StoryMusic> logger) : BackgroundService
 {
@@ -340,7 +344,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             if (previous is not null)
             {
                 await store.CheckProtectionAsync(previous, ct);
-                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief)) throw new StoryException("operation_reused", 409);
+                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief) || previous.Data.Text("playbook_hash") != (input.PlaybookHash ?? "") || previous.Data.Text("heartbeat_turn") != (input.HeartbeatTurn ?? "")) throw new StoryException("operation_reused", 409);
                 if (previous.Data.Text("state") == "failed") previous = await SetAsync(previous, new JsonObject { ["state"] = previous.Data.Text("compute_job") == "" ? "pending" : "generating", ["error"] = "" }, ct);
                 return await GenerationProjectionAsync(previous, ct);
             }
@@ -348,7 +352,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             foreach (var state in ActiveGenerationStates) active.AddRange(await store.AllAsync("storyboard-music-generation", new Dictionary<string, object?> { ["account"] = account, ["state"] = state }, ct));
             if (active.Count >= 2) throw new StoryException("music_generation_queue_full", 429);
             var c = await store.RequireAsync("storyboard-campaign", campaign, ct);
-            var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["account"] = account, ["situation"] = situation, ["brief"] = brief, ["state"] = "pending", ["error"] = "", ["parent"] = c.Data.Text("workspace"), ["deadline"] = DateTimeOffset.UtcNow.AddMinutes(40).ToUnixTimeSeconds() }, ct);
+            var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["account"] = account, ["operation_id"] = operation.ToString(), ["situation"] = situation, ["brief"] = brief, ["state"] = "pending", ["error"] = "", ["parent"] = c.Data.Text("workspace"), ["deadline"] = DateTimeOffset.UtcNow.AddMinutes(40).ToUnixTimeSeconds(), ["agent_generated"] = !string.IsNullOrWhiteSpace(input.PlaybookHash), ["playbook_hash"] = StoryJson.Bounded(input.PlaybookHash ?? "", 128), ["heartbeat_turn"] = StoryJson.Bounded(input.HeartbeatTurn ?? "", 160) }, ct);
             var created = await store.ChangeAsync("storyboard-music-generation", slug, brief.Text("title"), old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
             return await GenerationProjectionAsync(created, ct);
         }
@@ -439,7 +443,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         if (op.Data.Text("compute_job") == "")
         {
             var payload = new JsonObject { ["operation"] = "generate", ["prompt"] = brief.Text("prompt"), ["style"] = brief.Text("style"), ["title"] = brief.Text("title"), ["negativeTags"] = brief.Text("negativeTags"), ["instrumental"] = true, ["model"] = "V5_5", ["duration"] = Math.Clamp((int)brief.Number("durationSeconds"), 60, 240) };
-            var job = await jobs.SubmitAsync("music-gen", payload, new ComputeJobOptions { Async = true, IdempotencyKey = "storyboard-music-" + op.Id, JobName = "Storyboard score: " + brief.Text("title"), Rationale = "Confirmed campaign music generation", Provenance = Provenance(op.Data.Text("campaign"), op.Data.Text("account"), "generate") }, ct);
+            var job = await jobs.SubmitAsync("music-gen", payload, new ComputeJobOptions { Async = true, IdempotencyKey = "storyboard-music-" + op.Id, JobName = "Storyboard score: " + brief.Text("title"), Rationale = "Confirmed campaign music generation", Provenance = Provenance(op.Data.Text("campaign"), op.Data.Text("account"), "generate", op.Data.Text("playbook_hash"), op.Data.Text("heartbeat_turn")) }, ct);
             if (string.IsNullOrWhiteSpace(job.JobId)) throw new StoryException("music_job_missing", 502);
             op = await SetAsync(op, new JsonObject { ["compute_job"] = job.JobId, ["state"] = "generating" }, ct);
         }
@@ -474,7 +478,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
     private async Task<object> GenerationProjectionAsync(Leaf.Sdk.LeafEntity op, CancellationToken ct)
     {
         var candidates = await store.AllAsync("storyboard-music-candidate", new Dictionary<string, object?> { ["generation"] = op.Id.ToString() }, ct);
-        return new { id = op.Id, state = op.Data.Text("state"), error = op.Data.Text("error"), creditsConsumed = op.Data.Number("credits_consumed"), candidates = candidates.OrderBy(c => c.Slug).Select(c => new { id = c.Id, title = c.Name, tags = c.Data.Text("tags"), durationSeconds = c.Data.Number("duration_seconds"), audio = $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/audio", cover = c.Data.Text("cover_asset") == "" ? null : $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/cover", promotedTrack = c.Data.Text("promoted_track") }) };
+        return new { id = op.Id, state = op.Data.Text("state"), error = op.Data.Text("error"), creditsConsumed = op.Data.Number("credits_consumed"), agentGenerated = op.Data.Flag("agent_generated"), playbookHash = op.Data.Text("playbook_hash"), heartbeatTurn = op.Data.Text("heartbeat_turn"), candidates = candidates.OrderBy(c => c.Slug).Select(c => new { id = c.Id, title = c.Name, tags = c.Data.Text("tags"), durationSeconds = c.Data.Number("duration_seconds"), audio = $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/audio", cover = c.Data.Text("cover_asset") == "" ? null : $"/api/campaigns/{op.Data.Text("campaign")}/music/candidates/{c.Id}/cover", promotedTrack = c.Data.Text("promoted_track") }) };
     }
 
     public async Task<(byte[] Bytes, string ContentType)?> TrackCoverMediaAsync(string campaign, string account, string trackId, CancellationToken ct)
@@ -534,8 +538,15 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         if (message.Contains("Premium", StringComparison.OrdinalIgnoreCase) || message.Contains("Spotify 403", StringComparison.OrdinalIgnoreCase)) return new StoryException("spotify_playback_restricted", 409);
         return new StoryException("music_service_error", 502);
     }
-    private static ComputeProvenance Provenance(string campaign, string account, string action) => new(1,
+    private static ComputeProvenance Provenance(string campaign, string account, string action, string? playbookHash = null, string? heartbeatTurn = null) => new(1,
         new ComputeOrigin("redleaf", new ComputeAppReference("plugin", "storyboard", null, "Storyboard"), new ComputeEntrypoint("api", "/api/public/storyboard/campaigns/music/" + action, "POST")),
         new ComputeActor("system", "Storyboard", Id: "storyboard"), new ComputeBeneficiary("system", Reason: "Requested by an authenticated Storyboard GM"),
-        [new ComputeContextReference("campaign", EntityId: campaign), new ComputeContextReference("storyboard-account", EntityId: account)], new ComputeTrace(), ComputeProvenanceAssurance.Asserted, DateTimeOffset.UtcNow);
+        Context(campaign, account, playbookHash, heartbeatTurn), new ComputeTrace(), ComputeProvenanceAssurance.Asserted, DateTimeOffset.UtcNow);
+    private static IReadOnlyList<ComputeContextReference> Context(string campaign, string account, string? playbookHash, string? heartbeatTurn)
+    {
+        var values = new List<ComputeContextReference> { new("campaign", EntityId: campaign), new("storyboard-account", EntityId: account) };
+        if (!string.IsNullOrWhiteSpace(playbookHash)) values.Add(new("playbook-revision", EntityId: playbookHash));
+        if (!string.IsNullOrWhiteSpace(heartbeatTurn)) values.Add(new("heartbeat-turn", EntityId: heartbeatTurn));
+        return values;
+    }
 }

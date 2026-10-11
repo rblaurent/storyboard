@@ -162,3 +162,29 @@ public sealed class FakeDiscussions(TestEntities entities) : IDiscussions
         public void Dispose() { }
     }
 }
+
+public sealed class FakeWorkflowAutomations(TestEntities entities) : IWorkflowAutomations
+{
+    public WorkflowAutomationDefinition? Last { get; private set; }
+    public int Upserts { get; private set; }
+
+    public Task<LeafEntity> EnsureAsync(WorkflowAutomationDefinition definition, CancellationToken ct = default)
+        => SaveAsync(definition, ct);
+
+    public Task<LeafEntity> UpsertAsync(WorkflowAutomationDefinition definition, CancellationToken ct = default)
+        => SaveAsync(definition, ct);
+
+    private Task<LeafEntity> SaveAsync(WorkflowAutomationDefinition definition, CancellationToken ct)
+    {
+        Last = definition; Upserts++;
+        var data = new JsonObject
+        {
+            ["enabled"] = definition.Enabled,
+            ["action_type"] = definition.NodeType,
+            ["agent"] = definition.Ownership["actor_agent"]?.GetValue<string>() ?? "",
+            ["action_config"] = definition.ActionConfig.DeepClone(),
+            ["trigger"] = definition.Trigger.DeepClone(),
+        };
+        return entities.UpsertBySlugAsync("automation", definition.Slug, definition.Name, data, ct);
+    }
+}
