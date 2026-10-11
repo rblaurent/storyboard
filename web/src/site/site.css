@@ -568,6 +568,26 @@ body { margin: 0; }
 .storyboard-site .campaign-agent-avatar-editor span { color: var(--muted); font-size: 10px; }
 .storyboard-site .campaign-agent-avatar-editor > div > div { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .storyboard-site .campaign-agent-avatar-editor button { min-height: 34px; padding: var(--space-2) var(--space-3); background: transparent; font-size: 11px; }
+.storyboard-site .campaign-agent-profile > .artwork-generator { grid-column: 1/-1; }
+.storyboard-site .campaign-agent-profile > label { grid-column: 2; grid-row: 1; }
+.storyboard-site .artwork-generator { display: grid; gap: var(--space-4); padding: var(--space-5); border: 1px solid var(--rule); background: color-mix(in srgb,var(--ivory) 72%,transparent); }
+.storyboard-site .artwork-generator-brief,.storyboard-site .artwork-refinement { display: grid; gap: var(--space-3); }
+.storyboard-site .artwork-generator label { display: grid; gap: var(--space-2); font-size: var(--text-small); }
+.storyboard-site .artwork-generator textarea { width: 100%; resize: vertical; }
+.storyboard-site .artwork-generator :is(.artwork-generator-brief,.artwork-refinement) > button { justify-self: start; }
+.storyboard-site .artwork-refinement { padding-top: var(--space-4); border-top: 1px solid var(--rule); }
+.storyboard-site .artwork-refinement details { color: var(--muted); font-size: var(--text-small); }
+.storyboard-site .artwork-refinement details textarea { margin-top: var(--space-2); }
+.storyboard-site .artwork-candidates { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: var(--space-3); }
+.storyboard-site .artwork-candidates article { display: grid; gap: var(--space-2); }
+.storyboard-site .artwork-candidates img { width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px solid var(--rule-strong); background: var(--paper); }
+.storyboard-site .artwork-candidates button { width: 100%; }
+.storyboard-site .workspace-artwork-field { display: grid; gap: var(--space-3); }
+.storyboard-site .workspace-artwork-field > img { width: min(100%,420px); max-height: 360px; object-fit: contain; border: 1px solid var(--rule-strong); background: var(--paper); }
+.storyboard-site .workspace-artwork-field > details { border-top: 1px solid var(--rule); padding-top: var(--space-3); }
+.storyboard-site .workspace-artwork-field > details > summary { cursor: pointer; font-weight: 650; }
+.storyboard-site .workspace-artwork-field .artwork-generator { margin-top: var(--space-3); }
+.storyboard-site .workspace-artwork-field > button { justify-self: start; }
 .storyboard-site .campaign-agent-behaviour { display: grid; gap: var(--space-5); padding: var(--space-6) 0; border-block: 1px solid var(--rule); }
 .storyboard-site .campaign-agent-choice-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-5); }
 .storyboard-site .campaign-agent-settings-save { display: flex; align-items: center; gap: var(--space-4); }
@@ -774,6 +794,9 @@ body { margin: 0; }
   .storyboard-site .campaign-agent-composer { padding: var(--space-3) 0; }
   .storyboard-site .campaign-agent-settings { width: 100%; padding: var(--space-4) 0 var(--space-10); }
   .storyboard-site .campaign-agent-profile,.storyboard-site .campaign-agent-choice-grid,.storyboard-site .campaign-agent-boundaries ul { grid-template-columns: 1fr; }
+  .storyboard-site .campaign-agent-profile > :is(.artwork-generator,label) { grid-column: 1; grid-row: auto; }
+  .storyboard-site .artwork-generator { padding: var(--space-4); }
+  .storyboard-site .artwork-candidates { grid-template-columns: 1fr; }
   .storyboard-site.agent-dashboard-site.live-contracted .live-panel.is-contracted { bottom: 112px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

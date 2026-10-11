@@ -1453,6 +1453,13 @@
   { "parentType": "storyboard-visual-generation", "slug": "steps", "name": "Steps", "fieldType": "number", "sortOrder": 16 },
   { "parentType": "storyboard-visual-generation", "slug": "cfg", "name": "CFG", "fieldType": "number", "sortOrder": 17 },
   { "parentType": "storyboard-visual-generation", "slug": "seeds", "name": "Seeds", "fieldType": "json", "sortOrder": 18 },
+  { "parentType": "storyboard-visual-generation", "slug": "source_prompt", "name": "Source prompt", "fieldType": "string", "sortOrder": 19 },
+  { "parentType": "storyboard-visual-generation", "slug": "refined_prompt", "name": "Refined prompt", "fieldType": "string", "sortOrder": 20 },
+  { "parentType": "storyboard-visual-generation", "slug": "negative_prompt", "name": "Negative prompt", "fieldType": "string", "sortOrder": 21 },
+  { "parentType": "storyboard-visual-generation", "slug": "artwork_target", "name": "Artwork target", "fieldType": "json", "sortOrder": 22 },
+  { "parentType": "storyboard-visual-generation", "slug": "target_kind", "name": "Target kind", "fieldType": "string", "sortOrder": 23 },
+  { "parentType": "storyboard-visual-generation", "slug": "target_entity", "name": "Target entity", "fieldType": "string", "sortOrder": 24 },
+  { "parentType": "storyboard-visual-generation", "slug": "target_field", "name": "Target field", "fieldType": "string", "sortOrder": 25 },
 
   { "parentType": "storyboard-visual-candidate", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
   { "parentType": "storyboard-visual-candidate", "slug": "generation", "name": "Generation", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-visual-generation\"}" },

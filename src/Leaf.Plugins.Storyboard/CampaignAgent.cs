@@ -1,5 +1,4 @@
 using System.Text.Json.Nodes;
-using System.Text;
 using Leaf.Sdk;
 using Leaf.Sdk.Services;
 using Microsoft.AspNetCore.Http;
@@ -9,7 +8,7 @@ namespace Leaf.Plugins.Storyboard;
 public sealed record CampaignAgentMessageWrite(string Content, string OperationId);
 public sealed record CampaignAgentDiscussionWrite(string OperationId);
 public sealed record CampaignAgentSettingsWrite(string Name, string Direction, string ResponseStyle, string Initiative, long ExpectedRevision, string OperationId);
-public sealed record CampaignAgentAvatarWrite(string? ImageBase64, string? ContentType, bool Reset, long ExpectedRevision, string OperationId);
+public sealed record CampaignAgentAvatarWrite(string CandidateId, long ExpectedRevision, string OperationId);
 public sealed record CampaignAgentProposalWrite(
     string EntityId,
     string Title,
@@ -93,44 +92,23 @@ public sealed class StoryCampaignAgent(
         return SettingsProjection(conversation.Campaign, conversation.Agent);
     }
 
-    public async Task<object> SaveAvatarAsync(string campaignId, string accountId, CampaignAgentAvatarWrite input, CancellationToken ct = default)
+    public async Task<object> SaveAvatarAsync(string campaignId, string accountId, CampaignAgentAvatarWrite input, string assetId, CancellationToken ct = default)
     {
         if (input is null) throw new StoryException("invalid_json");
-        var operation = StoryJson.Id(input.OperationId);
+        StoryJson.Id(input.OperationId);
+        var candidate = StoryJson.Id(input.CandidateId);
         await campaigns.MembershipAsync(campaignId, accountId, true, ct);
         await store.WritableAsync(ct);
-        var avatar = "";
-        var fingerprint = "reset";
-        if (!input.Reset)
+        var fingerprint = "candidate:" + candidate;
+        var before = await store.RequireAsync("storyboard-campaign", campaignId, ct);
+        if (before.Data.Text("agent_settings_operation") == input.OperationId)
         {
-            var mime = (input.ContentType ?? "").Split(';')[0].Trim().ToLowerInvariant();
-            var extension = mime switch { "image/png" => "png", "image/jpeg" => "jpg", "image/webp" => "webp", _ => throw new StoryException("invalid_agent_avatar_type") };
-            byte[] bytes;
-            try { bytes = Convert.FromBase64String(input.ImageBase64 ?? ""); } catch (FormatException) { throw new StoryException("invalid_agent_avatar"); }
-            if (bytes.Length is < 64 or > 1_500_000 || !ValidImageSignature(bytes, mime)) throw new StoryException("invalid_agent_avatar");
-            fingerprint = mime + ":" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
-            var beforeUpload = await store.RequireAsync("storyboard-campaign", campaignId, ct);
-            if (beforeUpload.Data.Text("agent_settings_operation") == input.OperationId)
-            {
-                if (beforeUpload.Data.Text("agent_settings_fingerprint") != fingerprint) throw new StoryException("operation_reused", 409);
-                var existing = await EnsureAsync(campaignId, ct);
-                return SettingsProjection(existing.Campaign, existing.Agent);
-            }
-            if (beforeUpload.Data.Number("agent_settings_revision") != input.ExpectedRevision) throw new StoryException("agent_settings_changed", 409);
-            await using var stream = new MemoryStream(bytes, false);
-            avatar = (await assets.UploadIdempotentAsync(stream, $"storyboard:campaign-agent-avatar:custom:{campaignId}:{operation:N}", $"campaign-agent-{campaignId}.{extension}", mime, ct)).Url;
+            if (before.Data.Text("agent_settings_fingerprint") != fingerprint) throw new StoryException("operation_reused", 409);
+            var existing = await EnsureAsync(campaignId, ct);
+            return SettingsProjection(existing.Campaign, existing.Agent);
         }
-        else
-        {
-            var beforeReset = await store.RequireAsync("storyboard-campaign", campaignId, ct);
-            if (beforeReset.Data.Text("agent_settings_operation") == input.OperationId)
-            {
-                if (beforeReset.Data.Text("agent_settings_fingerprint") != fingerprint) throw new StoryException("operation_reused", 409);
-                var existing = await EnsureAsync(campaignId, ct);
-                return SettingsProjection(existing.Campaign, existing.Agent);
-            }
-            if (beforeReset.Data.Number("agent_settings_revision") != input.ExpectedRevision) throw new StoryException("agent_settings_changed", 409);
-        }
+        if (before.Data.Number("agent_settings_revision") != input.ExpectedRevision) throw new StoryException("agent_settings_changed", 409);
+        var avatar = assets.GetUrl(assetId);
         await store.Commands.WaitAsync(ct);
         CampaignConversation conversation;
         try
@@ -149,19 +127,11 @@ public sealed class StoryCampaignAgent(
                 return next;
             }, ct);
             conversation = await EnsureAsync(campaignId, ct);
-            await store.AuditAsync(input.Reset ? "agent.avatar.reset" : "agent.avatar.updated", accountId, conversation.Agent.Id.ToString(), new JsonObject { ["campaign"] = campaignId }, ct);
+            await store.AuditAsync("agent.avatar.generated", accountId, conversation.Agent.Id.ToString(), new JsonObject { ["campaign"] = campaignId, ["candidate"] = input.CandidateId }, ct);
         }
         finally { store.Commands.Release(); }
         return SettingsProjection(conversation.Campaign, conversation.Agent);
     }
-
-    private static bool ValidImageSignature(byte[] bytes, string mime) => mime switch
-    {
-        "image/png" => bytes.Length > 24 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4e && bytes[3] == 0x47 && Encoding.ASCII.GetString(bytes, 12, 4) == "IHDR",
-        "image/jpeg" => bytes.Length > 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[^2] == 0xff && bytes[^1] == 0xd9,
-        "image/webp" => bytes.Length > 12 && Encoding.ASCII.GetString(bytes, 0, 4) == "RIFF" && Encoding.ASCII.GetString(bytes, 8, 4) == "WEBP",
-        _ => false,
-    };
 
     public async Task ReconcileExistingAsync(CancellationToken ct = default)
     {
@@ -1059,23 +1029,7 @@ public sealed class StoryCampaignAgent(
 
     private async Task<AgentPresentation> AgentPresentationAsync(LeafEntity campaign, CancellationToken ct)
     {
-        var customAvatar = campaign.Data.Text("agent_avatar");
-        var initials = string.Concat(campaign.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Take(2).Select(word => char.ToUpperInvariant(word[0])));
-        if (initials.Length == 0) initials = "GM";
-        var svg = $$"""
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-              <rect width="256" height="256" rx="56" fill="#efe6d5"/>
-              <path d="M128 24 218 76v104l-90 52-90-52V76z" fill="#202426" stroke="#a14b35" stroke-width="8"/>
-              <path d="m128 58 18 45 48 3-37 31 12 47-41-25-41 25 12-47-37-31 48-3z" fill="#d9a45f"/>
-              <circle cx="128" cy="128" r="42" fill="#efe6d5" stroke="#a14b35" stroke-width="6"/>
-              <text x="128" y="142" text-anchor="middle" font-family="Georgia,serif" font-size="40" font-weight="700" fill="#202426">{{System.Net.WebUtility.HtmlEncode(initials)}}</text>
-            </svg>
-            """;
-        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(svg));
-        var avatar = string.IsNullOrWhiteSpace(customAvatar)
-            ? (await assets.UploadIdempotentAsync(stream, $"storyboard:campaign-agent-avatar:v1:{campaign.Id:N}", $"storyboard-agent-{campaign.Id:N}.svg", "image/svg+xml", ct)).Url
-            : customAvatar;
+        var avatar = campaign.Data.Text("agent_avatar");
         var skills = new JsonArray();
         var skill = await store.Entities.GetBySlugAsync("agent-skill", CampaignSkillSlug, ct);
         if (skill?.TypeSlug != "agent-skill")

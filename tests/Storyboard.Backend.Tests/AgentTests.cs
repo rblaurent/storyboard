@@ -56,7 +56,7 @@ public sealed class AgentTests
     }
 
     [Fact]
-    public async Task CampaignAgentAvatarUploadAndResetKeepTheSameAgentBinding()
+    public async Task CampaignAgentGeneratedAvatarKeepsTheSameAgentBinding()
     {
         await using var fixture = await Fixture.Create();
         var campaign = fixture.Campaign.Id.ToString();
@@ -64,11 +64,13 @@ public sealed class AgentTests
         var before = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
         var campaignEntity = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
         var agentId = campaignEntity.Data.Text("agent");
-        var png = new byte[80]; png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47; png[12] = (byte)'I'; png[13] = (byte)'H'; png[14] = (byte)'D'; png[15] = (byte)'R';
-        var uploaded = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, new CampaignAgentAvatarWrite(Convert.ToBase64String(png), "image/png", false, 0, Guid.NewGuid().ToString())));
-        Assert.Equal(1, uploaded.Number("revision"));
-        var reset = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, new CampaignAgentAvatarWrite(null, null, true, 1, Guid.NewGuid().ToString())));
-        Assert.Equal(2, reset.Number("revision"));
+        var operation = Guid.NewGuid().ToString();
+        var write = new CampaignAgentAvatarWrite(Guid.NewGuid().ToString(), 0, operation);
+        var selected = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, write, "fixture-cover.png"));
+        var retried = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, write, "fixture-cover.png"));
+        Assert.Equal(1, selected.Number("revision"));
+        Assert.Equal(1, retried.Number("revision"));
+        Assert.Equal($"/api/campaigns/{campaign}/agent/avatar", selected["agent"]!.AsObject().Text("avatar"));
         var after = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
         var updatedCampaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
         Assert.Equal(agentId, updatedCampaign.Data.Text("agent"));
@@ -84,10 +86,23 @@ public sealed class AgentTests
         using var client = await fixture.Host();
         var path = $"/campaigns/{fixture.Campaign.Id}/agent/avatar";
 
+        using (var missing = await fixture.PublicRequest(path, actor: fixture.Gm))
+            Assert.Equal(HttpStatusCode.NotFound, (await client.SendAsync(missing)).StatusCode);
+
+        var candidateId = await AgentArtworkCandidate(fixture);
+        var body = new JsonObject
+        {
+            ["candidateId"] = candidateId,
+            ["expectedRevision"] = 0,
+            ["operationId"] = Guid.NewGuid().ToString()
+        }.ToJsonString();
+        using (var select = await fixture.PublicRequest(path, "PUT", body, fixture.Gm))
+            Assert.Equal(HttpStatusCode.OK, (await client.SendAsync(select)).StatusCode);
+
         using var gmRequest = await fixture.PublicRequest(path, actor: fixture.Gm);
         using var gmResponse = await client.SendAsync(gmRequest);
         Assert.Equal(System.Net.HttpStatusCode.OK, gmResponse.StatusCode);
-        Assert.Equal("image/svg+xml", gmResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("image/png", gmResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal([1, 2, 3], await gmResponse.Content.ReadAsByteArrayAsync());
 
         using var playerRequest = await fixture.PublicRequest(path, actor: fixture.Player);
@@ -212,7 +227,7 @@ public sealed class AgentTests
         var discussion = (await fixture.Entities.GetAsync(StoryJson.Id(campaign.Data.Text("agent_discussion"))))!;
         Assert.Equal("agent", agent.TypeSlug);
         Assert.Equal(campaign.Data.Text("workspace"), agent.Data.Text("workspace"));
-        Assert.EndsWith(".svg", agent.Data.Text("avatar"));
+        Assert.Equal("", agent.Data.Text("avatar"));
         Assert.Single(agent.Data["skills"]!.AsArray());
         Assert.Equal("discussion", discussion.TypeSlug);
         Assert.Equal("nova", discussion.Data.Text("app"));
@@ -236,6 +251,29 @@ public sealed class AgentTests
             [fixture.AgentConversations]);
         await reconstructed.ReadAsync(campaign.Id.ToString(), fixture.Gm.Id.ToString(), null, null);
         Assert.Equal(1, fixture.AgentConversations.Opens);
+    }
+
+    private static async Task<string> AgentArtworkCandidate(Fixture fixture)
+    {
+        var campaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var generationData = await fixture.Store.ProtectAsync(new JsonObject
+        {
+            ["campaign"] = fixture.Campaign.Id.ToString(),
+            ["target_kind"] = "agent",
+            ["parent"] = campaign.Data.Text("workspace")
+        });
+        var generation = await fixture.Store.ChangeAsync(
+            "storyboard-visual-generation", "fixture-agent-avatar-generation", "Agent portrait", _ => generationData);
+        var candidateData = await fixture.Store.ProtectAsync(new JsonObject
+        {
+            ["campaign"] = fixture.Campaign.Id.ToString(),
+            ["generation"] = generation.Id.ToString(),
+            ["image_asset"] = "fixture-cover.png",
+            ["parent"] = campaign.Data.Text("workspace")
+        });
+        var candidate = await fixture.Store.ChangeAsync(
+            "storyboard-visual-candidate", "fixture-agent-avatar-candidate", "Agent portrait", _ => candidateData);
+        return candidate.Id.ToString();
     }
 
     [Fact]

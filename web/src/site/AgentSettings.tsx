@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AgentDirection } from './AgentDirection'
+import { ArtworkGenerator, type ArtworkCandidate } from './ArtworkGenerator'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
 
@@ -26,7 +27,6 @@ export function AgentSettings({ campaignId, csrfToken, onChanged }: { campaignId
   const [avatarBusy, setAvatarBusy] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
-  const file = useRef<HTMLInputElement>(null)
   const path = `/campaigns/${campaignId}/agent/settings`
 
   useEffect(() => {
@@ -48,20 +48,16 @@ export function AgentSettings({ campaignId, csrfToken, onChanged }: { campaignId
     finally { setBusy(false) }
   }
 
-  async function avatar(event?: ChangeEvent<HTMLInputElement>, reset = false) {
+  async function avatar(candidate: ArtworkCandidate) {
     if (!value || avatarBusy) return
-    const selected = event?.target.files?.[0]
-    if (!reset && !selected) return
-    if (selected && selected.size > 1_500_000) { setError('Choose a PNG, JPEG or WebP image smaller than 1.5 MB.'); return }
     setAvatarBusy(true); setError(''); setSaved(false)
     try {
-      const imageBase64 = selected ? await readBase64(selected) : null
       const updated = await api<AgentSettingsValue>(`/campaigns/${campaignId}/agent/avatar`, csrfToken, 'PUT', {
-        imageBase64, contentType: selected?.type || null, reset, expectedRevision: value.revision, operationId: crypto.randomUUID(),
+        candidateId: candidate.id, expectedRevision: value.revision, operationId: crypto.randomUUID(),
       })
       setValue(updated); onChanged(updated.agent); setSaved(true)
     } catch (cause) { setError(explain(cause)) }
-    finally { setAvatarBusy(false); if (file.current) file.current.value = '' }
+    finally { setAvatarBusy(false) }
   }
 
   if (!value) return <div className="campaign-agent-settings-loading" role={error ? 'alert' : 'status'}>{error || 'Opening Agent settings…'}</div>
@@ -71,9 +67,9 @@ export function AgentSettings({ campaignId, csrfToken, onChanged }: { campaignId
       <section className="campaign-agent-profile">
         <div className="campaign-agent-avatar-editor">
           {value.agent.avatar ? <img src={value.agent.avatar} alt={`${value.agent.name} avatar`} /> : <i><SiteIcon name="agent" size={32} /></i>}
-          <div><strong>Portrait</strong><span>PNG, JPEG or WebP · up to 1.5 MB</span><div><button type="button" onClick={() => file.current?.click()} disabled={avatarBusy}>{avatarBusy ? 'Uploading…' : 'Choose image'}</button><button type="button" onClick={() => void avatar(undefined, true)} disabled={avatarBusy}>Use campaign crest</button></div></div>
-          <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={event => void avatar(event)} />
+          <div><strong>Portrait</strong><span>Describe it, refine the prompt, generate candidates, then choose.</span></div>
         </div>
+        <ArtworkGenerator campaignId={campaignId} csrfToken={csrfToken} targetKind="agent" disabled={avatarBusy} onSelect={avatar} />
         <label>Agent name<input maxLength={120} value={value.agent.name} onChange={event => setValue({ ...value, agent: { ...value.agent, name: event.target.value } })} /></label>
       </section>
       <section className="campaign-agent-behaviour">
@@ -90,13 +86,4 @@ export function AgentSettings({ campaignId, csrfToken, onChanged }: { campaignId
     <section className="campaign-agent-capabilities"><div><small>CAPABILITY PLAYBOOKS</small><h3>Tell it when and how to act</h3><p>Each playbook has its own triggers, creative direction and safety boundary.</p></div>{playbooks.map(([capability, title]) => <AgentDirection key={capability} campaignId={campaignId} capability={capability} csrfToken={csrfToken} title={title} />)}</section>
     <section className="campaign-agent-boundaries"><div><small>EFFECTIVE ACCESS</small><h3>What this Agent can actually do</h3><p>Your directions shape its judgement. They never widen these fixed permissions.</p></div><ul>{value.boundaries.map(boundary => <li key={boundary}><SiteIcon name="check" />{boundary}</li>)}</ul></section>
   </div>
-}
-
-function readBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error)
-    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] || '')
-    reader.readAsDataURL(file)
-  })
 }

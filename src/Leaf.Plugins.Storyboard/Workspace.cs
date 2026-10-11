@@ -11,6 +11,7 @@ public sealed record WorkspaceEntityCreate(string TypeSlug, string Name, string?
 public sealed record WorkspaceEntityDelete(string ExpectedUpdatedAt);
 public sealed record WorkspaceLocalizationWrite(string? LocalizedName, JsonObject? Fields, string? Status, string? ExpectedUpdatedAt = null);
 internal sealed record CockpitWorkspaceEntity(LeafEntity Entity, string TypeName, object Projection);
+internal sealed record WorkspaceArtworkContext(string EntityId, string EntityName, string EntityType, string Field, string FieldName, string ImageAssetId, string Source);
 
 public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
 {
@@ -110,6 +111,20 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
                 return new CockpitWorkspaceEntity(entity, type.Name, Project(entity, type, null, "en"));
             })
             .ToArray();
+    }
+
+    internal async Task<WorkspaceArtworkContext> ArtworkContextAsync(string campaign, string account, string entityId, string fieldKey, CancellationToken ct = default)
+    {
+        var context = await ContextAsync(campaign, account, ct);
+        var entity = context.Entities.SingleOrDefault(value => value.Id == StoryJson.Id(entityId)) ?? throw new StoryException("not_found", 404);
+        var type = context.Types.GetValueOrDefault(entity.TypeSlug) ?? throw new StoryException("workspace_type_unavailable", 409);
+        if (type.System || entity.TypeSlug == "page") throw new StoryException("workspace_entity_read_only", 409);
+        var field = type.Fields.SingleOrDefault(value => value.Key == fieldKey) ?? throw new StoryException("workspace_image_field_unavailable", 409);
+        if (!ImageField(field)) throw new StoryException("workspace_image_field_unavailable", 409);
+        var source = new JsonObject { ["name"] = entity.Name, ["type"] = type.Name };
+        foreach (var declared in type.Fields.Where(value => !value.Sensitive && value.Key != field.Key))
+            if (entity.Data.TryGetPropertyValue(declared.Key, out var value) && value is not null) source[declared.Key] = value.DeepClone();
+        return new(entity.Id.ToString(), entity.Name, type.Name, field.Key, field.Name, entity.Data.Text(field.Key), StoryJson.Bounded(source.ToJsonString(), 8000));
     }
 
     public async Task<object> SaveAsync(string campaign, string account, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
@@ -348,6 +363,14 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         var key = entity.Slug.Contains("--", StringComparison.Ordinal) ? entity.Slug[(entity.Slug.IndexOf("--", StringComparison.Ordinal) + 2)..].Replace('-', '_') : entity.Slug.Replace('-', '_');
         var fieldType = entity.Data.Text("field_type", "string");
         return new(key, entity.Name, fieldType, entity.Data.Number("sort_order"), entity.Data.Flag("is_required"), entity.Data.Text("description"), Parse(entity.Data["constraints"]), Parse(entity.Data["display_hints"]), Parse(entity.Data["default_value"]), Sensitive(key, fieldType), entity);
+    }
+    private static bool ImageField(WorkspaceField field)
+    {
+        if (field.FieldType is "asset" or "image") return true;
+        if (field.FieldType == "entity_ref" && field.Constraints is JsonObject constraints && constraints.Text("target_type") == "asset") return true;
+        if (field.DisplayHints?.ToJsonString().Contains("image", StringComparison.OrdinalIgnoreCase) == true) return true;
+        return (field.FieldType is "string" or "text")
+               && field.Key is ("image" or "image_url" or "portrait" or "avatar" or "cover" or "artwork");
     }
     private static JsonNode? Parse(JsonNode? node)
     {

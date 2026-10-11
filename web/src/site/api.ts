@@ -65,8 +65,12 @@ const messages: Record<string, string> = {
   site_connection_unavailable: 'Storyboard’s connection is unavailable. Please try again later.',
   request_origin_rejected: 'Your session could not confirm this change. Reload and sign in again if needed.',
   agent_settings_changed: 'These Agent settings changed elsewhere. Your draft is kept; review the latest saved version.',
-  invalid_agent_avatar: 'Choose a valid PNG, JPEG or WebP image smaller than 1.5 MB.',
-  invalid_agent_avatar_type: 'Choose a PNG, JPEG or WebP image.',
+  invalid_artwork_brief: 'Describe the image you want before refining the prompt.',
+  artwork_brief_invalid: 'The refined image prompt came back malformed. Nothing was generated.',
+  artwork_generation_confirmation_required: 'Confirm the image generation before Storyboard submits the render jobs.',
+  invalid_artwork_target: 'That image target is no longer available.',
+  artwork_target_mismatch: 'That generated image belongs to a different target.',
+  workspace_image_field_unavailable: 'That record no longer has an editable image field.',
 }
 export function explain(cause: unknown): string {
   if (cause instanceof ApiError) {
