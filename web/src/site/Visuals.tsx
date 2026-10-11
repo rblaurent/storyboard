@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
-import { api, ApiError, explain, imageSource, type Account, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
+import { api, ApiError, explain, imageSource, type Account, type MusicPlayback, type MusicQueueItem, type MusicTrack, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
 import { VisualIdentity } from './VisualIdentity'
+import { spotifyWebPlaybackSdk, type SpotifyWebPlayer } from './spotify'
 
 const operation = () => crypto.randomUUID()
 type ProjectionFrame = { visual: Visual; source: string; motion: number; durationSeconds: number }
@@ -119,6 +120,7 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [draggingOver, setDraggingOver] = useState(false)
+  const [intervalDraft, setIntervalDraft] = useState('30')
   async function read() {
     const [nextSession, nextQueue] = await Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`)])
     setSession(nextSession); setQueue(nextQueue)
@@ -135,6 +137,7 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
     window.addEventListener('storyboard:visual-queue-changed', changed)
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:visual-queue-changed', changed) }
   }, [campaignId])
+  useEffect(() => { if (session) setIntervalDraft(String(session.intervalSeconds)) }, [session?.intervalSeconds])
   async function work(label: string, action: () => Promise<void>) {
     if (!canControl || busy) return
     setBusy(label); setError('')
@@ -157,13 +160,23 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
       void enqueue(value.kind === 'visual' ? { visualId: value.id } : { setId: value.id })
     } catch { /* Ignore foreign drags. */ }
   }
+  function launch() {
+    if (!queue.length || !session || busy) return
+    window.open(`/campaigns/${campaignId}/projection#autostart`, '_blank', 'noopener')
+    if (!session.playing) void command('play')
+  }
+  function configureInterval() {
+    const intervalSeconds = Math.min(300, Math.max(5, Math.round(Number(intervalDraft) || session?.intervalSeconds || 30)))
+    setIntervalDraft(String(intervalSeconds))
+    if (session && intervalSeconds !== session.intervalSeconds) void command('configure', { intervalSeconds })
+  }
   const title = session?.blackout ? 'Blackout' : session?.current?.name || 'Nothing showing'
   return <LiveFoldout module="visuals" label="Visuals" icon="projector" open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-visual${session?.blackout ? ' is-blackout' : ''}${draggingOver ? ' is-drop-target' : ''}`} aria-label="Live visuals" data-live-drop="visuals" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop} status={session?.playing && <i className="live-module-active" aria-label="Slideshow playing" />}>
     <button className="live-visual-preview" onClick={() => navigate(`/campaigns/${campaignId}/visuals`)} aria-label={`Open Visuals. ${title}`}>
       {session?.blackout ? <span className="live-visual-blank" /> : session?.current ? <img src={imageSource(session.current.imageUrl)} alt="" /> : <span className="live-visual-empty"><SiteIcon name="images" size={32} /></span>}
       <span><small>{session?.playing ? 'SLIDESHOW PLAYING' : 'NOW SHOWING'}</small><strong>{title}</strong></span>
     </button>
-    {canControl && <div className="live-projection-controls"><button aria-label="Previous visual" disabled={!!busy || !queue.length} onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button className="primary" aria-label={session?.playing ? 'Pause slideshow' : 'Play slideshow'} disabled={!!busy || !queue.length} onClick={() => void command(session?.playing ? 'pause' : 'play')}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button><button aria-label="Next visual" disabled={!!busy || !queue.length} onClick={() => void command('next')}><SiteIcon name="next" /></button><button className={session?.blackout ? 'is-active' : ''} aria-label="Toggle blackout" disabled={!!busy} onClick={() => void command('blackout')}><SiteIcon name="blackout" /></button></div>}
+    {canControl && <><div className="live-slideshow-launch"><button className="primary" disabled={!!busy || !queue.length} onClick={launch}><SiteIcon name="projector" />{session?.playing ? 'Open slideshow' : 'Start slideshow'}</button><label><span>Slide duration</span><span><input aria-label="Slide duration in seconds" type="number" min={5} max={300} value={intervalDraft} onChange={event => setIntervalDraft(event.target.value)} onBlur={configureInterval} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); configureInterval(); event.currentTarget.blur() } }} /> sec</span></label></div><div className="live-projection-controls"><button aria-label="Previous visual" disabled={!!busy || !queue.length} onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button aria-label={session?.playing ? 'Pause slideshow' : 'Play slideshow'} disabled={!!busy || !queue.length} onClick={() => void command(session?.playing ? 'pause' : 'play')}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button><button aria-label="Next visual" disabled={!!busy || !queue.length} onClick={() => void command('next')}><SiteIcon name="next" /></button><button className={session?.blackout ? 'is-active' : ''} aria-label="Toggle blackout" disabled={!!busy} onClick={() => void command('blackout')}><SiteIcon name="blackout" /></button></div></>}
     <div className="live-queue-panel" aria-label="Projection queue">
       <div className="live-queue-heading"><strong>Projection queue</strong><span>{queue.length}</span></div>
       {error && <p className="live-module-error" role="alert">{error}</p>}
@@ -173,7 +186,117 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
   </LiveFoldout>
 }
 
-export function ProjectionView({ campaignId }: { campaignId: string }) {
+function musicTime(ms: number) { const seconds = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
+
+function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
+  const [queue, setQueue] = useState<MusicQueueItem[]>([])
+  const [track, setTrack] = useState<MusicTrack | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState('')
+  const [coverFailed, setCoverFailed] = useState(false)
+  const audio = useRef<HTMLAudioElement>(null)
+  const spotify = useRef<SpotifyWebPlayer | null>(null)
+  const spotifyCreating = useRef<Promise<SpotifyWebPlayer> | null>(null)
+  const spotifyDeviceId = useRef('')
+  const disposed = useRef(false)
+  const ownsPlayback = useRef(false)
+
+  async function ensureSpotify() {
+    if (spotify.current && spotifyDeviceId.current) return spotify.current
+    if (spotifyCreating.current) return spotifyCreating.current
+    spotifyCreating.current = spotifyWebPlaybackSdk().then(() => new Promise<SpotifyWebPlayer>((resolve, reject) => {
+      if (disposed.current || !window.Spotify) { reject(new Error('spotify_sdk_unavailable')); return }
+      const player = new window.Spotify.Player({
+        name: 'Storyboard · Slideshow', volume: 0.72, enableMediaSession: true,
+        getOAuthToken: callback => { void api<{ accessToken: string }>(`/campaigns/${campaignId}/music/browser-player`, csrfToken, 'POST', {}).then(value => callback(value.accessToken)).catch(() => callback('')) },
+      })
+      spotify.current = player
+      let settled = false
+      const timer = window.setTimeout(() => fail('Spotify took too long to connect.'), 12000)
+      const fail = (message: string) => { setError(message); if (!settled) { settled = true; window.clearTimeout(timer); reject(new Error('spotify_player_unavailable')) } }
+      player.addListener('ready', ({ device_id }: { device_id: string }) => { if (disposed.current) { player.disconnect(); return }; if (settled) return; settled = true; window.clearTimeout(timer); spotifyDeviceId.current = device_id; resolve(player) })
+      player.addListener('not_ready', () => { spotifyDeviceId.current = ''; setPlaying(false); setError('The slideshow audio device went offline. Select Play to reconnect it.') })
+      player.addListener('player_state_changed', state => { if (!state) return; setPlaying(!state.paused); setProgress(state.position || 0) })
+      player.addListener('initialization_error', () => fail('This browser cannot start protected Spotify playback.'))
+      player.addListener('authentication_error', () => fail('Reconnect Spotify in Smart Home settings to play it here.'))
+      player.addListener('account_error', () => fail('Spotify playback here requires a Premium account.'))
+      player.addListener('playback_error', () => setError('Spotify could not play this track.'))
+      player.addListener('autoplay_failed', () => { setPlaying(false); setError('Select Play once to let this screen output audio.') })
+      void player.connect().then(connected => { if (!connected) fail('Spotify could not connect the slideshow player.') }).catch(() => fail('Spotify could not connect the slideshow player.'))
+    })).catch(cause => { spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; throw cause }).finally(() => { spotifyCreating.current = null })
+    return spotifyCreating.current
+  }
+
+  async function play(value: MusicTrack) {
+    ownsPlayback.current = true; setTrack(value); setCoverFailed(false); setProgress(0); setError('')
+    if (value.sourceKind === 'generated' && value.audioUrl) {
+      void spotify.current?.pause(); if (!audio.current) return; audio.current.src = value.audioUrl; audio.current.currentTime = 0
+      try { await audio.current.play(); setPlaying(true) } catch { setPlaying(false); setError('Select Play once to let this screen output audio.') }
+      return
+    }
+    if (!value.uri) { setError('This track has no playable source.'); return }
+    audio.current?.pause()
+    try {
+      const player = await ensureSpotify(); await player.activateElement()
+      await api(`/campaigns/${campaignId}/music/playback`, csrfToken, 'POST', { action: 'play', trackUris: [value.uri], deviceId: spotifyDeviceId.current })
+      setPlaying(true)
+    } catch (cause) { setPlaying(false); setError(cause instanceof ApiError ? explain(cause) : 'Spotify could not play in this slideshow.') }
+  }
+
+  useEffect(() => {
+    disposed.current = false
+    let alive = true
+    Promise.all([api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`), api<MusicPlayback>(`/campaigns/${campaignId}/music/playback`)]).then(([items, state]) => {
+      if (!alive) return
+      setQueue(items)
+      const autostart = window.location.hash === '#autostart'
+      if (autostart) history.replaceState(null, '', window.location.pathname + window.location.search)
+      if (autostart && items.length) void play(items[0].track)
+      else if (state.track) { setTrack(state.track); setPlaying(state.playing); setProgress(state.progressMs) }
+      else if (items.length) setTrack(items[0].track)
+    }).catch(cause => { if (alive) setError(explain(cause)) })
+    return () => { alive = false; disposed.current = true; spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; audio.current?.pause() }
+  }, [campaignId, csrfToken])
+
+  useEffect(() => {
+    if (ownsPlayback.current) return
+    let alive = true
+    const read = () => void api<MusicPlayback>(`/campaigns/${campaignId}/music/playback`).then(state => { if (alive && state.track) { setTrack(state.track); setPlaying(state.playing); setProgress(state.progressMs) } }).catch(() => {})
+    const timer = window.setInterval(read, 2000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [campaignId])
+
+  async function toggle() {
+    const value = track || queue[0]?.track
+    if (!value) return
+    if (!ownsPlayback.current) { await play(value); return }
+    if (value.sourceKind === 'generated') {
+      if (!audio.current) return
+      if (playing) audio.current.pause(); else { try { await audio.current.play() } catch { setError('This screen needs one click before it can output audio.') } }
+      return
+    }
+    try { const player = await ensureSpotify(); await player.activateElement(); await player.togglePlay() } catch { setError('Spotify could not change playback.') }
+  }
+
+  if (!track) return error ? <p className="projection-music-error" role="alert">{error}</p> : null
+  const hash = projectionHash(track.id || `${track.name}:${track.artist}`)
+  const heights = Array.from({ length: 64 }, (_, index) => 22 + ((hash >>> (index % 24)) + index * 17) % 70)
+  const percentage = track.durationMs > 0 ? Math.min(100, progress / track.durationMs * 100) : 0
+  const cover = imageSource(track.imageUrl)
+  const wave = <>{heights.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</>
+  return <section className={`projection-music${playing ? ' is-playing' : ''}`} aria-label="Projection music player">
+    <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
+    {cover && !coverFailed ? <img src={cover} alt={`${track.name} cover`} onError={() => setCoverFailed(true)} /> : <span className="projection-music-cover"><SiteIcon name={track.sourceKind === 'spotify' ? 'spotify' : 'music'} size={32} /></span>}
+    <div className="projection-music-copy"><small>{playing ? 'NOW PLAYING' : 'READY'}</small><strong>{track.name}</strong><span>{track.artist}</span></div>
+    <button className="projection-music-toggle" aria-label={playing ? 'Pause slideshow music' : 'Play slideshow music'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button>
+    <div className="projection-wave" aria-label={`${musicTime(progress)} of ${musicTime(track.durationMs)}`}><span className="projection-wave-base">{wave}</span><span className="projection-wave-played" style={{ clipPath: `inset(0 ${100 - percentage}% 0 0)` }}>{wave}</span></div>
+    <span className="projection-music-time">{musicTime(progress)} / {musicTime(track.durationMs)}</span>
+    {error && <p role="alert">{error}</p>}
+  </section>
+}
+
+export function ProjectionView({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
   const [session, setSession] = useState<VisualSession | null>(null)
   const [error, setError] = useState('')
   const [awake, setAwake] = useState(false)
@@ -208,9 +331,10 @@ export function ProjectionView({ campaignId }: { campaignId: string }) {
   async function fullscreen() { await document.documentElement.requestFullscreen().catch(() => {}); try { const lock = await (navigator as Navigator & { wakeLock?: { request: (kind: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock?.request('screen'); if (lock) { wakeLock.current = lock; setAwake(true) } } catch { /* Fullscreen still works without wake lock. */ } }
   const fadeStyle = { '--projection-fade-duration': `${projectionFadeDuration(session?.intervalSeconds ?? 30)}ms` } as ProjectionFadeStyle
   return <main className={`projection-view transition-${session?.transition || 'crossfade'}${session?.blackout ? ' is-blackout' : ''}`} style={fadeStyle}>
-    {previous && <ProjectionLayer frame={previous} className="is-outgoing" hidden />}
-    {current && <ProjectionLayer frame={current} className={transitioning ? 'is-incoming' : 'is-current'} />}
+    {previous && <ProjectionLayer key={previous.visual.id} frame={previous} className="is-outgoing" hidden />}
+    {current && <ProjectionLayer key={current.visual.id} frame={current} className={transitioning ? 'is-incoming' : 'is-current'} />}
     {!current && <div className="projection-blank">{error ? <span>{error}</span> : !session?.blackout && <><SiteIcon name="projector" size={32} /><span>Waiting for the first visual cue…</span></>}</div>}
+    <ProjectionMusic campaignId={campaignId} csrfToken={csrfToken} />
     <div className="projection-blackout" aria-hidden="true" />
     <button className="projection-fullscreen" onClick={() => void fullscreen()} aria-label="Enter fullscreen"><SiteIcon name="fullscreen" />{awake ? 'Screen awake' : 'Fullscreen'}</button>
   </main>

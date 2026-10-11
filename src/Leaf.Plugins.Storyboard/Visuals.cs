@@ -391,7 +391,17 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             else if (action == "play") { if (session.Data.Text("current_visual") == "") { var queue = await QueueItemsAsync(campaign, ct); if (queue.Count == 0) throw new StoryException("visual_queue_empty", 409); var first = queue[0]; patch["current_visual"] = first.Visual.Id.ToString(); patch["current_queue_item"] = first.Item.Id.ToString(); } patch["playing"] = true; patch["blackout"] = false; patch["next_at"] = DateTimeOffset.UtcNow.AddSeconds(NumberOr(session.Data, "interval_seconds", 30)).ToUnixTimeSeconds(); }
             else if (action == "pause") patch["playing"] = false;
             else if (action == "blackout") { patch["blackout"] = input.Blackout ?? !session.Data.Flag("blackout"); if (patch.Flag("blackout")) patch["playing"] = false; }
-            else if (action == "configure") { if (input.IntervalSeconds is not null) patch["interval_seconds"] = Math.Clamp(input.IntervalSeconds.Value, 5, 300); if (input.Transition is not null) patch["transition"] = ValidateTransition(input.Transition); if (input.Loop is not null) patch["loop"] = input.Loop.Value; }
+            else if (action == "configure")
+            {
+                if (input.IntervalSeconds is not null)
+                {
+                    var interval = Math.Clamp(input.IntervalSeconds.Value, 5, 300);
+                    patch["interval_seconds"] = interval;
+                    if (session.Data.Flag("playing")) patch["next_at"] = DateTimeOffset.UtcNow.AddSeconds(interval).ToUnixTimeSeconds();
+                }
+                if (input.Transition is not null) patch["transition"] = ValidateTransition(input.Transition);
+                if (input.Loop is not null) patch["loop"] = input.Loop.Value;
+            }
             else if (action == "clear") { patch["current_visual"] = ""; patch["current_queue_item"] = ""; patch["playing"] = false; patch["blackout"] = false; }
             else throw new StoryException("invalid_visual_command");
             patch["last_operation"] = operation.ToString(); patch["updated_by"] = account; session = await PatchSessionAsync(session, patch, ct); await store.AuditAsync("visual.session." + action, account, session.Id.ToString(), ct: ct); return await SessionProjectionAsync(campaign, session, ct);
