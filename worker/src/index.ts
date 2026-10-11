@@ -3,6 +3,7 @@ export interface Env { STORYBOARD_PROXY_KEY: string; STORYBOARD_PUBLIC_ORIGIN?: 
 const upstream = 'https://redleaf.minititine.cc'
 const mount = '/api/public/storyboard'
 const id = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+const discussion = '[A-Za-z0-9_-]{3,80}'
 const cookies = new Set(['__Host-storyboard', '__Host-storyboard-login'])
 const csp = "default-src 'none'; script-src 'self' 'unsafe-eval' https://sdk.scdn.co; style-src 'self'; img-src 'self' blob: https://lh3.googleusercontent.com https://lh4.googleusercontent.com https://lh5.googleusercontent.com https://lh6.googleusercontent.com https://i.scdn.co; font-src 'self'; connect-src 'self' https://*.spotify.com wss://*.spotify.com https://*.scdn.co; media-src 'self' blob: https://*.scdn.co; frame-src https://sdk.scdn.co; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
 
@@ -60,6 +61,17 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/cockpit/items`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/cockpit/items/${id}/move`) || match(`/api/campaigns/${id}/cockpit/observe`) || match(`/api/campaigns/${id}/cockpit/suggestions/${id}/decide`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/agent/chat`)) {
+    const epoch = url.searchParams.get('afterEpoch')
+    const sequence = url.searchParams.get('afterSequence')
+    const cursor = keys.length === 0 || keys.length === 2
+      && keys.includes('afterEpoch') && keys.includes('afterSequence')
+      && /^[A-Za-z0-9_-]{1,128}$/.test(epoch ?? '')
+      && /^\d{1,19}$/.test(sequence ?? '')
+    allowed = method === 'POST' && query([])
+      || method === 'GET' && query(['afterEpoch', 'afterSequence']) && cursor
+  }
+  if (match(`/api/campaigns/${id}/agent/discussions`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/agent/discussions/${discussion}/chat`)) {
     const epoch = url.searchParams.get('afterEpoch')
     const sequence = url.searchParams.get('afterSequence')
     const cursor = keys.length === 0 || keys.length === 2

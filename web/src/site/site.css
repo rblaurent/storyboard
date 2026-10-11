@@ -475,6 +475,21 @@ body { margin: 0; }
 .storyboard-site .campaign-view-agent { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .storyboard-site .campaign-view-agent > .campaign-dashboard-header { flex: 0 0 auto; margin-bottom: 0; }
 .storyboard-site .agent-page { min-width: 0; min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.storyboard-site .campaign-agent-workspace { position: relative; min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-columns: 250px minmax(0,1fr); overflow: hidden; }
+.storyboard-site .campaign-agent-discussions { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: var(--space-5) var(--space-5) var(--space-6) 0; border-right: 1px solid var(--rule); }
+.storyboard-site .campaign-agent-discussions-bar { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding-bottom: var(--space-3); }
+.storyboard-site .campaign-agent-discussions-bar > strong { font: 20px var(--font-display); font-weight: 400; }
+.storyboard-site .campaign-agent-discussions-bar > button { min-height: 34px; display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-2) var(--space-3); color: var(--ink); border: 1px solid var(--rule-strong); background: transparent; font-size: 11px; }
+.storyboard-site .campaign-agent-discussions-bar > button:hover:not(:disabled) { border-color: var(--ink); }
+.storyboard-site .campaign-agent-discussions nav { min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.storyboard-site .campaign-agent-discussions nav > button { width: 100%; display: grid; gap: 3px; padding: var(--space-3); color: var(--ink); border: 0; border-left: 2px solid transparent; border-radius: 0; background: transparent; text-align: left; }
+.storyboard-site .campaign-agent-discussions nav > button:hover { background: #ffffff5c; }
+.storyboard-site .campaign-agent-discussions nav > button.is-selected { border-left-color: var(--accent); background: #eadfd2; }
+.storyboard-site .campaign-agent-discussions nav strong { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.storyboard-site .campaign-agent-discussions nav span,.storyboard-site .campaign-agent-discussions > p { color: var(--muted); font-size: 10px; }
+.storyboard-site .campaign-agent-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-left: var(--space-6); }
+.storyboard-site .campaign-agent-mobile-discussions { display: none; }
+.storyboard-site .campaign-agent-index-error { position: absolute; z-index: 2; left: 270px; right: 0; bottom: 112px; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); color: var(--danger); border-top: 1px solid var(--danger); background: var(--danger-surface); font-size: 11px; }
 .storyboard-site .campaign-agent-chat { min-width: 0; min-height: 0; flex: 1; display: grid; grid-template-rows: minmax(220px,1fr) auto auto; overflow: hidden; color: var(--ink); border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .storyboard-site .campaign-agent-working i { background: #dca68b; animation: campaign-agent-pulse 1.2s ease-in-out infinite; }
 .storyboard-site .campaign-agent-messages { min-height: 0; display: flex; flex-direction: column; gap: var(--space-4); overflow-y: auto; padding: var(--space-7) 0; scrollbar-color: var(--rule-strong) transparent; }
@@ -667,6 +682,13 @@ body { margin: 0; }
   .storyboard-site .cockpit-lane { min-height: 520px; max-height: 68vh; }
   .storyboard-site .cockpit-context { overflow: visible; border-left: 0; border-top: 1px solid var(--rule); }
   .storyboard-site > main.campaign-agent-main { min-height: 0; }
+  .storyboard-site .campaign-agent-workspace { display: flex; }
+  .storyboard-site .campaign-agent-workspace.is-chat .campaign-agent-discussions { display: none; }
+  .storyboard-site .campaign-agent-workspace.is-list .campaign-agent-detail { display: none; }
+  .storyboard-site .campaign-agent-discussions { width: 100%; padding: var(--space-4) 0 var(--space-5); border-right: 0; }
+  .storyboard-site .campaign-agent-detail { width: 100%; padding-left: 0; }
+  .storyboard-site .campaign-agent-mobile-discussions { min-height: 38px; display: inline-flex; align-items: center; align-self: flex-start; gap: var(--space-1); padding: var(--space-2) 0; color: var(--muted); border: 0; background: transparent; font-size: 11px; }
+  .storyboard-site .campaign-agent-index-error { left: 0; }
   .storyboard-site .campaign-agent-messages { padding: var(--space-4) 0; }
   .storyboard-site .campaign-agent-message { max-width: 94%; }
   .storyboard-site .campaign-agent-composer { padding: var(--space-3) 0; }

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 namespace Leaf.Plugins.Storyboard;
 
 public sealed record CampaignAgentMessageWrite(string Content, string OperationId);
+public sealed record CampaignAgentDiscussionWrite(string OperationId);
 public sealed record CampaignAgentProposalWrite(
     string EntityId,
     string Title,
@@ -36,15 +37,107 @@ public sealed class StoryCampaignAgent(
 {
     private readonly SemaphoreSlim gate = new(1, 1);
 
-    public async Task<object> ReadAsync(
+    public async Task<object> ListAsync(
+        string campaignId,
+        string accountId,
+        CancellationToken ct = default)
+    {
+        await campaigns.MembershipAsync(campaignId, accountId, true, ct);
+        var fallback = await EnsureAsync(campaignId, ct);
+        var values = await CampaignDiscussionsAsync(campaignId, ct);
+        var projected = new List<object>();
+        foreach (var discussion in values)
+        {
+            var conversation = await ReadDiscussionBindingAsync(
+                fallback.Campaign, fallback.Agent, discussion, ct);
+            if (conversation is not null) projected.Add(DiscussionProjection(conversation.Discussion));
+        }
+        return new
+        {
+            agent = new { id = fallback.Agent.Id, name = fallback.Agent.Name },
+            discussions = projected,
+            defaultDiscussionId = fallback.Discussion.Data.Text("discussion_id"),
+        };
+    }
+
+    public async Task<object> CreateAsync(
+        string campaignId,
+        string accountId,
+        CampaignAgentDiscussionWrite input,
+        CancellationToken ct = default)
+    {
+        if (input is null) throw new StoryException("invalid_json");
+        var operation = StoryJson.Id(input.OperationId);
+        await campaigns.MembershipAsync(campaignId, accountId, true, ct);
+        await store.WritableAsync(ct);
+        var fallback = await EnsureAsync(campaignId, ct);
+
+        await gate.WaitAsync(ct);
+        try
+        {
+            var existing = await FindDiscussionByOperationAsync(campaignId, operation.ToString(), ct);
+            if (existing is not null)
+            {
+                var bound = await ReadDiscussionBindingAsync(
+                    fallback.Campaign, fallback.Agent, existing, ct)
+                    ?? throw new StoryException("agent_discussion_unavailable", 409);
+                return DiscussionProjection(bound.Discussion);
+            }
+
+            var config = await store.ConfigAsync(ct)
+                         ?? throw new StoryException("storyboard_not_configured", 503);
+            var publicId = "sb" + operation.ToString("N")[..14];
+            var bindingId = $"storyboard:campaign:{fallback.Campaign.Id:N}:discussion:{operation:N}";
+            var handle = await Provider(fallback.Agent.Id.ToString()).OpenAsync(
+                new ExternalConversationOpenRequest(
+                    bindingId,
+                    1,
+                    fallback.Agent.Id.ToString(),
+                    config.Data.Text("owner_id"),
+                    "storyboard-gm",
+                    new ExternalConversationScope(
+                        "storyboard",
+                        "storyboard",
+                        publicId,
+                        "storyboard-campaign-discussion",
+                        config.Data.Text("installation")),
+                    "storyboard-agent-discussion-open:" + operation.ToString("N")),
+                ct);
+            var discussion = await discussions.CreateAsync(
+                "New discussion",
+                fallback.Agent.Id.ToString(),
+                DiscussionData(
+                    fallback.Campaign,
+                    fallback.Agent,
+                    config,
+                    publicId,
+                    handle,
+                    "fallback",
+                    operation.ToString()),
+                ct);
+            return DiscussionProjection(discussion);
+        }
+        finally { gate.Release(); }
+    }
+
+    public Task<object> ReadAsync(
         string campaignId,
         string accountId,
         string? afterEpoch,
         long? afterSequence,
         CancellationToken ct = default)
+        => ReadAsync(campaignId, accountId, null, afterEpoch, afterSequence, ct);
+
+    public async Task<object> ReadAsync(
+        string campaignId,
+        string accountId,
+        string? discussionId,
+        string? afterEpoch,
+        long? afterSequence,
+        CancellationToken ct = default)
     {
         await campaigns.MembershipAsync(campaignId, accountId, true, ct);
-        var conversation = await EnsureAsync(campaignId, ct);
+        var conversation = await ResolveAsync(campaignId, discussionId, ct);
         ExternalConversationCursor? after = null;
         if (!string.IsNullOrWhiteSpace(afterEpoch) || afterSequence.HasValue)
         {
@@ -73,6 +166,14 @@ public sealed class StoryCampaignAgent(
         {
             page = await provider.ReadSettledAsync(conversation.Handle, after, 500, ct);
         }
+        if (page.IsQuiescent && conversation.Discussion.Data.Text("status") != "idle")
+        {
+            await store.Entities.PatchAsync(
+                conversation.Discussion.Id,
+                new JsonObject { ["status"] = "idle" },
+                null,
+                ct);
+        }
         return new
         {
             agent = new { id = conversation.Agent.Id, name = conversation.Agent.Name },
@@ -85,9 +186,17 @@ public sealed class StoryCampaignAgent(
         };
     }
 
+    public Task<object> SendAsync(
+        string campaignId,
+        string accountId,
+        CampaignAgentMessageWrite input,
+        CancellationToken ct = default)
+        => SendAsync(campaignId, accountId, null, input, ct);
+
     public async Task<object> SendAsync(
         string campaignId,
         string accountId,
+        string? discussionId,
         CampaignAgentMessageWrite input,
         CancellationToken ct = default)
     {
@@ -96,7 +205,7 @@ public sealed class StoryCampaignAgent(
         var operation = StoryJson.Id(input.OperationId).ToString();
         await campaigns.MembershipAsync(campaignId, accountId, true, ct);
         var account = await store.RequireAsync("storyboard-account", accountId, ct);
-        var conversation = await EnsureAsync(campaignId, ct);
+        var conversation = await ResolveAsync(campaignId, discussionId, ct);
         var config = await store.ConfigAsync(ct) ?? throw new StoryException("storyboard_not_configured", 503);
         var admission = await Provider(conversation.Agent.Id.ToString()).SendAsync(
             conversation.Handle,
@@ -117,6 +226,7 @@ public sealed class StoryCampaignAgent(
                     ["account_id"] = accountId,
                 }),
             ct);
+        var touched = await TouchAfterAdmissionAsync(conversation.Discussion, operation, content, ct);
         return new
         {
             accepted = true,
@@ -124,7 +234,8 @@ public sealed class StoryCampaignAgent(
             admission.Disposition,
             admission.QueueItemId,
             sessionId = conversation.Handle.SessionId,
-            discussionId = conversation.Discussion.Data.Text("discussion_id"),
+            discussionId = touched.Data.Text("discussion_id"),
+            title = touched.Name,
         };
     }
 
@@ -240,30 +351,17 @@ public sealed class StoryCampaignAgent(
                     "storyboard-agent-open:" + campaign.Id.ToString("N")),
                 ct);
 
-            var discussion = await FindDiscussionAsync(campaign.Id.ToString(), ct)
+            var discussion = await FindLegacyDiscussionAsync(campaign.Id.ToString(), ct)
                              ?? await discussions.CreateAsync(
                                  campaign.Name,
                                  agent.Id.ToString(),
-                                 new JsonObject
-                                 {
-                                     ["discussion_id"] = "sb" + campaign.Id.ToString("N")[..14],
-                                     ["app"] = "nova",
-                                     ["source_app"] = "storyboard",
-                                     ["campaign"] = campaign.Id.ToString(),
-                                     ["workspace"] = campaign.Data.Text("workspace"),
-                                     ["owner_id"] = config.Data.Text("owner_id"),
-                                     ["owner_agent_id"] = agent.Id.ToString(),
-                                     ["agent"] = agent.Id.ToString(),
-                                     ["session_id"] = handle.SessionId,
-                                     ["type"] = "chat",
-                                     ["conversation_kind"] = "storyboard-campaign",
-                                     ["status"] = "idle",
-                                     ["confidential"] = false,
-                                     ["title_source"] = "system",
-                                     ["conversation_revision"] = 0,
-                                     ["read_conversation_revision"] = 0,
-                                     ["last_processed_session_assistant_uid"] = "",
-                                 },
+                                 DiscussionData(
+                                     campaign,
+                                     agent,
+                                     config,
+                                     "sb" + campaign.Id.ToString("N")[..14],
+                                     handle,
+                                     "system"),
                                  ct);
 
             campaign = await store.ChangeAsync(campaign.TypeSlug, campaign.Slug, campaign.Name, old =>
@@ -300,6 +398,13 @@ public sealed class StoryCampaignAgent(
         var agent = await store.Entities.GetAsync(agentGuid, ct);
         var discussion = await store.Entities.GetAsync(discussionGuid, ct);
         if (agent?.TypeSlug != "agent" || discussion?.TypeSlug != "discussion") return null;
+        discussion = await EnsureDiscussionMetadataAsync(
+            discussion,
+            bindingId,
+            generation,
+            conversationId,
+            sessionId,
+            ct);
         // Campaign conversations are ordinary user-visible Agent discussions. The
         // campaign workspace remains confidential and Agent-bound independently;
         // keeping the discussion itself confidential only hides it from Nova's
@@ -325,7 +430,7 @@ public sealed class StoryCampaignAgent(
                 sessionId));
     }
 
-    private async Task<LeafEntity?> FindDiscussionAsync(string campaignId, CancellationToken ct)
+    private async Task<LeafEntity?> FindLegacyDiscussionAsync(string campaignId, CancellationToken ct)
         => (await store.Entities.QueryAsync(new EntityQuery
         {
             TypeSlug = "discussion",
@@ -335,8 +440,239 @@ public sealed class StoryCampaignAgent(
                 ["source_app"] = "storyboard",
                 ["campaign"] = campaignId,
             },
+            Limit = 200,
+        }, ct)).OrderBy(value => value.CreatedAt).FirstOrDefault();
+
+    private async Task<CampaignConversation> ResolveAsync(
+        string campaignId,
+        string? discussionId,
+        CancellationToken ct)
+    {
+        var fallback = await EnsureAsync(campaignId, ct);
+        if (string.IsNullOrWhiteSpace(discussionId)
+            || string.Equals(
+                fallback.Discussion.Data.Text("discussion_id"),
+                discussionId,
+                StringComparison.Ordinal))
+            return fallback;
+        var discussion = await FindDiscussionByPublicIdAsync(campaignId, discussionId, ct)
+                         ?? throw new StoryException("not_found", 404);
+        return await ReadDiscussionBindingAsync(
+                   fallback.Campaign, fallback.Agent, discussion, ct)
+               ?? throw new StoryException("agent_discussion_unavailable", 409);
+    }
+
+    private async Task<IReadOnlyList<LeafEntity>> CampaignDiscussionsAsync(
+        string campaignId,
+        CancellationToken ct)
+        => (await store.Entities.QueryAsync(new EntityQuery
+            {
+                TypeSlug = "discussion",
+                DataEquals = new Dictionary<string, object?>
+                {
+                    ["app"] = "nova",
+                    ["source_app"] = "storyboard",
+                    ["campaign"] = campaignId,
+                },
+                Limit = 200,
+            }, ct))
+            .Where(value => value.Data.Text("status") != "archived")
+            .OrderByDescending(value => value.Data.Text(
+                "last_activity", value.UpdatedAt.ToString("O")))
+            .ThenByDescending(value => value.CreatedAt)
+            .ToArray();
+
+    private async Task<LeafEntity?> FindDiscussionByPublicIdAsync(
+        string campaignId,
+        string discussionId,
+        CancellationToken ct)
+        => (await store.Entities.QueryAsync(new EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?>
+            {
+                ["app"] = "nova",
+                ["source_app"] = "storyboard",
+                ["campaign"] = campaignId,
+                ["discussion_id"] = StoryJson.Bounded(discussionId, 80, true),
+            },
             Limit = 2,
         }, ct)).SingleOrDefault();
+
+    private async Task<LeafEntity?> FindDiscussionByOperationAsync(
+        string campaignId,
+        string operationId,
+        CancellationToken ct)
+        => (await store.Entities.QueryAsync(new EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?>
+            {
+                ["app"] = "nova",
+                ["source_app"] = "storyboard",
+                ["campaign"] = campaignId,
+                ["create_operation"] = operationId,
+            },
+            Limit = 2,
+        }, ct)).SingleOrDefault();
+
+    private async Task<CampaignConversation?> ReadDiscussionBindingAsync(
+        LeafEntity campaign,
+        LeafEntity agent,
+        LeafEntity discussion,
+        CancellationToken ct)
+    {
+        if (discussion.TypeSlug != "discussion"
+            || discussion.Data.Text("app") != "nova"
+            || discussion.Data.Text("source_app") != "storyboard"
+            || discussion.Data.Text("campaign") != campaign.Id.ToString()
+            || discussion.Data.Text("agent") != agent.Id.ToString())
+            return null;
+
+        var bindingId = discussion.Data.Text("agent_binding");
+        var conversationId = discussion.Data.Text("agent_conversation");
+        var sessionId = discussion.Data.Text("session_id");
+        var generation = (long)discussion.Data.Number("agent_generation");
+        if (string.IsNullOrWhiteSpace(bindingId)
+            || string.IsNullOrWhiteSpace(conversationId)
+            || string.IsNullOrWhiteSpace(sessionId)
+            || generation < 1)
+        {
+            if (discussion.Id.ToString() != campaign.Data.Text("agent_discussion")) return null;
+            bindingId = campaign.Data.Text("agent_binding");
+            conversationId = campaign.Data.Text("agent_conversation");
+            sessionId = campaign.Data.Text("agent_session");
+            generation = (long)campaign.Data.Number("agent_generation");
+            if (string.IsNullOrWhiteSpace(bindingId)
+                || string.IsNullOrWhiteSpace(conversationId)
+                || string.IsNullOrWhiteSpace(sessionId)
+                || generation < 1)
+                return null;
+            discussion = await EnsureDiscussionMetadataAsync(
+                discussion, bindingId, generation, conversationId, sessionId, ct);
+        }
+        if (discussion.Data.Flag("confidential"))
+        {
+            await store.Entities.PatchAsync(
+                discussion.Id,
+                new JsonObject { ["confidential"] = false },
+                ct: ct);
+            discussion = await store.Entities.GetAsync(discussion.Id, ct) ?? discussion;
+        }
+        return new CampaignConversation(
+            campaign,
+            agent,
+            discussion,
+            new ExternalConversationHandle(
+                Provider(agent.Id.ToString()).ProviderId,
+                bindingId,
+                generation,
+                conversationId,
+                sessionId));
+    }
+
+    private async Task<LeafEntity> EnsureDiscussionMetadataAsync(
+        LeafEntity discussion,
+        string bindingId,
+        long generation,
+        string conversationId,
+        string sessionId,
+        CancellationToken ct)
+    {
+        if (discussion.Data.Text("agent_binding") == bindingId
+            && discussion.Data.Number("agent_generation") == generation
+            && discussion.Data.Text("agent_conversation") == conversationId
+            && discussion.Data.Text("session_id") == sessionId)
+            return discussion;
+        await store.Entities.PatchAsync(
+            discussion.Id,
+            new JsonObject
+            {
+                ["agent_binding"] = bindingId,
+                ["agent_generation"] = generation,
+                ["agent_conversation"] = conversationId,
+                ["session_id"] = sessionId,
+            },
+            ct: ct);
+        return await store.Entities.GetAsync(discussion.Id, ct) ?? discussion;
+    }
+
+    private static JsonObject DiscussionData(
+        LeafEntity campaign,
+        LeafEntity agent,
+        LeafEntity config,
+        string publicId,
+        ExternalConversationHandle handle,
+        string titleSource,
+        string? createOperation = null)
+    {
+        var data = new JsonObject
+        {
+            ["discussion_id"] = publicId,
+            ["app"] = "nova",
+            ["source_app"] = "storyboard",
+            ["campaign"] = campaign.Id.ToString(),
+            ["workspace"] = campaign.Data.Text("workspace"),
+            ["owner_id"] = config.Data.Text("owner_id"),
+            ["owner_agent_id"] = agent.Id.ToString(),
+            ["agent"] = agent.Id.ToString(),
+            ["agent_binding"] = handle.BindingId,
+            ["agent_generation"] = handle.Generation,
+            ["agent_conversation"] = handle.ConversationId,
+            ["session_id"] = handle.SessionId,
+            ["type"] = "chat",
+            ["conversation_kind"] = "storyboard-campaign",
+            ["status"] = "idle",
+            ["confidential"] = false,
+            ["title_source"] = titleSource,
+            ["conversation_revision"] = 0,
+            ["read_conversation_revision"] = 0,
+            ["message_count"] = 0,
+            ["last_activity"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["last_processed_session_assistant_uid"] = "",
+        };
+        if (!string.IsNullOrWhiteSpace(createOperation))
+            data["create_operation"] = createOperation;
+        return data;
+    }
+
+    private static object DiscussionProjection(LeafEntity discussion) => new
+    {
+        id = discussion.Data.Text("discussion_id"),
+        title = discussion.Name,
+        sessionId = discussion.Data.Text("session_id"),
+        status = discussion.Data.Text("status", "idle"),
+        lastActivity = discussion.Data.Text(
+            "last_activity", discussion.UpdatedAt.ToString("O")),
+        messageCount = discussion.Data.Number("message_count"),
+    };
+
+    private async Task<LeafEntity> TouchAfterAdmissionAsync(
+        LeafEntity discussion,
+        string operationId,
+        string content,
+        CancellationToken ct)
+    {
+        var nextTitle = discussion.Name == "New discussion"
+                        && discussion.Data.Text("title_source") == "fallback"
+            ? content.Length > 60 ? content[..59] + "…" : content
+            : discussion.Name;
+        return await store.ChangeAsync(
+            discussion.TypeSlug,
+            discussion.Slug,
+            nextTitle,
+            old =>
+            {
+                var next = old!.Data.DeepClone().AsObject();
+                if (next.Text("last_agent_operation") == operationId) return next;
+                next["last_agent_operation"] = operationId;
+                next["last_activity"] = DateTimeOffset.UtcNow.ToString("O");
+                next["message_count"] = next.Number("message_count") + 1;
+                next["status"] = "thinking";
+                return next;
+            },
+            ct);
+    }
 
     private IExternalAgentConversationProvider Provider(string agentId)
         => providers.FirstOrDefault(value => value.CanHandle(agentId))

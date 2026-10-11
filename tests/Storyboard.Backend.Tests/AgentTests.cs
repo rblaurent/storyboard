@@ -12,6 +12,68 @@ namespace Storyboard.Testing;
 public sealed class AgentTests
 {
     [Fact]
+    public async Task CampaignAgentKeepsIndependentPersistentDiscussionsAndSessions()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaignId = fixture.Campaign.Id.ToString();
+        var accountId = fixture.Gm.Id.ToString();
+
+        var firstIndex = StoryJson.Object(await fixture.Agent.ListAsync(campaignId, accountId));
+        var firstId = firstIndex.Text("defaultDiscussionId");
+        Assert.Single(firstIndex["discussions"]!.AsArray());
+
+        var createOperation = Guid.NewGuid().ToString();
+        var created = StoryJson.Object(await fixture.Agent.CreateAsync(
+            campaignId, accountId, new CampaignAgentDiscussionWrite(createOperation)));
+        var retried = StoryJson.Object(await fixture.Agent.CreateAsync(
+            campaignId, accountId, new CampaignAgentDiscussionWrite(createOperation)));
+        Assert.Equal(created.Text("id"), retried.Text("id"));
+        Assert.NotEqual(firstId, created.Text("id"));
+        Assert.Equal(2, fixture.AgentConversations.Opens);
+
+        await fixture.Agent.SendAsync(
+            campaignId,
+            accountId,
+            firstId,
+            new CampaignAgentMessageWrite("Prepare the first room", Guid.NewGuid().ToString()));
+        await fixture.Agent.SendAsync(
+            campaignId,
+            accountId,
+            created.Text("id"),
+            new CampaignAgentMessageWrite("Track the rival faction", Guid.NewGuid().ToString()));
+
+        var first = StoryJson.Object(await fixture.Agent.ReadAsync(
+            campaignId, accountId, firstId, null, null));
+        var second = StoryJson.Object(await fixture.Agent.ReadAsync(
+            campaignId, accountId, created.Text("id"), null, null));
+        var firstText = first["messages"]!.AsArray().Select(value => StoryJson.Object(value!).Text("content")).ToArray();
+        var secondText = second["messages"]!.AsArray().Select(value => StoryJson.Object(value!).Text("content")).ToArray();
+        Assert.Contains("Prepare the first room", firstText);
+        Assert.DoesNotContain("Track the rival faction", firstText);
+        Assert.Contains("Track the rival faction", secondText);
+        Assert.DoesNotContain("Prepare the first room", secondText);
+        Assert.NotEqual(first.Text("sessionId"), second.Text("sessionId"));
+
+        var index = StoryJson.Object(await fixture.Agent.ListAsync(campaignId, accountId));
+        Assert.Equal(2, index["discussions"]!.AsArray().Count);
+        Assert.Contains(index["discussions"]!.AsArray(), value =>
+            StoryJson.Object(value!).Text("title") == "Track the rival faction");
+
+        var reconstructed = new StoryCampaignAgent(
+            fixture.Store,
+            fixture.Campaigns,
+            fixture.Workspace,
+            fixture.Transcript,
+            fixture.Cockpit,
+            fixture.Discussions,
+            [fixture.AgentConversations]);
+        var afterRestart = StoryJson.Object(await reconstructed.ReadAsync(
+            campaignId, accountId, created.Text("id"), null, null));
+        Assert.Equal(second.Text("sessionId"), afterRestart.Text("sessionId"));
+        Assert.Equal(2, fixture.AgentConversations.Opens);
+    }
+
+    [Fact]
     public async Task CampaignChatUsesOnePersistentAgentSessionAndNeverFallsBackToOneshot()
     {
         await using var fixture = await Fixture.Create();
