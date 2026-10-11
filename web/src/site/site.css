@@ -691,7 +691,7 @@ body { margin: 0; }
 .projection-motion { width: 100%; height: 100%; object-fit: cover; transform: translate3d(var(--motion-x-from),var(--motion-y-from),0) scale(var(--motion-scale-from)); transform-origin: center; will-change: transform; animation: projection-drift var(--projection-motion-duration) ease-in-out infinite alternate; }
 .projection-motion-0 { --motion-x-from: 0%; --motion-y-from: 0%; --motion-scale-from: 1.045; --motion-x-to: 0%; --motion-y-to: 0%; --motion-scale-to: 1.095; }
 .projection-motion-1 { --motion-x-from: -.6%; --motion-y-from: .3%; --motion-scale-from: 1.095; --motion-x-to: .6%; --motion-y-to: -.2%; --motion-scale-to: 1.045; }
-.projection-motion-2 { --motion-x-from: -1.4%; --motion-y-from: .2%; --motion-scale-from: 1.07; --motion-x-to: 1.4%; --motion-y-to: -.2%; --motion-scale-to: 1.07; }
+.projection-motion-2 { --motion-x-from: -1.4%; --motion-y-from: .2%; --motion-scale-from: 1.06; --motion-x-to: 1.4%; --motion-y-to: -.2%; --motion-scale-to: 1.085; }
 .projection-motion-3 { --motion-x-from: 1.4%; --motion-y-from: -.3%; --motion-scale-from: 1.075; --motion-x-to: -1.4%; --motion-y-to: .3%; --motion-scale-to: 1.065; }
 .projection-motion-4 { --motion-x-from: -1%; --motion-y-from: -.8%; --motion-scale-from: 1.075; --motion-x-to: 1%; --motion-y-to: .8%; --motion-scale-to: 1.06; }
 .projection-motion-5 { --motion-x-from: 0%; --motion-y-from: 1%; --motion-scale-from: 1.07; --motion-x-to: 0%; --motion-y-to: -1%; --motion-scale-to: 1.09; }
