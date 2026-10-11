@@ -38,7 +38,6 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   const mounted = useRef(true)
   const end = useRef<HTMLDivElement | null>(null)
   const [revision, setRevision] = useState(0)
-  const [agentName, setAgentName] = useState('Campaign Copilot')
   const [quiescent, setQuiescent] = useState(true)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<PendingMessage[]>([])
@@ -58,7 +57,6 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
         if (!fresh && previousEpoch && nextEpoch && previousEpoch !== nextEpoch) records.current.clear()
         for (const message of page.messages) records.current.set(`${message.cursor.epoch}:${message.cursor.sequence}`, message)
         cursor.current = page.cursor
-        setAgentName(page.agent.name)
         setQuiescent(page.isQuiescent)
         if (!page.hasMore || !page.cursor) break
         page = await api<AgentChatPage>(`${base}?afterEpoch=${encodeURIComponent(page.cursor.epoch)}&afterSequence=${page.cursor.sequence}`)
@@ -129,18 +127,17 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
     }
   }
 
-  return <section className="campaign-agent-chat" aria-label={`Chat with ${agentName}`}>
-    <header><div className="campaign-agent-identity"><span className="campaign-agent-avatar"><SiteIcon name="agent" /></span><div><span className="eyebrow">CAMPAIGN AGENT</span><h2>{agentName}</h2><p>Plan, question, and prepare inside this campaign.</p></div></div><span className={`campaign-agent-state${quiescent ? '' : ' is-working'}`}><i />{quiescent ? 'Ready' : 'Working'}</span></header>
+  return <section className="campaign-agent-chat" aria-label="Campaign Agent discussion">
     <div className="campaign-agent-messages" aria-live="polite">
       {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">Ask for preparation, challenge a plan, or work through what the table may need next.</p>}
       {messages.map(message => <ChatBlock key={message.id} message={message} />)}
       {pending.map(message => <article className="campaign-agent-message is-user is-pending" key={message.id}><p>{message.content}</p><small>{message.messageUid ? 'Saved, waiting for the Agent' : 'Sending'}</small></article>)}
-      {!quiescent && <p className="campaign-agent-working"><i />{agentName} is working</p>}
+      {!quiescent && <p className="campaign-agent-working"><i />Agent is working</p>}
       <div ref={end} aria-hidden="true" />
     </div>
     {error && <p className="campaign-agent-error" role="alert"><SiteIcon name="warning" />{error}</p>}
     <form className="campaign-agent-composer" onSubmit={send}>
-      <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder={`Message ${agentName}…`} rows={2} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
+      <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Message the Agent…" rows={2} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
       <button aria-label="Send message" disabled={!draft.trim()}><SiteIcon name="send" /></button>
     </form>
   </section>
