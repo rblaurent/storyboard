@@ -30,7 +30,7 @@ interface AgentChatPage {
 interface AgentAdmission { messageUid: string; disposition: string }
 interface PendingMessage { id: string; content: string; messageUid?: string }
 interface AgentDiscussion { id: string; title: string; sessionId: string; status: string; lastActivity: string; messageCount: number; kind?: 'chat' | 'heartbeat'; readOnly?: boolean }
-interface AgentDiscussionIndex { agent: { id: string; name: string }; discussions: AgentDiscussion[]; defaultDiscussionId: string }
+interface AgentDiscussionIndex { agent: { id: string; name: string; avatar?: string }; discussions: AgentDiscussion[]; defaultDiscussionId: string }
 
 export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
   const base = `/campaigns/${campaignId}/agent/discussions`
@@ -96,7 +96,7 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   const active = index?.discussions.find(item => item.id === selected) ?? null
   return <section className={`campaign-agent-workspace${showList ? ' is-list' : ' is-chat'}`} aria-label="Campaign Agent discussions">
     <aside className="campaign-agent-discussions" aria-label="Discussions">
-      <div className="campaign-agent-discussions-bar"><strong>Discussions</strong><button onClick={() => void create()} disabled={creating}><SiteIcon name="plus" />{creating ? 'Creating…' : 'New'}</button></div>
+      <div className="campaign-agent-discussions-bar"><span className="campaign-agent-identity">{index?.agent.avatar ? <img src={index.agent.avatar} alt="" /> : <i><SiteIcon name="agent" /></i>}<span><small>CAMPAIGN AGENT</small><strong>{index?.agent.name || 'Agent'}</strong></span></span><button onClick={() => void create()} disabled={creating}><SiteIcon name="plus" />{creating ? 'Creating…' : 'New'}</button></div>
       {index?.discussions.length ? <nav>{index.discussions.map(discussion => <button key={discussion.id} className={discussion.id === selected ? 'is-selected' : ''} aria-current={discussion.id === selected ? 'true' : undefined} onClick={() => choose(discussion.id)}><strong><span>{discussion.title || 'New discussion'}</span>{discussion.kind === 'heartbeat' && <small>PLAY MODE</small>}</strong><span>{relative(discussion.lastActivity)}</span></button>)}</nav> : index ? <p>No discussions yet.</p> : <p role="status">Opening discussions…</p>}
     </aside>
     <div className="campaign-agent-detail">

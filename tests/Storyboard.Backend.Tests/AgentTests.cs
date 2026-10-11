@@ -65,6 +65,7 @@ public sealed class AgentTests
             fixture.Workspace,
             fixture.Transcript,
             fixture.Cockpit,
+            fixture.Compute,
             fixture.Discussions,
             [fixture.AgentConversations]);
         var afterRestart = StoryJson.Object(await reconstructed.ReadAsync(
@@ -127,6 +128,8 @@ public sealed class AgentTests
         var discussion = (await fixture.Entities.GetAsync(StoryJson.Id(campaign.Data.Text("agent_discussion"))))!;
         Assert.Equal("agent", agent.TypeSlug);
         Assert.Equal(campaign.Data.Text("workspace"), agent.Data.Text("workspace"));
+        Assert.Equal("/api/assets/fixture-cover.png", agent.Data.Text("avatar"));
+        Assert.Single(agent.Data["skills"]!.AsArray());
         Assert.Equal("discussion", discussion.TypeSlug);
         Assert.Equal("nova", discussion.Data.Text("app"));
         Assert.Equal("storyboard", discussion.Data.Text("source_app"));
@@ -144,6 +147,7 @@ public sealed class AgentTests
             fixture.Workspace,
             fixture.Transcript,
             fixture.Cockpit,
+            fixture.Compute,
             fixture.Discussions,
             [fixture.AgentConversations]);
         await reconstructed.ReadAsync(campaign.Id.ToString(), fixture.Gm.Id.ToString(), null, null);
@@ -197,6 +201,76 @@ public sealed class AgentTests
         var accepted = StoryJson.Object(await fixture.Agent.ContextAsync(
             campaign.Id.ToString(), Context(campaign.Data.Text("agent"))));
         Assert.Equal(campaign.Id.ToString(), accepted["campaign"]!.AsObject().Text("id"));
+    }
+
+    [Fact]
+    public async Task ScopedWorkspaceToolsAllowInteractiveAgentAndRejectHeartbeatMutation()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaignId = fixture.Campaign.Id.ToString();
+        await fixture.Agent.ReadAsync(campaignId, fixture.Gm.Id.ToString(), null, null);
+        var campaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var root = (await fixture.Entities.GetAsync(StoryJson.Id(campaign.Data.Text("workspace"))))!;
+        await fixture.Entities.UpsertBySlugAsync("entity-type", "fixture-note", "Fixture note", new JsonObject
+        {
+            ["scope"] = root.Slug,
+            ["system"] = false,
+        });
+
+        var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var tools = new StoryCampaignAgentTools(
+            fixture.Store,
+            fixture.Agent,
+            fixture.Campaigns,
+            fixture.Workspace,
+            fixture.Transcript,
+            fixture.Cockpit,
+            play,
+            playbooks,
+            null!,
+            fixture.Visuals);
+
+        static DefaultHttpContext Context(string agentId, string sessionId)
+        {
+            var identity = new JsonObject
+            {
+                ["actor"] = new JsonObject { ["kind"] = "agent", ["entityId"] = agentId },
+                ["context"] = new JsonArray(new JsonObject { ["kind"] = "session", ["id"] = sessionId }),
+            };
+            var context = new DefaultHttpContext();
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("token_use", "execution"), new Claim("execution_identity", identity.ToJsonString())],
+                "Bearer"));
+            return context;
+        }
+
+        var normal = (await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?> { ["campaign"] = campaignId },
+            Limit = 200,
+        })).Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign");
+        var created = StoryJson.Object(await tools.WorkspaceCreateAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"), normal.Data.Text("session_id")),
+            new WorkspaceEntityCreate("fixture-note", "Agent-authored note", null, new JsonObject()),
+            default));
+        Assert.Equal("fixture-note", created.Text("typeSlug"));
+
+        await play.SetAsync(campaignId, fixture.Gm.Id.ToString(), new CampaignPlayWrite(true, Guid.NewGuid().ToString()));
+        var heartbeat = (await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?> { ["campaign"] = campaignId },
+            Limit = 200,
+        })).Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign-heartbeat");
+        var denied = await Assert.ThrowsAsync<StoryException>(() => tools.WorkspaceCreateAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"), heartbeat.Data.Text("session_id")),
+            new WorkspaceEntityCreate("fixture-note", "Autonomous canon", null, new JsonObject()),
+            default));
+        Assert.Equal("interactive_agent_discussion_required", denied.Code);
     }
 
     [Fact]

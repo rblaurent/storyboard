@@ -113,13 +113,19 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
     }
 
     public async Task<object> SaveAsync(string campaign, string account, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
+        => await SaveCoreAsync(campaign, account, account, true, entityId, input, ct);
+
+    internal Task<object> AgentSaveAsync(string campaign, string agentId, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
+        => SaveCoreAsync(campaign, "", agentId, false, entityId, input, ct);
+
+    private async Task<object> SaveCoreAsync(string campaign, string account, string auditActor, bool requireMembership, string entityId, WorkspaceEntityWrite input, CancellationToken ct)
     {
         if (input is null || input.Data is null || !DateTimeOffset.TryParse(input.ExpectedUpdatedAt, out var expected)) throw new StoryException("invalid_workspace_write");
         await store.Commands.WaitAsync(ct);
         try
         {
             await store.WritableAsync(ct);
-            var context = await ContextAsync(campaign, account, ct);
+            var context = requireMembership ? await ContextAsync(campaign, account, ct) : await ContextCoreAsync(campaign, ct);
             var entity = context.Entities.SingleOrDefault(e => e.Id == StoryJson.Id(entityId)) ?? throw new StoryException("not_found", 404);
             var type = context.Types.GetValueOrDefault(entity.TypeSlug) ?? throw new StoryException("workspace_type_unavailable", 409);
             if (type.System || entity.TypeSlug == "page") throw new StoryException("workspace_entity_read_only", 409);
@@ -131,20 +137,26 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             try { saved = await store.Entities.CompareExchangeCanonicalAsync(entity.Id, StoryJson.Bounded(input.Name, 300, true), next, expected, ct); }
             catch (InvalidOperationException) { throw new StoryException("workspace_entity_read_only", 409); }
             if (saved is null) throw new StoryException("workspace_entity_changed", 409);
-            await store.AuditAsync("workspace.entity.updated", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug }, ct);
+            await store.AuditAsync("workspace.entity.updated", auditActor, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug, ["agent_generated"] = !requireMembership }, ct);
             return Project(saved, type, null, "en");
         }
         finally { store.Commands.Release(); }
     }
 
     public async Task<object> CreateAsync(string campaign, string account, WorkspaceEntityCreate input, CancellationToken ct = default)
+        => await CreateCoreAsync(campaign, account, account, true, input, ct);
+
+    internal Task<object> AgentCreateAsync(string campaign, string agentId, WorkspaceEntityCreate input, CancellationToken ct = default)
+        => CreateCoreAsync(campaign, "", agentId, false, input, ct);
+
+    private async Task<object> CreateCoreAsync(string campaign, string account, string auditActor, bool requireMembership, WorkspaceEntityCreate input, CancellationToken ct)
     {
         if (input is null) throw new StoryException("invalid_workspace_write");
         await store.Commands.WaitAsync(ct);
         try
         {
             await store.WritableAsync(ct);
-            var context = await ContextAsync(campaign, account, ct);
+            var context = requireMembership ? await ContextAsync(campaign, account, ct) : await ContextCoreAsync(campaign, ct);
             var type = context.Types.GetValueOrDefault(StoryJson.Bounded(input.TypeSlug, 160, true)) ?? throw new StoryException("workspace_type_unavailable", 409);
             if (type.System || type.Slug == "page") throw new StoryException("workspace_type_read_only", 409);
             var parent = string.IsNullOrWhiteSpace(input.Parent) ? context.Root.Id.ToString() : input.Parent!;
@@ -159,7 +171,7 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             LeafEntity saved;
             try { saved = await store.Entities.CreateAsync(type.Slug, StoryJson.Bounded(input.Name, 300, true), data, ct); }
             catch (InvalidOperationException) { throw new StoryException("workspace_entity_invalid", 409); }
-            await store.AuditAsync("workspace.entity.created", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug }, ct);
+            await store.AuditAsync("workspace.entity.created", auditActor, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug, ["agent_generated"] = !requireMembership }, ct);
             return Project(saved, type, null, "en");
         }
         finally { store.Commands.Release(); }

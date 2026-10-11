@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text;
 using Leaf.Sdk;
 using Leaf.Sdk.Services;
 using Microsoft.AspNetCore.Http;
@@ -32,10 +33,22 @@ public sealed class StoryCampaignAgent(
     StoryWorkspace workspace,
     StoryTranscript transcript,
     StoryCockpit cockpit,
+    IAssets assets,
     IDiscussions discussions,
     IEnumerable<IExternalAgentConversationProvider> providers)
 {
+    private const string CampaignSkillSlug = "storyboard-campaign-operations";
     private readonly SemaphoreSlim gate = new(1, 1);
+
+    public async Task ReconcileExistingAsync(CancellationToken ct = default)
+    {
+        foreach (var campaign in await store.AllAsync("storyboard-campaign", ct: ct))
+        {
+            if (!Guid.TryParse(campaign.Data.Text("agent"), out _)) continue;
+            var existing = await ReadBindingAsync(campaign, ct);
+            if (existing is not null) await RefreshAgentDefinitionAsync(existing, ct);
+        }
+    }
 
     public async Task<object> ListAsync(
         string campaignId,
@@ -54,7 +67,7 @@ public sealed class StoryCampaignAgent(
         }
         return new
         {
-            agent = new { id = fallback.Agent.Id, name = fallback.Agent.Name },
+            agent = new { id = fallback.Agent.Id, name = fallback.Agent.Name, avatar = fallback.Agent.Data.Text("avatar") },
             discussions = projected,
             defaultDiscussionId = fallback.Discussion.Data.Text("discussion_id"),
         };
@@ -490,6 +503,7 @@ public sealed class StoryCampaignAgent(
             var owningAgent = await store.Entities.GetAsync(StoryJson.Id(config.Data.Text("owner_agent_id")), ct)
                               ?? throw new StoryException("owning_agent_required", 503);
             var agentSlug = "storyboard-" + campaign.Id.ToString("N");
+            var presentation = await AgentPresentationAsync(campaign, ct);
             var agentData = new JsonObject
             {
                 ["description"] = $"Campaign copilot for {campaign.Name}",
@@ -498,7 +512,8 @@ public sealed class StoryCampaignAgent(
                 ["capabilities"] = Capabilities(campaign),
                 ["workspace"] = campaign.Data.Text("workspace"),
                 ["owner_id"] = config.Data.Text("owner_id"),
-                ["skills"] = new JsonArray(),
+                ["avatar"] = presentation.Avatar,
+                ["skills"] = presentation.Skills,
             };
             Copy(owningAgent.Data, agentData, "provider");
             Copy(owningAgent.Data, agentData, "quality_tier");
@@ -872,6 +887,7 @@ public sealed class StoryCampaignAgent(
 
     private async Task<CampaignConversation> RefreshAgentDefinitionAsync(CampaignConversation conversation, CancellationToken ct)
     {
+        var presentation = await AgentPresentationAsync(conversation.Campaign, ct);
         var patch = new JsonObject
         {
             ["description"] = $"Campaign copilot for {conversation.Campaign.Name}",
@@ -879,13 +895,46 @@ public sealed class StoryCampaignAgent(
             ["output_protocol"] = OutputProtocol,
             ["capabilities"] = Capabilities(conversation.Campaign),
             ["workspace"] = conversation.Campaign.Data.Text("workspace"),
+            ["avatar"] = presentation.Avatar,
+            ["skills"] = presentation.Skills,
         };
         if (conversation.Agent.Data.Text("identity") == patch.Text("identity")
-            && conversation.Agent.Data.Text("capabilities") == patch.Text("capabilities"))
+            && conversation.Agent.Data.Text("capabilities") == patch.Text("capabilities")
+            && conversation.Agent.Data.Text("avatar") == patch.Text("avatar")
+            && JsonNode.DeepEquals(conversation.Agent.Data["skills"], patch["skills"]))
             return conversation;
         await store.Entities.PatchAsync(conversation.Agent.Id, patch, ct: ct);
         var refreshed = await store.Entities.GetAsync(conversation.Agent.Id, ct) ?? conversation.Agent;
         return conversation with { Agent = refreshed };
+    }
+
+    private async Task<AgentPresentation> AgentPresentationAsync(LeafEntity campaign, CancellationToken ct)
+    {
+        var initials = string.Concat(campaign.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2).Select(word => char.ToUpperInvariant(word[0])));
+        if (initials.Length == 0) initials = "GM";
+        var svg = $$"""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+              <rect width="256" height="256" rx="56" fill="#efe6d5"/>
+              <path d="M128 24 218 76v104l-90 52-90-52V76z" fill="#202426" stroke="#a14b35" stroke-width="8"/>
+              <path d="m128 58 18 45 48 3-37 31 12 47-41-25-41 25 12-47-37-31 48-3z" fill="#d9a45f"/>
+              <circle cx="128" cy="128" r="42" fill="#efe6d5" stroke="#a14b35" stroke-width="6"/>
+              <text x="128" y="142" text-anchor="middle" font-family="Georgia,serif" font-size="40" font-weight="700" fill="#202426">{{System.Net.WebUtility.HtmlEncode(initials)}}</text>
+            </svg>
+            """;
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(svg));
+        var avatar = await assets.UploadIdempotentAsync(
+            stream,
+            $"storyboard:campaign-agent-avatar:v1:{campaign.Id:N}",
+            $"storyboard-agent-{campaign.Id:N}.svg",
+            "image/svg+xml",
+            ct);
+        var skills = new JsonArray();
+        var skill = await store.Entities.GetBySlugAsync("agent-skill", CampaignSkillSlug, ct);
+        if (skill?.TypeSlug != "agent-skill")
+            throw new StoryException("campaign_agent_skill_missing", 503);
+        skills.Add(skill.Id.ToString());
+        return new AgentPresentation(avatar.Url, skills);
     }
 
     private static void Copy(JsonObject source, JsonObject target, string key)
@@ -906,6 +955,16 @@ public sealed class StoryCampaignAgent(
         useful context early, but never invent canon or silently decide what players know.
 
         Campaign-scoped tools:
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/state
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace/entities
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace/entities
+        - PUT http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace/entities/{entity}
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/players
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/transcript/sessions
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/transcript/sessions/{session}/events
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/music
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals
         - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/context
         - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/playbooks
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/cockpit/proposals
@@ -917,7 +976,8 @@ public sealed class StoryCampaignAgent(
         Send `Authorization: Bearer $REDLEAF_EXECUTION_TOKEN` only to trusted loopback RedLeaf.
         The API verifies that you are this campaign's Agent. Never print, log or forward the token.
         Do not call generic entity, discussion, search, filesystem, or application APIs to escape
-        the campaign boundary.
+        the campaign boundary. Canonical workspace writes are allowed only from an interactive GM
+        discussion and only through the scoped create/update tools. Heartbeats are read-only for canon.
         """;
 
     private const string OutputProtocol = """
@@ -927,14 +987,23 @@ public sealed class StoryCampaignAgent(
         """;
 
     private static string Capabilities(LeafEntity campaign) => $$"""
-        You can read the canonical campaign workspace and recent table transcript through the
-        campaign-scoped Storyboard context tool and read the effective capability playbooks. You can
-        search existing music and visuals, submit grounded cockpit proposals for GM approval, and,
+        You can inspect the campaign, typed workspace, roster and characters, cockpit, transcript,
+        music library/playback/queue, visual library/sets/projection and effective playbooks through
+        campaign-scoped Storyboard tools. In interactive GM discussions you can create and revision-check
+        update typed workspace entities. You can search existing music and visuals, submit grounded cockpit
+        proposals for GM approval, and,
         while play mode and the corresponding autonomous-draft policy are active, start asynchronous
         music or visual draft generation. Generated candidates are never canon, playback, queue or
         projection. Those promotions remain explicit GM actions. Campaign id: {{campaign.Id}}.
 
         Campaign-scoped tools:
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/state
+        - GET/POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace/entities
+        - PUT http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/workspace/entities/{entity}
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/players
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/transcript/sessions
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/music
+        - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals
         - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/context
         - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/playbooks
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/cockpit/proposals
@@ -943,4 +1012,6 @@ public sealed class StoryCampaignAgent(
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/match
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/generations
         """;
+
+    private sealed record AgentPresentation(string Avatar, JsonArray Skills);
 }

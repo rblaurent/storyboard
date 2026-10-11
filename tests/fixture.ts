@@ -49,6 +49,7 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname; const method = req.method(); const body = req.postDataJSON() as Record<string, unknown> | null
     state.requests.push({ path: p + u.search, method, body, csrf: req.headers()['x-csrf-token'] })
     const json = (data: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
+    if (p === '/api/assets/fixture-agent.svg') return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'no-store' }, body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><rect width="256" height="256" rx="56" fill="#efe6d5"/><path d="M128 24 218 76v104l-90 52-90-52V76z" fill="#202426" stroke="#a14b35" stroke-width="8"/><circle cx="128" cy="128" r="42" fill="#efe6d5" stroke="#a14b35" stroke-width="6"/><text x="128" y="142" text-anchor="middle" font-family="Georgia,serif" font-size="40" font-weight="700" fill="#202426">GO</text></svg>' })
     if (p.endsWith('/media/cover') || p.includes('/media/characters/') || p.endsWith(`/music/candidates/${candidate}/cover`) || p.includes('/visuals/images/') || p.endsWith('/visuals/candidates/' + visualCandidate + '/image')) return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'no-store' }, body: art })
     if (p.endsWith(`/music/candidates/${candidate}/audio`)) return route.fulfill({ contentType: 'audio/mpeg', headers: { 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes' }, body: Buffer.from([1, 2, 3, 4, 5, 6]) })
     if (p === '/api/me') return state.signedOut ? json({ error: 'sign_in_required' }, 401) : state.meFail ? json({ error: 'storyboard_not_configured' }, 503) : json({ id: aid, name: 'Alex Morgan', avatar: '', canCreate: options.canCreate !== false, csrfToken: csrf })
@@ -98,7 +99,7 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
         state.agentDiscussions.unshift(created); state.agentMessages[id] = []
         return json(created)
       }
-      return json({ agent: { id: aid, name: 'Glass Observatory Copilot' }, discussions: state.agentDiscussions, defaultDiscussionId: 'fixture-agent-discussion' })
+      return json({ agent: { id: aid, name: 'Glass Observatory Copilot', avatar: '/api/assets/fixture-agent.svg' }, discussions: state.agentDiscussions, defaultDiscussionId: 'fixture-agent-discussion' })
     }
     const agentChat = /\/agent\/discussions\/([^/]+)\/chat$/.exec(p)
     if (agentChat || p.endsWith('/agent/chat')) {
