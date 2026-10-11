@@ -108,6 +108,25 @@ test('mutation body is bounded before the origin fetch', async () => {
   assert.deepEqual(await response.json(), { error: 'request_too_large' })
   assert.equal(calls, 0)
 })
+test('idempotent artwork generation retries one dropped origin connection with the same buffered command', async () => {
+  let calls = 0
+  const command = JSON.stringify({ operationId: member, confirmed: true })
+  const headers = { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(64) }
+  const response = await relay(new Request(origin + `/api/campaigns/${campaign}/artwork/generations`, { method: 'POST', headers, body: command }), env, (async (_input: unknown, init?: RequestInit) => {
+    calls++
+    assert.equal(new TextDecoder().decode(init?.body as ArrayBuffer), command)
+    if (calls === 1) throw Error('dropped tunnel')
+    return new Response('{"state":"pending"}', { headers: { 'Content-Type': 'application/json' } })
+  }) as typeof fetch)
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), { state: 'pending' })
+  assert.equal(calls, 2)
+
+  calls = 0
+  const ordinary = await relay(new Request(origin + '/api/campaigns', { method: 'POST', headers, body: '{}' }), env, (async () => { calls++; throw Error('dropped tunnel') }) as typeof fetch)
+  assert.equal(ordinary.status, 502)
+  assert.equal(calls, 1)
+})
 test('microphone chunks get a dedicated bounded relay allowance without widening other commands', async () => {
   let bytes = 0
   const headers = { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': 'b'.repeat(64) }

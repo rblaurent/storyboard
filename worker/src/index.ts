@@ -198,9 +198,16 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   const seconds = Math.floor(now / 1000).toString()
   headers.set('X-Storyboard-Time', seconds); headers.set('X-Storyboard-Origin', origin)
   headers.set('X-Storyboard-Proof', await proof(env.STORYBOARD_PROXY_KEY, `${request.method}\n${chosen.target}${url.search}\n${seconds}\n${origin}`))
+  const upstreamRequest = () => send(upstream + chosen.target + url.search, { method: request.method, headers, body: body?.slice(0), redirect: 'manual' })
   let response: Response
-  try { response = await send(upstream + chosen.target + url.search, { method: request.method, headers, body, redirect: 'manual' }) }
-  catch { return error('storyboard_unavailable', 502) }
+  try { response = await upstreamRequest() }
+  catch {
+    // Artwork generation is explicitly idempotent through its operationId. A single retry
+    // absorbs a dropped tunnel connection without risking duplicate paid work.
+    if (request.method !== 'POST' || !matchArtworkGeneration(url.pathname)) return error('storyboard_unavailable', 502)
+    try { response = await upstreamRequest() }
+    catch { return error('storyboard_unavailable', 502) }
+  }
   const out = new Headers()
   security(out); out.set('Cache-Control', chosen.immutable && response.ok ? 'public, max-age=31536000, immutable' : 'no-store')
   if (response.status >= 300 && response.status < 400) {
@@ -223,5 +230,9 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
     return new Response('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Storyboard · Sign-in interrupted</title><main><h1>Sign-in interrupted</h1><p>Your sign-in may have expired, or Storyboard may be unavailable. Please try again.</p><p><a href="/auth/google">Sign in with Google</a></p><p><a href="/">Back to Storyboard</a></p></main></html>', { status: response.status, headers: out })
   }
   return new Response(response.body, { status: response.status, headers: out })
+}
+
+function matchArtworkGeneration(path: string) {
+  return new RegExp(`^/api/campaigns/${id}/artwork/generations$`).test(path)
 }
 export default { fetch: (request: Request, env: Env) => relay(request, env) }
