@@ -1,10 +1,30 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { api, ApiError, explain, imageSource, type Account, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
 
 const operation = () => crypto.randomUUID()
+type ProjectionFrame = { visual: Visual; source: string; motion: number; durationSeconds: number }
+type ProjectionMotionStyle = CSSProperties & { '--projection-motion-duration': string }
+type ProjectionFadeStyle = CSSProperties & { '--projection-fade-duration': string }
+
+function projectionHash(value: string) {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) hash = Math.imul(hash ^ value.charCodeAt(index), 16777619)
+  return hash >>> 0
+}
+function projectionFrame(visual: Visual): ProjectionFrame {
+  const hash = projectionHash(visual.id)
+  return { visual, source: imageSource(visual.imageUrl) || visual.imageUrl, motion: hash % 6, durationSeconds: 26 + ((hash >>> 8) % 9) }
+}
+function projectionFadeDuration(intervalSeconds: number) { return Math.min(2200, Math.max(1200, intervalSeconds * 90)) }
+function ProjectionLayer({ frame, className, hidden = false }: { frame: ProjectionFrame; className: string; hidden?: boolean }) {
+  const style = { '--projection-motion-duration': `${frame.durationSeconds}s` } as ProjectionMotionStyle
+  return <div className={`projection-layer ${className}`} aria-hidden={hidden || undefined}>
+    <img className={`projection-motion projection-motion-${frame.motion}`} style={style} src={frame.source} alt={hidden ? '' : frame.visual.name} data-motion={frame.motion} />
+  </div>
+}
 type VisualGenerationCommand = { operationId: string; situation: string; brief: VisualBrief; confirmed: true }
 function readGenerationReceipt(key: string): { id: string; command: VisualGenerationCommand } | null {
   try { const value = JSON.parse(sessionStorage.getItem(key) || 'null'); return value && /^[0-9a-f-]{36}$/i.test(value.id) && /^[0-9a-f-]{36}$/i.test(value.command?.operationId) && typeof value.command?.situation === 'string' && value.command?.confirmed === true && Array.isArray(value.command?.brief?.frames) ? value : null } catch { return null }
@@ -155,11 +175,41 @@ export function ProjectionView({ campaignId }: { campaignId: string }) {
   const [session, setSession] = useState<VisualSession | null>(null)
   const [error, setError] = useState('')
   const [awake, setAwake] = useState(false)
+  const [current, setCurrent] = useState<ProjectionFrame | null>(null)
+  const [previous, setPrevious] = useState<ProjectionFrame | null>(null)
+  const [transitioning, setTransitioning] = useState(false)
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null)
-  useEffect(() => { let alive = true; const read = () => void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { if (alive) { setSession(v); setError('') } }).catch(c => { if (alive) setError(explain(c)) }); read(); const timer = window.setInterval(read, 1500); return () => { alive = false; window.clearInterval(timer); void wakeLock.current?.release() } }, [campaignId])
+  const currentRef = useRef<ProjectionFrame | null>(null)
+  const transitionTimer = useRef<number | null>(null)
+  useEffect(() => { let alive = true; const read = () => void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { if (alive) { setSession(v); setError('') } }).catch(c => { if (alive) setError(explain(c)) }); read(); const timer = window.setInterval(read, 1500); return () => { alive = false; window.clearInterval(timer); if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current); void wakeLock.current?.release() } }, [campaignId])
+  useEffect(() => {
+    const visual = session?.current
+    if (!visual) { currentRef.current = null; setCurrent(null); setPrevious(null); setTransitioning(false); return }
+    const next = projectionFrame(visual)
+    if (currentRef.current?.visual.id === next.visual.id && currentRef.current.source === next.source) return
+    let cancelled = false
+    const preload = new Image()
+    const commit = () => {
+      if (cancelled) return
+      const outgoing = currentRef.current
+      const crossfade = !!outgoing && session?.transition !== 'cut'
+      currentRef.current = next; setCurrent(next)
+      if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current)
+      if (!crossfade) { setPrevious(null); setTransitioning(false); return }
+      setPrevious(outgoing); setTransitioning(true)
+      transitionTimer.current = window.setTimeout(() => { setPrevious(null); setTransitioning(false); transitionTimer.current = null }, projectionFadeDuration(session?.intervalSeconds ?? 30) + 80)
+    }
+    preload.src = next.source
+    void preload.decode().catch(() => undefined).then(commit)
+    return () => { cancelled = true }
+  }, [session?.current?.id, session?.current?.imageUrl])
   async function fullscreen() { await document.documentElement.requestFullscreen().catch(() => {}); try { const lock = await (navigator as Navigator & { wakeLock?: { request: (kind: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock?.request('screen'); if (lock) { wakeLock.current = lock; setAwake(true) } } catch { /* Fullscreen still works without wake lock. */ } }
-  return <main className={`projection-view transition-${session?.transition || 'crossfade'}${session?.blackout ? ' is-blackout' : ''}`}>
-    {session?.current && !session.blackout ? <img key={session.current.id} src={imageSource(session.current.imageUrl)} alt={session.current.name} /> : <div className="projection-blank">{error ? <span>{error}</span> : !session?.blackout && <><SiteIcon name="projector" size={32} /><span>Waiting for the first visual cue…</span></>}</div>}
+  const fadeStyle = { '--projection-fade-duration': `${projectionFadeDuration(session?.intervalSeconds ?? 30)}ms` } as ProjectionFadeStyle
+  return <main className={`projection-view transition-${session?.transition || 'crossfade'}${session?.blackout ? ' is-blackout' : ''}`} style={fadeStyle}>
+    {previous && <ProjectionLayer frame={previous} className="is-outgoing" hidden />}
+    {current && <ProjectionLayer frame={current} className={transitioning ? 'is-incoming' : 'is-current'} />}
+    {!current && <div className="projection-blank">{error ? <span>{error}</span> : !session?.blackout && <><SiteIcon name="projector" size={32} /><span>Waiting for the first visual cue…</span></>}</div>}
+    <div className="projection-blackout" aria-hidden="true" />
     <button className="projection-fullscreen" onClick={() => void fullscreen()} aria-label="Enter fullscreen"><SiteIcon name="fullscreen" />{awake ? 'Screen awake' : 'Fullscreen'}</button>
   </main>
 }
