@@ -13,6 +13,12 @@ public sealed class ArtworkTests
         await using var fixture = await Fixture.Create();
         var campaign = fixture.Campaign.Id.ToString();
         var account = fixture.Gm.Id.ToString();
+        await fixture.Entities.PatchAsync(fixture.Campaign.Id, new JsonObject
+        {
+            ["summary"] = "Veyra mourns Amareth beneath the extinct furnaces of Cael Rhyss.",
+            ["description"] = "The Ember Concord archives the Seven-Day Mourning.",
+            ["agent_direction"] = "Carry a crystal lamp bearing the Concord sigil."
+        });
         fixture.Compute.NextText = new AiCompletion(
             "{\"title\":\"Keeper of impossible stars\",\"prompt\":\"A watchful occult astronomer with ember-lit eyes, practical field coat, painterly fantasy portrait.\",\"negativePrompt\":\"lettering, watermark\"}",
             "fixture", Guid.NewGuid().ToString());
@@ -24,6 +30,11 @@ public sealed class ArtworkTests
         Assert.Contains("occult astronomer", brief.Text("refinedPrompt"));
         Assert.Equal("fast", fixture.Compute.Requests.Single().QualityMode);
         Assert.Contains("Campaign Agent portrait", fixture.Compute.Requests.Single().Prompt);
+        Assert.Contains("visual prompt editor, not a storyteller", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("Veyra", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("Amareth", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("Cael Rhyss", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("crystal lamp", fixture.Compute.Requests.Single().Prompt);
 
         var operation = Guid.NewGuid().ToString();
         var started = StoryJson.Object(await fixture.Visuals.StartArtworkGenerationAsync(campaign, account,
@@ -45,6 +56,7 @@ public sealed class ArtworkTests
             Assert.Equal(1024, submission.Inputs.Number("width"));
             Assert.Equal(1024, submission.Inputs.Number("height"));
             Assert.Contains("Avoid: lettering, watermark", submission.Inputs.Text("prompt"));
+            Assert.DoesNotContain("Art direction:", submission.Inputs.Text("prompt"));
         });
 
         Assert.All(completed["candidates"]!.AsArray(), value =>
@@ -84,7 +96,8 @@ public sealed class ArtworkTests
 
         Assert.Equal(place.Id.ToString(), brief.Text("entityId"));
         Assert.Equal("image", brief.Text("field"));
-        Assert.Contains("Glass Observatory", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("Glass Observatory", fixture.Compute.Requests.Single().Prompt);
+        Assert.DoesNotContain("A brass observatory above the cloud line", fixture.Compute.Requests.Single().Prompt);
         await fixture.Entities.PatchAsync(place.Id, new JsonObject { ["image"] = "fixture-cover.png" });
         var media = await fixture.Visuals.WorkspaceArtworkMediaAsync(
             fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), place.Id.ToString(), "image", default);
