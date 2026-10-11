@@ -229,13 +229,15 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             if (workflow?.TypeSlug != "comfyui-workflow") throw new StoryException("workflow_not_available", 503);
             var c = await store.RequireAsync("storyboard-campaign", campaign, ct); var profile = await ProfileProjectionAsync(campaign, ct);
             var seeds = new JsonArray(((JsonArray)brief["frames"]!).Select(_ => (JsonNode?)JsonValue.Create(Random.Shared.NextInt64(0, (long)uint.MaxValue + 1))).ToArray());
+            var width = input.Width ?? 1216; var height = input.Height ?? 768; const int steps = 8; const int cfg = 1;
+            var workflowInputs = new JsonObject { ["width"] = width, ["height"] = height, ["steps"] = steps, ["cfg"] = cfg };
             var data = await store.ProtectAsync(new JsonObject
             {
                 ["campaign"] = campaign, ["account"] = account, ["operation_id"] = operation.ToString(), ["situation"] = situation, ["brief"] = brief, ["profile"] = ProfileNode(profile),
                 ["state"] = "pending", ["error"] = "", ["parent"] = c.Data.Text("workspace"), ["deadline"] = DateTimeOffset.UtcNow.AddMinutes(40).ToUnixTimeSeconds(),
                 ["agent_generated"] = !string.IsNullOrWhiteSpace(input.PlaybookHash), ["playbook_hash"] = StoryJson.Bounded(input.PlaybookHash ?? "", 128), ["heartbeat_turn"] = StoryJson.Bounded(input.HeartbeatTurn ?? "", 160),
                 ["workflow"] = workflow.Slug, ["workflow_id"] = workflow.Id.ToString(), ["workflow_revision"] = workflow.UpdatedAt.ToString("O"),
-                ["quality_mode"] = config.Data.Text("quality_mode", "deep"), ["width"] = input.Width ?? 1216, ["height"] = input.Height ?? 768, ["steps"] = 8, ["cfg"] = 1, ["seeds"] = seeds, ["jobs"] = new JsonObject(),
+                ["workflow_inputs"] = workflowInputs, ["quality_mode"] = config.Data.Text("quality_mode", "deep"), ["width"] = width, ["height"] = height, ["steps"] = steps, ["cfg"] = cfg, ["seeds"] = seeds, ["jobs"] = new JsonObject(),
                 ["source_prompt"] = input.SourcePrompt ?? "", ["refined_prompt"] = input.RefinedPrompt ?? "", ["negative_prompt"] = input.NegativePrompt ?? "", ["artwork_target"] = target,
                 ["target_kind"] = input.TargetKind ?? "", ["target_entity"] = input.TargetEntityId ?? "", ["target_field"] = input.TargetField ?? ""
             }, ct);

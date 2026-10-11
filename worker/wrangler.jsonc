@@ -7,6 +7,6 @@
   "preview_urls": false,
   // Production custom hostname.
   "routes": [{ "pattern": "storyboard.minititine.cc", "custom_domain": true }],
-  "observability": { "enabled": false },
+  "observability": { "enabled": true },
   "vars": { "STORYBOARD_PUBLIC_ORIGIN": "https://storyboard.minititine.cc" }
 }

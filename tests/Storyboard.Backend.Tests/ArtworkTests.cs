@@ -42,6 +42,11 @@ public sealed class ArtworkTests
                 "A warm, watchful astronomer with ember-lit eyes, painterly fantasy portrait.",
                 brief.Text("negativePrompt"), brief.Text("title"), 3, true), default));
         var entity = (await fixture.Entities.GetAsync(StoryJson.Id(started.Text("id"))))!;
+        var workflowInputs = entity.Data["workflow_inputs"]!.AsObject();
+        Assert.Equal(1024, workflowInputs.Number("width"));
+        Assert.Equal(1024, workflowInputs.Number("height"));
+        Assert.Equal(8, workflowInputs.Number("steps"));
+        Assert.Equal(1, workflowInputs.Number("cfg"));
         await fixture.Visuals.RunGenerationAsync(entity, default);
         var completed = StoryJson.Object(await fixture.Visuals.ArtworkGenerationAsync(campaign, account, started.Text("id"), default));
 

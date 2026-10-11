@@ -198,16 +198,23 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   const seconds = Math.floor(now / 1000).toString()
   headers.set('X-Storyboard-Time', seconds); headers.set('X-Storyboard-Origin', origin)
   headers.set('X-Storyboard-Proof', await proof(env.STORYBOARD_PROXY_KEY, `${request.method}\n${chosen.target}${url.search}\n${seconds}\n${origin}`))
+  const artworkGeneration = request.method === 'POST' && matchArtworkGeneration(url.pathname)
+  const started = Date.now()
   const upstreamRequest = () => send(upstream + chosen.target + url.search, { method: request.method, headers, body: body?.slice(0), redirect: 'manual' })
   let response: Response
   try { response = await upstreamRequest() }
-  catch {
+  catch (cause) {
+    if (artworkGeneration) console.error(JSON.stringify({ event: 'storyboard_upstream_fetch_failed', route: 'artwork_generation', attempt: 1, elapsedMs: Date.now() - started, error: safeError(cause) }))
     // Artwork generation is explicitly idempotent through its operationId. A single retry
     // absorbs a dropped tunnel connection without risking duplicate paid work.
-    if (request.method !== 'POST' || !matchArtworkGeneration(url.pathname)) return error('storyboard_unavailable', 502)
+    if (!artworkGeneration) return error('storyboard_unavailable', 502)
     try { response = await upstreamRequest() }
-    catch { return error('storyboard_unavailable', 502) }
+    catch (retryCause) {
+      console.error(JSON.stringify({ event: 'storyboard_upstream_fetch_failed', route: 'artwork_generation', attempt: 2, elapsedMs: Date.now() - started, error: safeError(retryCause) }))
+      return error('storyboard_unavailable', 502)
+    }
   }
+  if (artworkGeneration) console.log(JSON.stringify({ event: 'storyboard_upstream_response', route: 'artwork_generation', status: response.status, elapsedMs: Date.now() - started }))
   const out = new Headers()
   security(out); out.set('Cache-Control', chosen.immutable && response.ok ? 'public, max-age=31536000, immutable' : 'no-store')
   if (response.status >= 300 && response.status < 400) {
@@ -234,5 +241,9 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
 
 function matchArtworkGeneration(path: string) {
   return new RegExp(`^/api/campaigns/${id}/artwork/generations$`).test(path)
+}
+function safeError(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return message.slice(0, 240).replace(/https?:\/\/[^\s]+/gi, '[url]')
 }
 export default { fetch: (request: Request, env: Env) => relay(request, env) }
