@@ -4,7 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Text.Json.Nodes;
 namespace Leaf.Plugins.Storyboard;
-public sealed class StoryGeneration(StoryStore store,StoryCampaigns campaigns,IAiInference ai,IComfyUiWorkflows workflows,IComputeJobs jobs,IAssets assets,ILogger<StoryGeneration> logger):BackgroundService {
+public sealed class StoryGeneration(StoryStore store,StoryCampaigns campaigns,StoryVisualIdentity identities,IAiInference ai,IComfyUiWorkflows workflows,IComputeJobs jobs,IAssets assets,ILogger<StoryGeneration> logger):BackgroundService {
  public static readonly string[] ActiveStates=["staged","pending","refining","generating","saving"];
  public async Task<List<LeafEntity>> ActiveAsync(string? account=null,CancellationToken ct=default){
   List<LeafEntity> found=[];foreach(var state in ActiveStates){var filters=new Dictionary<string,object?>{["state"]=state};if(account is not null)filters["account"]=account;found.AddRange(await store.AllAsync("storyboard-generation",filters,ct));}return found;
@@ -20,12 +20,10 @@ public sealed class StoryGeneration(StoryStore store,StoryCampaigns campaigns,IA
    var c=await store.RequireAsync("storyboard-campaign",campaign,ct);if(c.Data.Number("revision")!=input.ExpectedRevision)throw new StoryException("campaign_changed",409);
    if((await ActiveAsync(account,ct)).Count>=3)throw new StoryException("generation_queue_full",429);
    var config=(await store.ConfigAsync(ct))!;
-   LeafEntity? workflow=null;if(input.Kind=="image"){
-    var reference=config.Data.Text("workflow");workflow=Guid.TryParse(reference,out var workflowId)?await store.Entities.GetAsync(workflowId,ct):await store.Entities.GetBySlugAsync("comfyui-workflow",reference,ct);
-    if(workflow?.TypeSlug!="comfyui-workflow")throw new StoryException("workflow_not_available",503);
-   }
+   LeafEntity? workflow=null;StoryVisualProfile? profile=null;if(input.Kind=="image"){profile=await identities.GetAsync(campaign,ct);workflow=await identities.ResolveForAsync(profile,"scene",ct);}
    var qualityMode=input.Kind=="image"?config.Data.Text("fast_quality_mode","fast"):config.Data.Text("quality_mode","deep");
-   var data=await store.ProtectAsync(new JsonObject{["campaign"]=campaign,["account"]=account,["kind"]=input.Kind,["prompt"]=prompt,["source_description"]=c.Data.Text("description"),["source_name"]=c.Name,["revision"]=input.ExpectedRevision,["state"]="staged",["previous_operation"]=c.Data.Text("latest_"+input.Kind),["parent"]=c.Data.Text("workspace"),["visual_brief"]=config.Data.Text("visual_brief"),["quality_mode"]=qualityMode,["workflow"]=config.Data.Text("workflow"),["deadline"]=DateTimeOffset.UtcNow.AddMinutes(20).ToUnixTimeSeconds(),["workflow_inputs"]=new JsonObject{["width"]=1216,["height"]=768,["steps"]=8,["cfg"]=1,["seed"]=Random.Shared.NextInt64(0,(long)uint.MaxValue+1)}},ct);
+   var workflowInputs=workflow is null?new JsonObject():identities.InputsFor(workflow,1216,768);if(workflow is not null)workflowInputs["seed"]=Random.Shared.NextInt64(0,(long)uint.MaxValue+1);
+   var data=await store.ProtectAsync(new JsonObject{["campaign"]=campaign,["account"]=account,["kind"]=input.Kind,["prompt"]=prompt,["source_description"]=c.Data.Text("description"),["source_name"]=c.Name,["revision"]=input.ExpectedRevision,["state"]="staged",["previous_operation"]=c.Data.Text("latest_"+input.Kind),["parent"]=c.Data.Text("workspace"),["visual_brief"]=profile is null?config.Data.Text("visual_brief"):identities.StyleFor(profile,"scene"),["negative_prompt"]=profile?.NegativePrompt??"",["quality_mode"]=qualityMode,["workflow"]=workflow?.Slug??config.Data.Text("workflow"),["deadline"]=DateTimeOffset.UtcNow.AddMinutes(20).ToUnixTimeSeconds(),["workflow_inputs"]=workflowInputs},ct);
    if(workflow is not null){data["workflow_id"]=workflow.Id.ToString();data["workflow_revision"]=workflow.UpdatedAt.ToString("O");}
    var op=await store.ChangeAsync("storyboard-generation",slug,"Campaign "+input.Kind,old=>old?.Data.DeepClone().AsObject()??data.DeepClone().AsObject(),ct);
    return await PublishCoreAsync(op,ct);
@@ -82,12 +80,12 @@ public sealed class StoryGeneration(StoryStore store,StoryCampaigns campaigns,IA
    }else{
     if(op.Data.Text("refined_prompt")==""){
      op=await SetAsync(op,new JsonObject{["state"]="refining"},ct);
-     var refined=await ai.OneshotAsync(new AiRequest{Prompt="Refine the image idea into one concise positive visual prompt for campaign artwork. Preserve the user's intent and add the visual brief. Return only the prompt.\nVisual brief: "+op.Data.Text("visual_brief")+"\nCampaign: "+op.Data.Text("source_name")+"\nIdea: "+op.Data.Text("prompt"),QualityMode=op.Data.Text("quality_mode"),MaxTokens=260,IdempotencyKey="storyboard-refine-"+op.Id,Provenance=provenance},ct);
+     var refined=await ai.OneshotAsync(new AiRequest{Prompt="Refine the image idea into one concise positive visual prompt for campaign artwork. Preserve the user's intent. Apply the style-only reference only as medium, palette, lighting, composition, texture and finish. Do not copy subjects or lore from the style reference. Return only the prompt.\nStyle-only reference: "+op.Data.Text("visual_brief")+"\nCampaign: "+op.Data.Text("source_name")+"\nIdea: "+op.Data.Text("prompt"),QualityMode=op.Data.Text("quality_mode"),MaxTokens=260,IdempotencyKey="storyboard-refine-v2-"+op.Id,Provenance=provenance},ct);
      op=await SetAsync(op,new JsonObject{["refined_prompt"]=StoryJson.Bounded(refined.Text,4000),["text_job"]=refined.JobId,["state"]="generating"},ct);
     }
     if(op.Data.Text("image_job")==""){
      await store.WritableAsync(ct);await CheckWorkflowAsync(op,ct);
-     var inputs=op.Data["workflow_inputs"]!.DeepClone().AsObject();inputs["prompt"]=op.Data.Text("refined_prompt");
+     var inputs=op.Data["workflow_inputs"]!.DeepClone().AsObject();var positive=op.Data.Text("refined_prompt");var negative=op.Data.Text("negative_prompt");if(inputs.ContainsKey("negative_prompt"))inputs["negative_prompt"]=negative;else if(negative!="")positive+="\nAvoid: "+negative;inputs["prompt"]=positive;
      var job=await workflows.SubmitAsync(op.Data.Text("workflow_id"),inputs,new ComputeJobOptions{Async=true,IdempotencyKey="storyboard-image-"+op.Id,JobName="Storyboard campaign artwork",Provenance=provenance},ct);
      if(string.IsNullOrWhiteSpace(job.JobId))throw new StoryException("image_job_missing",502);
      op=await SetAsync(op,new JsonObject{["image_job"]=job.JobId,["image_capability"]=job.CapabilitySlug,["state"]="generating"},ct);

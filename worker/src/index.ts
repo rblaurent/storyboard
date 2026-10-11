@@ -104,6 +104,8 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/music/candidates/${id}/promote`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/music/candidates/${id}/(?:audio|cover)`) || match(`/api/campaigns/${id}/music/tracks/${id}/(?:audio|cover)`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/visuals/profile`)) allowed = ['GET', 'PUT'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/visuals/profile/refine`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/visuals/workflows`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/visuals/library`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/visuals/sets`) || match(`/api/campaigns/${id}/visuals/queue`)) allowed = ['GET', 'POST'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/visuals/(?:match|brief|generations)`)) allowed = method === 'POST' && query([])

@@ -3,6 +3,7 @@ import { api, ApiError, explain, imageSource, type Account, type Visual, type Vi
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
+import { VisualIdentity } from './VisualIdentity'
 
 const operation = () => crypto.randomUUID()
 type ProjectionFrame = { visual: Visual; source: string; motion: number; durationSeconds: number }
@@ -98,6 +99,7 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
 
   return <section className="visuals-workspace">
     <header className="campaign-page-header"><div><h2>Visuals</h2><p>Build the atmosphere, curate visual sets, and control what the table sees.</p></div><a className="button projection-link" href={`/campaigns/${id}/projection`} target="_blank" rel="noreferrer"><SiteIcon name="projector" />Open projection</a></header>
+    {gm && <VisualIdentity campaignId={id} csrfToken={me.csrfToken} />}
     {gm && <AgentDirection campaignId={id} capability="visuals" csrfToken={me.csrfToken} title="Visual Agent direction" />}
     {error && <Message error>{error}</Message>}{notice && <Message>{notice}</Message>}
     {gm && <form className="visual-scene panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="visual-situation">What should the room look like?</label><textarea id="visual-situation" rows={3} maxLength={2000} value={situation} onChange={e => setSituation(e.target.value)} placeholder="The drowned throne room lies silent, moonlight filtering through black water above…" /><div className="scene-actions"><button className="primary" disabled={!situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the scene…' : 'Cue image'}</button><button type="button" className="accent" disabled={!situation.trim() || !!busy} onClick={() => void buildSet()}><SiteIcon name="generate" />{busy === 'brief' ? 'Designing the set…' : 'Build visual set'}</button><span className="quiet">Cue uses Fast. Build uses Deep and stops before image generation.</span></div></form>}

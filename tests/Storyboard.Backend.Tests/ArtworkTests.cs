@@ -8,6 +8,52 @@ namespace Storyboard.Testing;
 public sealed class ArtworkTests
 {
     [Fact]
+    public async Task CampaignVisualIdentityRefinesStyleAndSelectsCompatibleWorkflowEntitiesPerTarget()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaign = fixture.Campaign.Id.ToString();
+        var account = fixture.Gm.Id.ToString();
+        await fixture.Entities.PatchAsync(fixture.Campaign.Id, new JsonObject
+        {
+            ["summary"] = "Veyra mourns Regent Amareth while the Ember Concord crosses Cael Rhyss."
+        });
+        fixture.Compute.NextText = new AiCompletion(
+            "{\"artDirection\":\"Graphic painted fantasy concept art, dry mineral texture, oxidised copper accents and cool shadows.\",\"portraitDirection\":\"Expressive half-length studies with natural anatomy and practical layered clothing.\",\"sceneDirection\":\"Monumental civic environments with atmospheric depth and asymmetrical framing.\",\"negativePrompt\":\"lettering, watermark, glossy photography\"}",
+            "fixture", Guid.NewGuid().ToString());
+
+        var proposed = StoryJson.Object(await fixture.Visuals.RefineProfileAsync(campaign, account, new("Painterly civic fantasy."), default));
+        Assert.Contains("dry mineral texture", proposed.Text("artDirection"));
+        Assert.Contains("Never include proper nouns", fixture.Compute.Requests.Single().Prompt);
+        Assert.Contains("Veyra", fixture.Compute.Requests.Single().Prompt);
+
+        var saved = StoryJson.Object(await fixture.Visuals.SaveProfileAsync(campaign, account, new(
+            proposed.Text("artDirection"), proposed.Text("negativePrompt"), 24, "crossfade",
+            proposed.Text("portraitDirection"), proposed.Text("sceneDirection"), "z_turbo", "qwen_fixture", "z_turbo"), default));
+        Assert.True(saved.Flag("configured"));
+        Assert.Equal("qwen_fixture", saved.Text("portraitWorkflow"));
+        var options = StoryJson.Object(await fixture.Visuals.WorkflowOptionsAsync(campaign, account, default));
+        Assert.Equal(2, options["items"]!.AsArray().Count);
+
+        fixture.Compute.NextText = new AiCompletion(
+            "{\"title\":\"Campaign guide\",\"prompt\":\"A composed archivist, graphic painted fantasy portrait.\",\"negativePrompt\":\"lettering\"}",
+            "fixture", Guid.NewGuid().ToString());
+        await fixture.Visuals.ArtworkBriefAsync(campaign, account, new("agent", null, null, "A composed archivist.", 3), default);
+        Assert.Contains("dry mineral texture", fixture.Compute.Requests.Last().Prompt);
+        Assert.Contains("half-length studies", fixture.Compute.Requests.Last().Prompt);
+        Assert.DoesNotContain("Monumental civic environments", fixture.Compute.Requests.Last().Prompt);
+
+        var started = StoryJson.Object(await fixture.Visuals.StartArtworkGenerationAsync(campaign, account,
+            new(Guid.NewGuid().ToString(), "agent", null, null, "A composed archivist.", "A composed archivist, graphic painted fantasy portrait.", "lettering", "Campaign guide", 1, true), default));
+        var generation = (await fixture.Entities.GetAsync(StoryJson.Id(started.Text("id"))))!;
+        Assert.Equal("qwen_fixture", generation.Data.Text("workflow"));
+        Assert.Equal(40, generation.Data.Number("steps"));
+        Assert.True(generation.Data["workflow_inputs"]!.AsObject().ContainsKey("negative_prompt"));
+        await fixture.Visuals.RunGenerationAsync(generation, default);
+        Assert.Equal("lettering", fixture.Compute.Submitted.Single().Inputs.Text("negative_prompt"));
+        Assert.DoesNotContain("Avoid:", fixture.Compute.Submitted.Single().Inputs.Text("prompt"));
+    }
+
+    [Fact]
     public async Task AgentArtworkRefinesEditablePromptAndProducesSelectableCandidates()
     {
         await using var fixture = await Fixture.Create();
@@ -46,7 +92,7 @@ public sealed class ArtworkTests
         Assert.Equal(1024, workflowInputs.Number("width"));
         Assert.Equal(1024, workflowInputs.Number("height"));
         Assert.Equal(8, workflowInputs.Number("steps"));
-        Assert.Equal(1, workflowInputs.Number("cfg"));
+        Assert.Equal(1m, workflowInputs.Decimal("cfg"));
         await fixture.Visuals.RunGenerationAsync(entity, default);
         var completed = StoryJson.Object(await fixture.Visuals.ArtworkGenerationAsync(campaign, account, started.Text("id"), default));
 

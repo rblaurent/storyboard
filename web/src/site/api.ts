@@ -12,7 +12,9 @@ export interface MusicPlayback { available: boolean; playing: boolean; track: Mu
 export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
 export interface MusicCandidate { id: string; title: string; tags: string; durationSeconds: number; audio: string; cover: string | null; promotedTrack: string }
 export interface MusicGeneration { id: string; state: 'pending' | 'generating' | 'ingesting' | 'completed' | 'failed'; error: string; creditsConsumed: number; candidates: MusicCandidate[] }
-export interface VisualProfile { artDirection: string; negativePrompt: string; defaultIntervalSeconds: number; transition: 'cut' | 'crossfade' }
+export interface VisualProfile { artDirection: string; portraitDirection: string; sceneDirection: string; negativePrompt: string; defaultIntervalSeconds: number; transition: 'cut' | 'crossfade'; defaultWorkflow: string; portraitWorkflow: string; sceneWorkflow: string; configured: boolean }
+export interface ImageWorkflow { id: string; slug: string; name: string; description: string; license: string; providerModel: string }
+export interface ImageWorkflowIndex { defaultWorkflow: string; items: ImageWorkflow[] }
 export interface Visual { id: string; name: string; mood: string; tags: string[]; width: number; height: number; imageUrl: string }
 export interface VisualMatch { situation: string; suggestions: Visual[]; quickBrief: VisualBrief }
 export interface VisualFrame { title: string; prompt: string; mood: string; tags: string[] }
@@ -73,6 +75,8 @@ const messages: Record<string, string> = {
   artwork_brief_invalid: 'The refined image prompt came back malformed. Nothing was generated.',
   artwork_generation_confirmation_required: 'Confirm the image generation before Storyboard submits the render jobs.',
   invalid_artwork_target: 'That image target is no longer available.',
+  invalid_visual_profile: 'Complete the campaign art direction before saving.',
+  visual_identity_invalid: 'The visual identity proposal came back malformed. Nothing was saved.',
   artwork_target_mismatch: 'That generated image belongs to a different target.',
   workspace_image_field_unavailable: 'That record no longer has an editable image field.',
 }

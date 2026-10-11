@@ -9,6 +9,7 @@ public static class StoryJson {
  public static string Text(this JsonObject o,string key,string fallback="")=>o[key] is null?fallback:o[key] is JsonValue v&&v.TryGetValue<string>(out var s)?s:throw new StoryException("invalid_json");
  public static bool Flag(this JsonObject o,string key)=>o[key] is null?false:o[key] is JsonValue v&&v.TryGetValue<bool>(out var b)?b:throw new StoryException("invalid_json");
  public static long Number(this JsonObject o,string key)=>o[key] is null?0:o[key] is JsonValue v?(v.TryGetValue<long>(out var n)?n:v.TryGetValue<int>(out var i)?i:throw new StoryException("invalid_json")):throw new StoryException("invalid_json");
+ public static decimal Decimal(this JsonObject o,string key)=>o[key] is null?0:o[key] is JsonValue v?(v.TryGetValue<decimal>(out var n)?n:v.TryGetValue<double>(out var d)?(decimal)d:v.TryGetValue<long>(out var l)?l:v.TryGetValue<int>(out var i)?i:throw new StoryException("invalid_json")):throw new StoryException("invalid_json");
  public static string Hash(string value)=>Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
  public static string Token()=>Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_');
  public static bool Equal(string a,string b)=>CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a),Encoding.UTF8.GetBytes(b));
