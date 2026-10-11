@@ -23,7 +23,7 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
   const playlists: MusicPlaylist[] = [{ id: '99999999-9999-4999-8999-999999999999', name: 'Shinsekai Atmospheres', description: '', trackCount: 2 }, { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', name: 'Quiet before the storm', description: '', trackCount: 1 }]
   const queue: MusicQueueItem[] = [{ queueId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', track: tracks[1] }]
   const playback: MusicPlayback = { available: true, playing: true, track: tracks[0], progressMs: 42000, deviceId: 'device-one', deviceName: 'Salle TV', volumePercent: 28, error: null }
-  const visuals: Visual[] = [{ id: visualId, name: 'The drowned court', mood: 'dread and wonder', tags: ['water', 'moonlight'], width: 1216, height: 768, imageUrl: `/api/campaigns/${cid}/visuals/images/${visualId}` }]
+  const visuals: Visual[] = [{ id: visualId, name: 'The drowned court', mood: 'dread and wonder', tags: ['water', 'moonlight'], width: 1280, height: 720, imageUrl: `/api/campaigns/${cid}/visuals/images/${visualId}` }]
   const visualSets: VisualSet[] = [{ id: visualSet, name: 'Drowned throne', description: '', imageCount: 1 }]
   const visualQueue: VisualQueueItem[] = [{ queueId: '15151515-1515-4151-8151-151515151515', visual: visuals[0] }]
   const visualSession: VisualSession = { campaignId: cid, revision: 0, playing: false, blackout: false, loop: true, intervalSeconds: 20, transition: 'crossfade', current: null, currentQueueId: '' }
