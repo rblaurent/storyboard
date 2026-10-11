@@ -78,6 +78,24 @@ public sealed class AgentTests
     }
 
     [Fact]
+    public async Task CampaignAgentAvatarIsServedThroughTheProtectedCampaignRoute()
+    {
+        await using var fixture = await Fixture.Create();
+        using var client = await fixture.Host();
+        var path = $"/campaigns/{fixture.Campaign.Id}/agent/avatar";
+
+        using var gmRequest = await fixture.PublicRequest(path, actor: fixture.Gm);
+        using var gmResponse = await client.SendAsync(gmRequest);
+        Assert.Equal(System.Net.HttpStatusCode.OK, gmResponse.StatusCode);
+        Assert.Equal("image/png", gmResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal([1, 2, 3], await gmResponse.Content.ReadAsByteArrayAsync());
+
+        using var playerRequest = await fixture.PublicRequest(path, actor: fixture.Player);
+        using var playerResponse = await client.SendAsync(playerRequest);
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, playerResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task CampaignAgentKeepsIndependentPersistentDiscussionsAndSessions()
     {
         await using var fixture = await Fixture.Create();

@@ -72,7 +72,7 @@ export function route(url: URL, method: string): Route | null {
   }
   if (match(`/api/campaigns/${id}/agent/discussions`)) allowed = ['GET', 'POST'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/agent/settings`)) allowed = ['GET', 'PUT'].includes(method) && query([])
-  if (match(`/api/campaigns/${id}/agent/avatar`)) allowed = method === 'PUT' && query([])
+  if (match(`/api/campaigns/${id}/agent/avatar`)) allowed = ['GET', 'PUT'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/agent/playbooks`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/agent/playbooks/(?:planning|information|music|visuals|handouts)`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/play-mode`)) allowed = ['GET', 'POST'].includes(method) && query([])

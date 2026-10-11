@@ -190,10 +190,23 @@ public sealed class StoryCampaignAgent(
         }
         return new
         {
-            agent = new { id = fallback.Agent.Id, name = fallback.Agent.Name, avatar = fallback.Agent.Data.Text("avatar") },
+            agent = new { id = fallback.Agent.Id, name = fallback.Agent.Name, avatar = AvatarUrl(fallback.Campaign, fallback.Agent) },
             discussions = projected,
             defaultDiscussionId = fallback.Discussion.Data.Text("discussion_id"),
         };
+    }
+
+    public async Task<(byte[] Bytes, string ContentType)?> AvatarAsync(string campaignId, string accountId, CancellationToken ct = default)
+    {
+        await campaigns.MembershipAsync(campaignId, accountId, true, ct);
+        var conversation = await EnsureAsync(campaignId, ct);
+        const string prefix = "/api/assets/";
+        var url = conversation.Agent.Data.Text("avatar");
+        if (!url.StartsWith(prefix, StringComparison.Ordinal) || url.Length <= prefix.Length) return null;
+        var assetId = Uri.UnescapeDataString(url[prefix.Length..]);
+        if (assetId.Length > 300 || assetId.IndexOfAny(['/', '\\', '?', '#']) >= 0) return null;
+        var file = await assets.ReadAsync(assetId, ct);
+        return file is null ? null : (file.Bytes, file.ContentType);
     }
 
     public async Task<object> CreateAsync(
@@ -1076,7 +1089,7 @@ public sealed class StoryCampaignAgent(
 
     private static object SettingsProjection(LeafEntity campaign, LeafEntity agent) => new
     {
-        agent = new { id = agent.Id, name = agent.Name, avatar = agent.Data.Text("avatar") },
+        agent = new { id = agent.Id, name = agent.Name, avatar = AvatarUrl(campaign, agent) },
         direction = campaign.Data.Text("agent_direction"),
         responseStyle = campaign.Data.Text("agent_response_style", "balanced"),
         initiative = campaign.Data.Text("agent_initiative", "collaborative"),
@@ -1090,6 +1103,8 @@ public sealed class StoryCampaignAgent(
             "Play-mode heartbeat is read-only for canon and records its work in the heartbeat discussion.",
         },
     };
+
+    private static string AvatarUrl(LeafEntity campaign, LeafEntity agent) => string.IsNullOrWhiteSpace(agent.Data.Text("avatar")) ? "" : $"/api/campaigns/{campaign.Id}/agent/avatar";
 
     private static string Identity(LeafEntity campaign) => $$"""
         # {{campaign.Name}} Campaign Copilot
