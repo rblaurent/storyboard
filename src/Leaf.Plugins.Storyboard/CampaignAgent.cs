@@ -206,7 +206,11 @@ public sealed class StoryCampaignAgent(
         var assetId = Uri.UnescapeDataString(url[prefix.Length..]);
         if (assetId.Length > 300 || assetId.IndexOfAny(['/', '\\', '?', '#']) >= 0) return null;
         var file = await assets.ReadAsync(assetId, ct);
-        return file is null ? null : (file.Bytes, file.ContentType);
+        if (file is null) return null;
+        var contentType = assetId.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            ? "image/svg+xml"
+            : file.ContentType;
+        return (file.Bytes, contentType);
     }
 
     public async Task<object> CreateAsync(

@@ -87,7 +87,7 @@ public sealed class AgentTests
         using var gmRequest = await fixture.PublicRequest(path, actor: fixture.Gm);
         using var gmResponse = await client.SendAsync(gmRequest);
         Assert.Equal(System.Net.HttpStatusCode.OK, gmResponse.StatusCode);
-        Assert.Equal("image/png", gmResponse.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("image/svg+xml", gmResponse.Content.Headers.ContentType?.MediaType);
         Assert.Equal([1, 2, 3], await gmResponse.Content.ReadAsByteArrayAsync());
 
         using var playerRequest = await fixture.PublicRequest(path, actor: fixture.Player);
@@ -212,7 +212,7 @@ public sealed class AgentTests
         var discussion = (await fixture.Entities.GetAsync(StoryJson.Id(campaign.Data.Text("agent_discussion"))))!;
         Assert.Equal("agent", agent.TypeSlug);
         Assert.Equal(campaign.Data.Text("workspace"), agent.Data.Text("workspace"));
-        Assert.Equal("/api/assets/fixture-cover.png", agent.Data.Text("avatar"));
+        Assert.EndsWith(".svg", agent.Data.Text("avatar"));
         Assert.Single(agent.Data["skills"]!.AsArray());
         Assert.Equal("discussion", discussion.TypeSlug);
         Assert.Equal("nova", discussion.Data.Text("app"));

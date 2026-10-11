@@ -30,9 +30,9 @@ public sealed class FakeCompute:IAiInference,IComfyUiWorkflows,IComputeJobs,IAss
  public Task<ComputeJobOutput?> DownloadOutputAsync(string capability,string id,string? artifact=null,CancellationToken ct=default)=>Task.FromResult<ComputeJobOutput?>(new(new MemoryStream([1,2,3,4,5,6]),capability=="music-gen"&&artifact?.Contains("audio")==true?"audio/mpeg":"image/png"));
  public Task<ComputeStatus?> GetStatusAsync(CancellationToken ct=default)=>Task.FromResult(Status);
  public Task<AssetRef> UploadAsync(Stream s,string filename,string? contentType=null,CancellationToken ct=default)=>throw new NotSupportedException();
- public Task<AssetRef> UploadIdempotentAsync(Stream s,string key,string filename,string? contentType=null,CancellationToken ct=default){Uploads++;return Task.FromResult(new AssetRef("fixture-cover.png","/api/assets/fixture-cover.png"));}
+ public Task<AssetRef> UploadIdempotentAsync(Stream s,string key,string filename,string? contentType=null,CancellationToken ct=default){Uploads++;var id=contentType=="image/svg+xml"?filename:"fixture-cover.png";return Task.FromResult(new AssetRef(id,"/api/assets/"+id));}
  public string GetUrl(string id)=>"/api/assets/"+id;
- public Task<AssetFile?> ReadAsync(string id,CancellationToken ct=default)=>Task.FromResult<AssetFile?>(new([1,2,3],"image/png"));
+ public Task<AssetFile?> ReadAsync(string id,CancellationToken ct=default)=>Task.FromResult<AssetFile?>(new([1,2,3],id.EndsWith(".svg",StringComparison.OrdinalIgnoreCase)?"application/octet-stream":"image/png"));
 }
 public sealed class FakeMusic:IMusicPlayback {
  public List<string> Commands=[];public Exception? Failure;public int LastSearchLimit;public MusicTrack Track=new("fixture-track","Fixture track","Fixture artist","Fixture album",null,180000,"spotify:track:1234567890123456789012");
