@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { rebuildBlocks, type MessageBlock, type PersistedMessage } from '@redbamboo/chat'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { getEffectiveToolName, getPartColor, projectActivityTimeline, rebuildBlocks, type MessageBlock, type MessagePart, type PersistedMessage } from '@redbamboo/chat'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
 
@@ -170,6 +170,8 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
     }))
     return rebuildBlocks(persisted)
   }, [revision])
+  const timeline = useMemo(() => projectActivityTimeline(messages), [messages])
+  const lastActivity = timeline.reduce((last, row, index) => row.kind === 'activity' ? index : last, -1)
 
   async function send(event: FormEvent) {
     event.preventDefault()
@@ -195,7 +197,9 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
   return <section className="campaign-agent-chat" aria-label={`Discussion: ${discussion.title || 'New discussion'}`}>
     <div className="campaign-agent-messages" aria-live="polite">
       {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">Ask for preparation, challenge a plan, or work through what the table may need next.</p>}
-      {messages.map(message => <ChatBlock key={message.id} message={message} />)}
+      {timeline.map((row, index) => row.kind === 'activity'
+        ? <AgentActivityRow key={row.key} parts={row.block.parts} active={!quiescent && index === lastActivity} />
+        : <ChatBlock key={row.key} message={row.block} />)}
       {pending.map(message => <article className="campaign-agent-message is-user is-pending" key={message.id}><p>{message.content}</p><small>{message.messageUid ? 'Saved, waiting for the Agent' : 'Sending'}</small></article>)}
       {!quiescent && <p className="campaign-agent-working"><i />Agent is working</p>}
       <div ref={end} aria-hidden="true" />
@@ -218,17 +222,69 @@ function relative(value: string) {
 }
 
 function ChatBlock({ message }: { message: MessageBlock }) {
-  const visible = message.parts.filter(part => part.type !== 'thinking')
-  if (visible.length === 0) return null
+  if (message.parts.length === 0) return null
   return <article className={`campaign-agent-message is-${message.role}`}>
-    {visible.map((part, index) => {
+    {message.parts.map((part, index) => {
       if (part.type === 'text') return <p className={part.phase === 'commentary' ? 'is-commentary' : ''} key={index}>{part.content}</p>
-      if (part.type === 'tool_use') return <details className="campaign-agent-tool" key={index}><summary><SiteIcon name="tool" />{humanizeTool(part.toolName)}</summary><p>Campaign-scoped action requested.</p></details>
-      if (part.type === 'tool_result') return <p className="campaign-agent-tool-result" key={index}><SiteIcon name="check" />Action completed</p>
-      if (part.type === 'error') return <p className="campaign-agent-part-error" key={index}>{part.content}</p>
       return null
     })}
   </article>
+}
+
+function AgentActivityRow({ parts, active }: { parts: MessagePart[]; active: boolean }) {
+  const [selected, setSelected] = useState<{ part: MessagePart; result?: MessagePart } | null>(null)
+  const visible = parts.filter(part => part.type !== 'tool_result')
+  return <div className="campaign-agent-activity" role="group" aria-label="Agent activity">
+    {visible.map((part, index) => {
+      const label = activityLabel(part)
+      const color = getPartColor(part)
+      return <button
+        type="button"
+        className={`campaign-agent-activity-square${active && index === visible.length - 1 ? ' is-active' : ''}`}
+        style={{ '--activity-color': color } as CSSProperties}
+        aria-label={label}
+        title={label}
+        key={`${part.messageId || part.toolName || part.type}:${index}`}
+        onClick={() => setSelected({ part, result: part.type === 'tool_use' ? pairedResult(parts, index) : undefined })}
+      />
+    })}
+    {selected && <AgentActivityDialog selection={selected} close={() => setSelected(null)} />}
+  </div>
+}
+
+function AgentActivityDialog({ selection, close }: { selection: { part: MessagePart; result?: MessagePart }; close: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  const label = activityLabel(selection.part)
+  useEffect(() => { const node = dialog.current; if (node && !node.open) node.showModal(); return () => { if (node?.open) node.close() } }, [])
+  return <dialog className="campaign-agent-activity-dialog" ref={dialog} aria-labelledby={titleId} onClose={close} onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close() }}>
+    <div>
+      <header><i style={{ '--activity-color': getPartColor(selection.part) } as CSSProperties} /><h2 id={titleId}>{label}</h2><button type="button" aria-label="Close activity details" onClick={() => dialog.current?.close()}><SiteIcon name="close" /></button></header>
+      {selection.part.type === 'thinking' && <section><span>PUBLIC REASONING</span><p>{selection.part.content || 'No public summary was emitted.'}</p></section>}
+      {selection.part.type === 'tool_use' && <><section><span>REQUEST</span><pre>{formatPayload(selection.part.toolInput)}</pre></section>{selection.result && <section><span>RESULT</span><pre>{formatPayload(selection.result.content)}</pre></section>}</>}
+      {selection.part.type === 'error' && <section><span>ERROR</span><p>{selection.part.content || 'The action failed.'}</p></section>}
+    </div>
+  </dialog>
+}
+
+function pairedResult(parts: MessagePart[], index: number) {
+  for (let cursor = index + 1; cursor < parts.length; cursor++) {
+    if (parts[cursor].type === 'tool_result') return parts[cursor]
+    if (parts[cursor].type === 'tool_use') return undefined
+  }
+  return undefined
+}
+
+function activityLabel(part: MessagePart) {
+  if (part.type === 'thinking') return 'Thinking'
+  if (part.type === 'error') return 'Error'
+  if (part.type === 'tool_use') return humanizeTool(getEffectiveToolName(part.toolName, part.toolInput))
+  return 'Activity'
+}
+
+function formatPayload(value?: string) {
+  if (!value) return 'No details.'
+  try { return JSON.stringify(JSON.parse(value), null, 2) } catch { return value }
 }
 
 function humanizeTool(value?: string) {
