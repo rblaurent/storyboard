@@ -32,6 +32,7 @@ test('narrow route/method/query matrix includes only the frozen product boundary
     [`/api/campaigns/${campaign}/cockpit`, ['GET']], [`/api/campaigns/${campaign}/cockpit/entities?query=glass`, ['GET']], [`/api/campaigns/${campaign}/cockpit/items`, ['POST']], [`/api/campaigns/${campaign}/cockpit/items/${member}/move`, ['POST']], [`/api/campaigns/${campaign}/cockpit/observe`, ['POST']], [`/api/campaigns/${campaign}/cockpit/suggestions/${member}/decide`, ['POST']],
     [`/api/campaigns/${campaign}/agent/chat`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/chat?afterEpoch=0123456789abcdef&afterSequence=42`, ['GET']],
     [`/api/campaigns/${campaign}/agent/discussions`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=0123456789abcdef&afterSequence=42`, ['GET']],
+    [`/api/campaigns/${campaign}/agent/settings`, ['GET', 'PUT']], [`/api/campaigns/${campaign}/agent/avatar`, ['PUT']],
     [`/api/campaigns/${campaign}/agent/playbooks`, ['GET']], [`/api/campaigns/${campaign}/agent/playbooks/music`, ['PUT']], [`/api/campaigns/${campaign}/play-mode`, ['GET', 'POST']],
     ['/assets/index-abcdefgh.js', ['GET']],
   ]

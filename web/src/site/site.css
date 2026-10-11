@@ -507,6 +507,8 @@ body { margin: 0; }
 .storyboard-site .campaign-agent-discussions nav > button.is-selected { border-left-color: var(--accent); background: #eadfd2; }
 .storyboard-site .campaign-agent-discussions nav strong { min-width: 0; display: flex; align-items: center; gap: var(--space-2); font-size: 13px; font-weight: 600; }
 .storyboard-site .campaign-agent-discussions nav strong > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.storyboard-site .campaign-agent-settings-link { margin-bottom: var(--space-3); border-bottom: 1px solid var(--rule) !important; }
+.storyboard-site .campaign-agent-settings-link strong { color: var(--accent); }
 .storyboard-site .campaign-agent-discussions nav strong small { flex: 0 0 auto; color: var(--accent); font-size: 8px; letter-spacing: .1em; }
 .storyboard-site .campaign-agent-discussions nav span,.storyboard-site .campaign-agent-discussions > p { color: var(--muted); font-size: 10px; }
 .storyboard-site .campaign-agent-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding-left: var(--space-6); }
@@ -550,6 +552,32 @@ body { margin: 0; }
 .storyboard-site .campaign-agent-composer textarea::placeholder { color: var(--muted); }
 .storyboard-site .campaign-agent-composer button { width: 48px; min-width: 48px; height: 48px; min-height: 48px; padding: 0; color: var(--ivory); border-color: var(--ink); background: var(--ink); }
 .storyboard-site .campaign-agent-heartbeat-note { min-height: 72px; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5) 0; color: var(--muted); border-top: 1px solid var(--rule); font-size: var(--text-small); }
+.storyboard-site .campaign-agent-settings { min-height: 0; overflow-y: auto; padding: var(--space-7) max(var(--space-6),calc((100% - 920px)/2)) var(--space-12); scrollbar-color: var(--rule-strong) transparent; }
+.storyboard-site .campaign-agent-settings-loading { margin: auto; color: var(--muted); }
+.storyboard-site .campaign-agent-settings-heading { margin-bottom: var(--space-8); padding-bottom: var(--space-6); border-bottom: 1px solid var(--rule); }
+.storyboard-site .campaign-agent-settings :is(.campaign-agent-settings-heading,.campaign-agent-capabilities,.campaign-agent-boundaries) > div > small { display: block; margin-bottom: var(--space-2); color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .15em; }
+.storyboard-site .campaign-agent-settings h2 { margin-bottom: var(--space-2); font-size: clamp(34px,4vw,52px); }
+.storyboard-site .campaign-agent-settings h3 { margin-bottom: var(--space-2); font-size: 26px; }
+.storyboard-site .campaign-agent-settings :is(.campaign-agent-settings-heading,.campaign-agent-behaviour,.campaign-agent-capabilities,.campaign-agent-boundaries) p { color: var(--muted); line-height: 1.55; }
+.storyboard-site .campaign-agent-settings-form { display: grid; gap: var(--space-7); }
+.storyboard-site .campaign-agent-profile { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(220px,.9fr); align-items: end; gap: var(--space-7); }
+.storyboard-site .campaign-agent-profile > label,.storyboard-site .campaign-agent-behaviour > label,.storyboard-site .campaign-agent-choice-grid > label { display: grid; gap: var(--space-2); font-size: var(--text-small); }
+.storyboard-site .campaign-agent-avatar-editor { display: flex; align-items: center; gap: var(--space-4); }
+.storyboard-site .campaign-agent-avatar-editor > :is(img,i) { width: 88px; height: 88px; flex: 0 0 88px; display: grid; place-items: center; overflow: hidden; color: var(--accent); border: 1px solid var(--rule-strong); border-radius: 50%; background: var(--ivory); object-fit: cover; }
+.storyboard-site .campaign-agent-avatar-editor > div { display: grid; gap: var(--space-1); }
+.storyboard-site .campaign-agent-avatar-editor span { color: var(--muted); font-size: 10px; }
+.storyboard-site .campaign-agent-avatar-editor > div > div { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.storyboard-site .campaign-agent-avatar-editor button { min-height: 34px; padding: var(--space-2) var(--space-3); background: transparent; font-size: 11px; }
+.storyboard-site .campaign-agent-behaviour { display: grid; gap: var(--space-5); padding: var(--space-6) 0; border-block: 1px solid var(--rule); }
+.storyboard-site .campaign-agent-choice-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-5); }
+.storyboard-site .campaign-agent-settings-save { display: flex; align-items: center; gap: var(--space-4); }
+.storyboard-site .campaign-agent-settings-save span { color: var(--muted); font-size: 10px; }
+.storyboard-site .campaign-agent-capabilities,.storyboard-site .campaign-agent-boundaries { margin-top: var(--space-12); padding-top: var(--space-7); border-top: 1px solid var(--ink); }
+.storyboard-site .campaign-agent-capabilities > div,.storyboard-site .campaign-agent-boundaries > div { margin-bottom: var(--space-6); }
+.storyboard-site .campaign-agent-capabilities .agent-direction { border-bottom: 1px solid var(--rule); }
+.storyboard-site .campaign-agent-boundaries ul { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-3) var(--space-7); list-style: none; }
+.storyboard-site .campaign-agent-boundaries li { display: flex; align-items: flex-start; gap: var(--space-2); color: var(--ink); font-size: 13px; line-height: 1.5; }
+.storyboard-site .campaign-agent-boundaries li .site-icon { flex: 0 0 auto; color: var(--accent); }
 .storyboard-site .agent-direction { margin-bottom: var(--space-6); background: transparent; }
 .storyboard-site .agent-direction > summary { justify-content: space-between; padding: 0; }
 .storyboard-site .agent-direction > summary > span { display: flex; align-items: center; gap: var(--space-2); }
@@ -744,6 +772,8 @@ body { margin: 0; }
   .storyboard-site .campaign-agent-messages { padding: var(--space-4) 0; }
   .storyboard-site .campaign-agent-message { max-width: 94%; }
   .storyboard-site .campaign-agent-composer { padding: var(--space-3) 0; }
+  .storyboard-site .campaign-agent-settings { width: 100%; padding: var(--space-4) 0 var(--space-10); }
+  .storyboard-site .campaign-agent-profile,.storyboard-site .campaign-agent-choice-grid,.storyboard-site .campaign-agent-boundaries ul { grid-template-columns: 1fr; }
   .storyboard-site.agent-dashboard-site.live-contracted .live-panel.is-contracted { bottom: 112px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }

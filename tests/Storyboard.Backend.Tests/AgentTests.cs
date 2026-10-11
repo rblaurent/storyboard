@@ -12,6 +12,72 @@ namespace Storyboard.Testing;
 public sealed class AgentTests
 {
     [Fact]
+    public async Task CampaignAgentSettingsUpdateTheCanonicalAgentWithoutReplacingConversations()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaign = fixture.Campaign.Id.ToString();
+        var account = fixture.Gm.Id.ToString();
+        var before = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
+        var binding = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var agentId = binding.Data.Text("agent");
+
+        var operation = Guid.NewGuid().ToString();
+        var write = new CampaignAgentSettingsWrite("Keeper of Embers", "Challenge weak clues and protect the campaign's melancholy tone.", "concise", "proactive", 0, operation);
+        var saved = StoryJson.Object(await fixture.Agent.SaveSettingsAsync(campaign, account, write));
+        var retried = StoryJson.Object(await fixture.Agent.SaveSettingsAsync(campaign, account, write));
+
+        Assert.Equal("Keeper of Embers", saved["agent"]!.AsObject().Text("name"));
+        Assert.Equal("concise", saved.Text("responseStyle"));
+        Assert.Equal("proactive", saved.Text("initiative"));
+        Assert.Equal(1, saved.Number("revision"));
+        Assert.Equal(1, retried.Number("revision"));
+        var after = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
+        var updatedCampaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var agent = (await fixture.Entities.GetAsync(StoryJson.Id(agentId)))!;
+        Assert.Equal(agentId, updatedCampaign.Data.Text("agent"));
+        Assert.Equal(before.Text("discussionId"), after.Text("discussionId"));
+        Assert.Equal(before.Text("sessionId"), after.Text("sessionId"));
+        Assert.Equal("Keeper of Embers", agent.Name);
+        Assert.Contains("Challenge weak clues", agent.Data.Text("identity"));
+        Assert.Equal(1, fixture.AgentConversations.Opens);
+
+        var stale = await Assert.ThrowsAsync<StoryException>(() => fixture.Agent.SaveSettingsAsync(campaign, account, new CampaignAgentSettingsWrite(
+            "Stale", "", "balanced", "collaborative", 0, Guid.NewGuid().ToString())));
+        Assert.Equal("agent_settings_changed", stale.Code);
+        Assert.Equal(409, stale.Status);
+    }
+
+    [Fact]
+    public async Task CampaignAgentSettingsRemainGameMasterOnly()
+    {
+        await using var fixture = await Fixture.Create();
+        var denied = await Assert.ThrowsAsync<StoryException>(() => fixture.Agent.SettingsAsync(fixture.Campaign.Id.ToString(), fixture.Player.Id.ToString()));
+        Assert.Equal("game_master_required", denied.Code);
+    }
+
+    [Fact]
+    public async Task CampaignAgentAvatarUploadAndResetKeepTheSameAgentBinding()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaign = fixture.Campaign.Id.ToString();
+        var account = fixture.Gm.Id.ToString();
+        var before = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
+        var campaignEntity = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var agentId = campaignEntity.Data.Text("agent");
+        var png = new byte[80]; png[0] = 0x89; png[1] = 0x50; png[2] = 0x4e; png[3] = 0x47; png[12] = (byte)'I'; png[13] = (byte)'H'; png[14] = (byte)'D'; png[15] = (byte)'R';
+        var uploaded = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, new CampaignAgentAvatarWrite(Convert.ToBase64String(png), "image/png", false, 0, Guid.NewGuid().ToString())));
+        Assert.Equal(1, uploaded.Number("revision"));
+        var reset = StoryJson.Object(await fixture.Agent.SaveAvatarAsync(campaign, account, new CampaignAgentAvatarWrite(null, null, true, 1, Guid.NewGuid().ToString())));
+        Assert.Equal(2, reset.Number("revision"));
+        var after = StoryJson.Object(await fixture.Agent.ReadAsync(campaign, account, null, null));
+        var updatedCampaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        Assert.Equal(agentId, updatedCampaign.Data.Text("agent"));
+        Assert.Equal(before.Text("discussionId"), after.Text("discussionId"));
+        Assert.Equal(before.Text("sessionId"), after.Text("sessionId"));
+        Assert.Equal(1, fixture.AgentConversations.Opens);
+    }
+
+    [Fact]
     public async Task CampaignAgentKeepsIndependentPersistentDiscussionsAndSessions()
     {
         await using var fixture = await Fixture.Create();

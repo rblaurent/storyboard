@@ -113,6 +113,19 @@ test('Agent and Cockpit are separate GM tabs while Live remains the cross-tab pl
   await cockpit.getByRole('textbox', { name: 'Search campaign workspace' }).fill('Glass'); await cockpit.getByRole('button', { name: 'Search campaign workspace' }).click(); await expect(cockpit.getByRole('button', { name: 'Prepare' })).toBeVisible()
   expect(state.requests.some(request => request.path.endsWith('/cockpit/observe'))).toBe(false); const live = page.getByRole('complementary', { name: 'Live player', exact: true }); await expect(live).toBeVisible(); await expect(live).toContainText('TRANSCRIPT'); await expect(live).not.toContainText('What was supposed to happen'); await page.screenshot({ path: path.join(evidence, 'fixture-cockpit.png'), fullPage: true })
 })
+test('Agent settings are a native full-space profile, behaviour and playbook surface', async ({ page }) => {
+  const state = await fixture(page); await page.goto(`/campaigns/${cid}/agent`)
+  const discussions = page.getByRole('complementary', { name: 'Discussions' }); await discussions.getByRole('button', { name: /Agent settings/ }).click()
+  await expect(page.getByRole('heading', { name: 'Shape how your Agent works' })).toBeVisible(); await expect(page.locator('iframe')).toHaveCount(0)
+  await expect(page.getByText('What this Agent can actually do')).toBeVisible(); await expect(page.locator('details.agent-direction')).toHaveCount(5)
+  await page.getByLabel('Agent name').fill('Keeper of Impossible Stars'); await page.getByLabel('Campaign-wide direction').fill('Challenge weak clues and protect the campaign’s quiet cosmic melancholy.'); await page.getByLabel('Response style').selectOption('concise'); await page.getByLabel('Initiative').selectOption('proactive'); await page.getByRole('button', { name: 'Save Agent settings' }).click()
+  await expect(page.getByRole('status')).toContainText('Agent settings saved.'); await expect(discussions).toContainText('Keeper of Impossible Stars'); expect(state.agentSettings).toMatchObject({ direction: 'Challenge weak clues and protect the campaign’s quiet cosmic melancholy.', responseStyle: 'concise', initiative: 'proactive', revision: 1 }); expect(state.requests.find(request => request.method === 'PUT' && request.path.endsWith('/agent/settings'))?.csrf).toBe(csrf)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await page.screenshot({ path: path.join(evidence, 'fixture-agent-settings.png'), fullPage: true })
+})
+test('Agent settings stay usable in the Agent phone flow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await fixture(page); await page.goto(`/campaigns/${cid}/agent`); await page.getByRole('button', { name: 'Discussions', exact: true }).click(); await page.getByRole('complementary', { name: 'Discussions' }).getByRole('button', { name: /Agent settings/ }).click()
+  await expect(page.getByRole('heading', { name: 'Shape how your Agent works' })).toBeVisible(); await expect(page.getByLabel('Agent name')).toBeInViewport(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); await page.screenshot({ path: path.join(evidence, 'fixture-agent-settings-phone.png'), fullPage: true })
+})
 test('play mode owns a visible heartbeat discussion and campaign capability direction', async ({ page }) => {
   const state = await fixture(page); await page.goto(`/campaigns/${cid}/agent`)
   const live = page.getByRole('complementary', { name: 'Live player', exact: true }); await live.getByRole('button', { name: 'Start play mode' }).click(); await expect(live.getByRole('button', { name: 'End play mode' })).toBeVisible()

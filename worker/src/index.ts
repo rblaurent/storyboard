@@ -71,6 +71,8 @@ export function route(url: URL, method: string): Route | null {
       || method === 'GET' && query(['afterEpoch', 'afterSequence']) && cursor
   }
   if (match(`/api/campaigns/${id}/agent/discussions`)) allowed = ['GET', 'POST'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/agent/settings`)) allowed = ['GET', 'PUT'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/agent/avatar`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/agent/playbooks`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/agent/playbooks/(?:planning|information|music|visuals|handouts)`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/play-mode`)) allowed = ['GET', 'POST'].includes(method) && query([])
@@ -167,7 +169,7 @@ export async function relay(request: Request, env: Env, send: typeof fetch = fet
   // fail while the origin is reading it. Storyboard commands are deliberately small JSON payloads.
   let body: ArrayBuffer | undefined
   if (mutation) {
-    const maxBody = /\/transcript\/sessions\/.+\/audio$/.test(url.pathname) ? 8_500_000 : 65_536
+    const maxBody = /\/transcript\/sessions\/.+\/audio$/.test(url.pathname) ? 8_500_000 : /\/agent\/avatar$/.test(url.pathname) ? 2_100_000 : 65_536
     const declared = Number(request.headers.get('Content-Length') || 0)
     if (!Number.isFinite(declared) || declared < 0 || declared > maxBody) return error('request_too_large', 413)
     body = await request.arrayBuffer()

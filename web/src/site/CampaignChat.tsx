@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import { getEffectiveToolName, getPartColor, projectActivityTimeline, rebuildBlocks, type MessageBlock, type MessagePart, type PersistedMessage } from '@redbamboo/chat'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
+import { AgentSettings } from './AgentSettings'
 
 interface AgentCursor { epoch: string; sequence: number }
 interface AgentMessage {
@@ -47,7 +48,7 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
       if (!alive) return
       let remembered: string | null = null
       try { remembered = localStorage.getItem(`storyboard:${campaignId}:agent-discussion`) } catch { /* selection persistence is optional */ }
-      const chosen = value.discussions.some(item => item.id === remembered)
+      const chosen = remembered === '__settings__' || value.discussions.some(item => item.id === remembered)
         ? remembered! : value.defaultDiscussionId || value.discussions[0]?.id || ''
       setIndex(value); setSelected(chosen)
     }).catch(cause => { if (alive) setError(explain(cause)) })
@@ -94,14 +95,16 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   }
 
   const active = index?.discussions.find(item => item.id === selected) ?? null
+  const settings = selected === '__settings__'
+  function agentChanged(agent: AgentDiscussionIndex['agent']) { setIndex(value => value ? { ...value, agent } : value) }
   return <section className={`campaign-agent-workspace${showList ? ' is-list' : ' is-chat'}`} aria-label="Campaign Agent discussions">
     <aside className="campaign-agent-discussions" aria-label="Discussions">
       <div className="campaign-agent-discussions-bar"><span className="campaign-agent-identity">{index?.agent.avatar ? <img src={index.agent.avatar} alt="" /> : <i><SiteIcon name="agent" /></i>}<span><small>CAMPAIGN AGENT</small><strong>{index?.agent.name || 'Agent'}</strong></span></span><button onClick={() => void create()} disabled={creating}><SiteIcon name="plus" />{creating ? 'Creating…' : 'New'}</button></div>
-      {index?.discussions.length ? <nav>{index.discussions.map(discussion => <button key={discussion.id} className={discussion.id === selected ? 'is-selected' : ''} aria-current={discussion.id === selected ? 'true' : undefined} onClick={() => choose(discussion.id)}><strong><span>{discussion.title || 'New discussion'}</span>{discussion.kind === 'heartbeat' && <small>PLAY MODE</small>}</strong><span>{relative(discussion.lastActivity)}</span></button>)}</nav> : index ? <p>No discussions yet.</p> : <p role="status">Opening discussions…</p>}
+      {index ? <nav><button className={`campaign-agent-settings-link${settings ? ' is-selected' : ''}`} aria-current={settings ? 'page' : undefined} onClick={() => choose('__settings__')}><strong><SiteIcon name="tool" size={16} /><span>Agent settings</span></strong><span>Identity, behaviour and playbooks</span></button>{index.discussions.map(discussion => <button key={discussion.id} className={discussion.id === selected ? 'is-selected' : ''} aria-current={discussion.id === selected ? 'true' : undefined} onClick={() => choose(discussion.id)}><strong><span>{discussion.title || 'New discussion'}</span>{discussion.kind === 'heartbeat' && <small>PLAY MODE</small>}</strong><span>{relative(discussion.lastActivity)}</span></button>)}</nav> : <p role="status">Opening discussions…</p>}
     </aside>
     <div className="campaign-agent-detail">
       <button className="campaign-agent-mobile-discussions" onClick={() => setShowList(true)}><SiteIcon name="back" />Discussions</button>
-      {active ? <CampaignDiscussion key={active.id} campaignId={campaignId} discussion={active} csrfToken={csrfToken} onTouched={touched} /> : index && <p className="campaign-agent-empty">Choose or start a discussion.</p>}
+      {settings && index ? <AgentSettings campaignId={campaignId} csrfToken={csrfToken} onChanged={agentChanged} /> : active ? <CampaignDiscussion key={active.id} campaignId={campaignId} discussion={active} csrfToken={csrfToken} onTouched={touched} /> : index && <p className="campaign-agent-empty">Choose or start a discussion.</p>}
     </div>
     {error && <p className="campaign-agent-index-error" role="alert"><SiteIcon name="warning" />{error}</p>}
   </section>

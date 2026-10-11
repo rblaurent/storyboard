@@ -64,6 +64,9 @@ const messages: Record<string, string> = {
   site_connection_rejected: 'Storyboard’s connection needs attention. Please try again later.',
   site_connection_unavailable: 'Storyboard’s connection is unavailable. Please try again later.',
   request_origin_rejected: 'Your session could not confirm this change. Reload and sign in again if needed.',
+  agent_settings_changed: 'These Agent settings changed elsewhere. Your draft is kept; review the latest saved version.',
+  invalid_agent_avatar: 'Choose a valid PNG, JPEG or WebP image smaller than 1.5 MB.',
+  invalid_agent_avatar_type: 'Choose a PNG, JPEG or WebP image.',
 }
 export function explain(cause: unknown): string {
   if (cause instanceof ApiError) {
