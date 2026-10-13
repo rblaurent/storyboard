@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { SiteIcon } from './icons'
-import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
+import { api, ApiError, explain, imageSource, type Account, type Campaign, type MusicBrief, type MusicGeneration, type MusicPage, type MusicPlaylist, type MusicProjectionState, type MusicQueueItem, type MusicStatus, type MusicTrack, type Operation, type Person, type Player } from './api'
 import { LiveVisual, ProjectionView, VisualsWorkspace } from './Visuals'
 import { CampaignWorkspace } from './Workspace'
 import { Cockpit } from './Cockpit'
@@ -9,7 +9,6 @@ import { AgentDirection } from './AgentDirection'
 import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 import { LanguageSwitch, useLocale } from './i18n'
-import { spotifyWebPlaybackSdk, type SpotifyWebPlaybackState, type SpotifyWebPlayer } from './spotify'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -367,182 +366,74 @@ function MusicArtwork({ src, title, source }: { src: string | null; title: strin
 }
 
 function LiveMusic({ campaignId, csrfToken, canControl, navigate, open, panelExpanded, toggleFoldout }: { campaignId: string; csrfToken: string; canControl: boolean; navigate: (p: string) => void; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
-  const [track, setTrack] = useState<MusicTrack | null>(null)
-  const [sourceCampaignId, setSourceCampaignId] = useState(campaignId)
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const [playerError, setPlayerError] = useState('')
+  const [session, setSession] = useState<MusicProjectionState | null>(null)
   const [queue, setQueue] = useState<MusicQueueItem[]>([])
-  const [queueBusy, setQueueBusy] = useState('')
-  const [queueError, setQueueError] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
   const [draggingOver, setDraggingOver] = useState(false)
-  const audio = useRef<HTMLAudioElement>(null)
-  const spotify = useRef<SpotifyWebPlayer | null>(null)
-  const spotifyCreating = useRef<Promise<SpotifyWebPlayer> | null>(null)
-  const spotifyDeviceId = useRef('')
-  const tokenCampaignId = useRef(campaignId)
-  const playerErrorRef = useRef('')
-  const readQueue = useCallback(() => api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`).then(setQueue), [campaignId])
+  const read = useCallback(async () => {
+    const [nextSession, nextQueue] = await Promise.all([
+      api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection`),
+      api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`),
+    ])
+    setSession(nextSession); setQueue(nextQueue)
+  }, [campaignId])
   useEffect(() => {
     let alive = true
-    const read = () => void readQueue().catch(() => {})
-    const changed = (event: Event) => {
-      const detail = (event as CustomEvent<{ campaignId?: string }>).detail
-      if (alive && (!detail?.campaignId || detail.campaignId === campaignId)) read()
-    }
-    read()
-    const timer = window.setInterval(read, 5000)
+    const refresh = () => void read().catch(cause => { if (alive) setError(explain(cause)) })
+    const changed = (event: Event) => { const detail = (event as CustomEvent<{ campaignId?: string }>).detail; if (!detail?.campaignId || detail.campaignId === campaignId) refresh() }
+    refresh(); const timer = window.setInterval(refresh, 1500)
     window.addEventListener('storyboard:music-queue-changed', changed)
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:music-queue-changed', changed) }
-  }, [campaignId, readQueue])
-  useEffect(() => {
-    let disposed = false
-    const announceReady = (ready: boolean, error = '') => {
-      window.__storyboardSpotifyPlayerReady = ready
-      playerErrorRef.current = error
-      setPlayerError(error)
-      window.dispatchEvent(new CustomEvent('storyboard:spotify-player-ready', { detail: { ready, error } }))
-    }
-    const ensurePlayer = () => {
-      if (spotify.current && spotifyDeviceId.current) return Promise.resolve(spotify.current)
-      if (spotifyCreating.current) return spotifyCreating.current
-      announceReady(false)
-      spotifyCreating.current = spotifyWebPlaybackSdk().then(() => new Promise<SpotifyWebPlayer>((resolve, reject) => {
-        if (disposed || !window.Spotify) { reject(new Error('spotify_sdk_unavailable')); return }
-        const player = new window.Spotify.Player({
-          name: 'Storyboard · This browser',
-          volume: 0.72,
-          enableMediaSession: true,
-          getOAuthToken: callback => {
-            void api<{ accessToken: string }>(`/campaigns/${tokenCampaignId.current}/music/browser-player`, csrfToken, 'POST', {})
-              .then(value => callback(value.accessToken))
-              .catch(cause => { announceReady(false, explain(cause)); callback('') })
-          },
-        })
-        spotify.current = player
-        let settled = false
-        const connectTimer = window.setTimeout(() => failed('Spotify took too long to connect this browser. Reconnect Spotify in Smart Home settings, then try again.'), 12000)
-        const failed = (message: string) => {
-          announceReady(false, message)
-          if (!settled) { settled = true; window.clearTimeout(connectTimer); reject(new Error('spotify_player_unavailable')) }
-        }
-        player.addListener('ready', ({ device_id }: { device_id: string }) => {
-          if (disposed) { player.disconnect(); return }
-          if (settled) return
-          settled = true
-          window.clearTimeout(connectTimer)
-          spotifyDeviceId.current = device_id
-          announceReady(true)
-          resolve(player)
-        })
-        player.addListener('not_ready', () => { spotifyDeviceId.current = ''; announceReady(false, 'The browser player went offline. Tap Play to reconnect it.') })
-        player.addListener('player_state_changed', (state: SpotifyWebPlaybackState | null) => {
-          if (!state) return
-          setPlaying(!state.paused)
-          setProgress(state.position || 0)
-        })
-        player.addListener('initialization_error', () => failed('This browser cannot start protected Spotify playback.'))
-        player.addListener('authentication_error', () => failed('Reconnect Spotify once in Smart Home settings to enable full browser playback.'))
-        player.addListener('account_error', () => failed('Full browser playback requires a Spotify Premium account.'))
-        player.addListener('playback_error', () => announceReady(true, 'Spotify could not play that track. Try another track.'))
-        player.addListener('autoplay_failed', () => announceReady(true, 'Tap Play once more to allow audio in this browser.'))
-        void player.connect().then(connected => { if (!connected) failed('Spotify could not connect this browser player.') }).catch(() => failed('Spotify could not connect this browser player.'))
-      })).catch(error => {
-        spotify.current?.disconnect()
-        spotify.current = null
-        spotifyDeviceId.current = ''
-        if (!playerErrorRef.current) announceReady(false, 'Spotify could not prepare the browser player. Tap Play to retry.')
-        throw error
-      }).finally(() => { spotifyCreating.current = null })
-      return spotifyCreating.current
-    }
-    const warm = (event: Event) => {
-      const detail = (event as CustomEvent<{ uri: string; campaignId: string }>).detail
-      if (!detail?.uri) return
-      tokenCampaignId.current = detail.campaignId
-      void ensurePlayer().catch(() => {})
-    }
-    const play = async (event: Event) => {
-      const detail = (event as CustomEvent<{ track: MusicTrack; campaignId: string }>).detail
-      if (!detail?.track) return
-      tokenCampaignId.current = detail.campaignId
-      setTrack(detail.track); setSourceCampaignId(detail.campaignId); setProgress(0)
-      if (detail.track.sourceKind === 'generated' && detail.track.audioUrl) {
-        void spotify.current?.pause()
-        if (audio.current) { audio.current.src = detail.track.audioUrl; audio.current.currentTime = 0; void audio.current.play().then(() => setPlaying(true)).catch(() => setPlaying(false)) }
-      } else if (detail.track.sourceKind === 'spotify' && detail.track.uri) {
-        audio.current?.pause(); setPlaying(false)
-        const active = spotify.current
-        if (active) void active.activateElement()
-        try {
-          const player = await ensurePlayer()
-          if (player !== active) await player.activateElement()
-          await api(`/campaigns/${detail.campaignId}/music/playback`, csrfToken, 'POST', { action: 'play', trackUris: [detail.track.uri], deviceId: spotifyDeviceId.current })
-          setPlaying(true)
-        } catch (cause) { announceReady(false, cause instanceof ApiError ? explain(cause) : playerErrorRef.current || 'Spotify could not play in this browser.'); setPlaying(false) }
-      }
-    }
-    window.addEventListener('storyboard:prepare-spotify-track', warm)
-    window.addEventListener('storyboard:play-track', play)
-    return () => {
-      disposed = true
-      window.removeEventListener('storyboard:prepare-spotify-track', warm)
-      window.removeEventListener('storyboard:play-track', play)
-      spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; announceReady(false)
-    }
-  }, [csrfToken])
-  async function toggle() {
-    if (!track) return
-    if (track.sourceKind === 'spotify') {
-      if (!spotify.current) return
-      await spotify.current.activateElement()
-      await spotify.current.togglePlay()
-      return
-    }
-    if (!audio.current) return
-    if (playing) audio.current.pause(); else await audio.current.play()
-    setPlaying(!playing)
+    window.addEventListener('storyboard:music-projection-changed', changed)
+    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:music-queue-changed', changed); window.removeEventListener('storyboard:music-projection-changed', changed) }
+  }, [campaignId, read])
+  async function command(action: 'play' | 'pause' | 'next' | 'previous', trackId?: string) {
+    if (!canControl || busy || !session) return
+    setBusy(action); setError('')
+    try {
+      const next = await api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection/commands`, csrfToken, 'POST', { action, trackId, operationId: crypto.randomUUID(), expectedRevision: session.revision })
+      setSession(next); window.dispatchEvent(new CustomEvent('storyboard:music-projection-changed', { detail: { campaignId } }))
+    } catch (cause) { setError(explain(cause)); void read().catch(() => {}) }
+    finally { setBusy('') }
   }
   async function enqueue(payload: { trackId?: string; playlistId?: string }) {
-    if (!canControl || queueBusy) return
-    setQueueBusy('enqueue'); setQueueError('')
+    if (!canControl || busy) return
+    setBusy('enqueue'); setError('')
     try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`, csrfToken, 'POST', { ...payload, operationId: crypto.randomUUID() })) }
-    catch (cause) { setQueueError(explain(cause)) }
-    finally { setQueueBusy(''); setDraggingOver(false) }
+    catch (cause) { setError(explain(cause)) }
+    finally { setBusy(''); setDraggingOver(false) }
   }
-  async function removeQueue(item: MusicQueueItem) {
-    if (!canControl || queueBusy) return
-    setQueueBusy(item.queueId); setQueueError('')
+  async function remove(item: MusicQueueItem) {
+    if (!canControl || busy) return
+    setBusy(item.queueId); setError('')
     try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue/${item.queueId}/remove`, csrfToken, 'POST', {})) }
-    catch (cause) { setQueueError(explain(cause)) }
-    finally { setQueueBusy('') }
+    catch (cause) { setError(explain(cause)) } finally { setBusy('') }
   }
-  async function clearQueue() {
-    if (!canControl || queueBusy) return
-    setQueueBusy('clear'); setQueueError('')
+  async function clear() {
+    if (!canControl || busy) return
+    setBusy('clear'); setError('')
     try { setQueue(await api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue/clear`, csrfToken, 'POST', {})) }
-    catch (cause) { setQueueError(explain(cause)) }
-    finally { setQueueBusy('') }
+    catch (cause) { setError(explain(cause)) } finally { setBusy('') }
   }
   function drop(event: React.DragEvent) {
     event.preventDefault(); setDraggingOver(false)
     if (!canControl) return
-    try {
-      const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-music')) as { kind: string; id: string }
-      if (value.kind === 'track') void enqueue({ trackId: value.id })
-      else if (value.kind === 'playlist') void enqueue({ playlistId: value.id })
-    } catch { /* Ignore foreign drags. */ }
+    try { const value = JSON.parse(event.dataTransfer.getData('application/x-storyboard-music')) as { kind: string; id: string }; void enqueue(value.kind === 'track' ? { trackId: value.id } : { playlistId: value.id }) } catch { /* Ignore foreign drags. */ }
   }
-  return <LiveFoldout module="music" label="Music" icon="music" open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-music${draggingOver ? ' is-drop-target' : ''}`} aria-label="Browser campaign player" data-live-drop="music" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop}>
-    <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
-    <Link className="player-now" href={`/campaigns/${sourceCampaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{playerError || (track ? `${track.artist} · This browser` : 'Open Music to set the scene')}</small></span></Link>
+  const track = session?.track || null
+  const progress = session?.progressMs || 0
+  return <LiveFoldout module="music" label="Music" icon="music" open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-music${draggingOver ? ' is-drop-target' : ''}`} aria-label="Slideshow music controller" data-live-drop="music" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop}>
+    <Link className="player-now" href={`/campaigns/${campaignId}/music`} navigate={navigate}><MusicArtwork src={track?.imageUrl || null} title={track?.name || 'Campaign music'} source={track?.sourceKind} /><span><strong>{track?.name || 'Nothing playing'}</strong><small>{track ? `${track.artist} · ${session?.outputName || 'Slideshow'}` : session?.outputReady ? 'Choose music for the slideshow' : 'Open the slideshow to connect audio'}</small></span></Link>
     {track && <span className="player-progress">{trackTime(progress)} / {trackTime(track.durationMs)}</span>}
-    <div className="player-controls"><button className="player-primary" disabled={!track} aria-label={playing ? 'Pause music in this browser' : 'Play music in this browser'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button></div>
-    <div className="live-queue-panel" aria-label="Music queue">
-      <div className="live-queue-heading"><strong>Queue</strong><span>{queue.length}</span></div>
-      {queueError && <p className="live-module-error" role="alert">{queueError}</p>}
-      {queue.length ? <ol className="live-queue-list">{queue.map((item, index) => <li key={item.queueId}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.track.name}</strong><small>{item.track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'} · {item.track.artist}</small></div>{canControl && <button className="icon-button" disabled={!!queueBusy} aria-label={`Remove ${item.track.name} from queue`} onClick={() => void removeQueue(item)}><SiteIcon name="close" size={16} /></button>}</li>)}</ol> : <div className="live-drop-empty"><SiteIcon name="queue" /><span>{canControl ? 'Drop a track or playlist here' : 'The music queue is empty'}</span></div>}
-      {canControl && queue.length > 0 && <button className="live-clear-queue" disabled={!!queueBusy} onClick={() => void clearQueue()}>Clear queue</button>}
+    {error && <p className="live-module-error" role="alert">{error}</p>}
+    <div className="player-controls">
+      <button disabled={!canControl || !!busy || !queue.length} aria-label="Previous slideshow track" onClick={() => void command('previous')}><SiteIcon name="previous" /></button>
+      <button className="player-primary" disabled={!canControl || !!busy || !session || !track && !queue.length} aria-label={session?.playing ? 'Pause slideshow music' : 'Play slideshow music'} onClick={() => void command(session?.playing ? 'pause' : 'play', track?.id || queue[0]?.track.id)}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button>
+      <button disabled={!canControl || !!busy || !queue.length} aria-label="Next slideshow track" onClick={() => void command('next')}><SiteIcon name="next" /></button>
+    </div>
+    <div className="live-queue-panel" aria-label="Music queue"><div className="live-queue-heading"><strong>Queue</strong><span>{queue.length}</span></div>
+      {queue.length ? <ol className="live-queue-list">{queue.map((item, index) => <li key={item.queueId}><button className="live-queue-play" disabled={!canControl || !!busy} aria-label={`Play ${item.track.name} on slideshow`} onClick={() => void command('play', item.track.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{item.track.name}</strong><small>{item.track.sourceKind === 'spotify' ? 'Spotify' : 'Generated'} · {item.track.artist}</small></div></button>{canControl && <button className="icon-button" disabled={!!busy} aria-label={`Remove ${item.track.name} from queue`} onClick={() => void remove(item)}><SiteIcon name="close" size={16} /></button>}</li>)}</ol> : <div className="live-drop-empty"><SiteIcon name="queue" /><span>{canControl ? 'Drop a track or playlist here' : 'The music queue is empty'}</span></div>}
+      {canControl && queue.length > 0 && <button className="live-clear-queue" disabled={!!busy} onClick={() => void clear()}>Clear queue</button>}
     </div>
   </LiveFoldout>
 }
@@ -574,20 +465,14 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [spotifyPlayer, setSpotifyPlayer] = useState(() => ({ ready: !!window.__storyboardSpotifyPlayerReady, error: '' }))
+  const [projection, setProjection] = useState<MusicProjectionState | null>(null)
   const visible = results.length ? results : selected ? playlistTracks : pool
-  const firstSpotifyUri = visible.find(track => track.sourceKind === 'spotify' && track.uri)?.uri || ''
   useEffect(() => {
-    const changed = (event: Event) => {
-      const detail = (event as CustomEvent<{ ready: boolean; error?: string }>).detail
-      setSpotifyPlayer({ ready: !!detail?.ready, error: detail?.error || '' })
-    }
-    window.addEventListener('storyboard:spotify-player-ready', changed)
-    return () => window.removeEventListener('storyboard:spotify-player-ready', changed)
-  }, [])
-  useEffect(() => {
-    if (gm && firstSpotifyUri) window.dispatchEvent(new CustomEvent('storyboard:prepare-spotify-track', { detail: { uri: firstSpotifyUri, campaignId: id } }))
-  }, [firstSpotifyUri, gm, id])
+    let alive = true
+    const read = () => void api<MusicProjectionState>(base + '/projection').then(value => { if (alive) setProjection(value) }).catch(() => {})
+    read(); const timer = window.setInterval(read, 5000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [base])
   useEffect(() => {
     const c = new AbortController(); setError('')
     Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal)])
@@ -611,13 +496,29 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   async function addToPlaylist(track: MusicTrack, playlist: MusicPlaylist) { if (busy) return; setBusy('playlist-add-' + track.id); setError(''); try { const updated = await api<MusicPlaylist>(`${base}/playlists/${playlist.id}/tracks`, me.csrfToken, 'POST', { trackId: track.id }); setPlaylists(items => items.map(item => item.id === updated.id ? updated : item)); if (selected?.id === playlist.id) { setSelected(updated); const page = await api<MusicPage<MusicTrack>>(`${base}/playlists/${playlist.id}/tracks?offset=0&limit=100`); setPlaylistTracks(page.items) }; setNotice(`${track.name} added to ${playlist.name}.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
   async function removeFromPlaylist(track: MusicTrack) { if (!selected || busy) return; setBusy('playlist-remove-' + track.id); setError(''); try { await api(`${base}/playlists/${selected.id}/tracks/${track.id}/remove`, me.csrfToken, 'POST', {}); const page = await api<MusicPage<MusicTrack>>(`${base}/playlists/${selected.id}/tracks?offset=0&limit=100`); setPlaylistTracks(page.items); const updated = { ...selected, trackCount: page.total }; setSelected(updated); setPlaylists(items => items.map(item => item.id === updated.id ? updated : item)) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
   async function enqueue(payload: { trackId?: string; playlistId?: string }, label: string) { if (busy || !gm) return; setBusy('enqueue'); setError(''); try { await api<MusicQueueItem[]>(base + '/queue', me.csrfToken, 'POST', { ...payload, operationId: crypto.randomUUID() }); window.dispatchEvent(new CustomEvent('storyboard:music-queue-changed', { detail: { campaignId: id } })); setNotice(`${label} added to the session queue.`) } catch (e) { setError(explain(e)) } finally { setBusy('') } }
-  function play(track: MusicTrack) { if (busy || !gm) return; setError(''); setNotice(''); window.dispatchEvent(new CustomEvent('storyboard:play-track', { detail: { track, campaignId: id } })); setNotice(`Loaded ${track.name} in this browser.`) }
+  async function play(track: MusicTrack) {
+    if (busy || !gm) return
+    setBusy('play-' + track.id); setError(''); setNotice('')
+    try {
+      let playable = saved(track)
+      if (!playable && track.sourceKind === 'spotify' && track.uri) {
+        playable = await api<MusicTrack>(base + '/tracks', me.csrfToken, 'POST', { name: track.name, artist: track.artist, album: track.album, imageUrl: track.imageUrl, durationMs: track.durationMs, uri: track.uri })
+        setPool(items => [...items.filter(item => item.id !== playable!.id), playable!].sort((a, b) => a.name.localeCompare(b.name)))
+      }
+      if (!playable) throw new Error('Save or promote this track before playing it.')
+      const current = await api<MusicProjectionState>(base + '/projection')
+      await api<MusicProjectionState>(base + '/projection/commands', me.csrfToken, 'POST', { action: 'play', trackId: playable.id, operationId: crypto.randomUUID(), expectedRevision: current.revision })
+      window.dispatchEvent(new CustomEvent('storyboard:music-projection-changed', { detail: { campaignId: id } }))
+      setNotice(`Playing ${track.name} on the slideshow.`)
+    } catch (cause) { setError(explain(cause)) }
+    finally { setBusy('') }
+  }
   function drag(event: React.DragEvent, value: { kind: 'track' | 'playlist'; id: string; label: string }) { event.dataTransfer.effectAllowed = 'copy'; event.dataTransfer.setData('application/x-storyboard-music', JSON.stringify(value)) }
   const saved = (track: MusicTrack) => pool.find(item => item.id === track.id || !!track.uri && item.uri === track.uri)
   return <section className="music-workspace">
     <CampaignPageHeader title="Music" description="Curate mixed-source playlists, search Spotify, generate scores, and run one campaign queue." aside={<div className={`music-service ${status?.connected ? 'is-connected' : ''}`}><span />{status?.connected ? 'Spotify catalogue connected' : status?.error || 'Checking music service…'}</div>} />
     {gm && <AgentDirection campaignId={id} capability="music" csrfToken={me.csrfToken} title="Music Agent direction" />}
-    <ErrorMessage error={error} />{spotifyPlayer.error && <Feedback tone="error">{spotifyPlayer.error}</Feedback>}{notice && <Feedback tone="notice">{notice}</Feedback>}
+    <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
     <form className="scene-composer panel" onSubmit={e => { e.preventDefault(); void find() }}><label htmlFor="music-situation">What is happening right now?</label><textarea id="music-situation" value={situation} onChange={e => setSituation(e.target.value)} maxLength={2000} rows={3} placeholder="The party enters the drowned throne room while something enormous moves below the water…" /><div className="scene-actions"><button className="primary" disabled={!gm || !situation.trim() || !!busy}><SiteIcon name="search" />{busy === 'find' ? 'Reading the room…' : 'Find music'}</button><button type="button" className="accent" disabled={!gm || !situation.trim() || !!busy} onClick={() => void compose()}><SiteIcon name="generate" />{busy === 'brief' ? 'Shaping the score…' : 'Compose new'}</button><span className="quiet">Find uses Fast. Compose uses Deep and stops before any paid generation.</span></div></form>
     {brief && <section className="music-brief panel" aria-label="Generation brief"><div><span className="eyebrow">READY TO COMPOSE</span><h3>{brief.title}</h3><p>{brief.prompt}</p></div><dl><div><dt>Mood</dt><dd>{brief.mood}</dd></div><div><dt>Energy</dt><dd>{brief.energy}</dd></div><div><dt>Tempo</dt><dd>{brief.tempo}</dd></div><div><dt>Length</dt><dd>{trackTime(brief.durationSeconds * 1000)}</dd></div></dl><p className="brief-style"><strong>Style</strong> {brief.style}</p><p className="quiet">{brief.instruments.join(' · ')}</p>{!generation && !confirming && <button className="accent" onClick={() => setConfirming(true)} disabled={!!busy}><SiteIcon name="generate" />Generate candidates</button>}{confirming && <div className="generation-confirm"><strong>This submits paid music generation.</strong><span>The brief above is the exact prompt snapshot. Retrying this confirmation reuses the same operation ID.</span><div><button className="accent" onClick={() => void generate()} disabled={!!busy}>{busy === 'generate' ? 'Submitting…' : 'Confirm and generate'}</button><button onClick={() => setConfirming(false)} disabled={!!busy}>Cancel</button></div></div>}{!generation && <p className="quiet">No credits have been spent.</p>}</section>}
     {generation && <section className="candidate-panel panel" aria-live="polite"><div className="music-section-title"><div><span className="eyebrow">GENERATED CANDIDATES</span><h3>{generation.state === 'completed' ? 'Choose what becomes part of the campaign' : generation.state === 'failed' ? 'Generation stopped' : 'Your score is being created'}</h3></div><span>{generation.state}</span></div>{generation.error && <Feedback tone="error">{generation.error}</Feedback>}{!['completed', 'failed'].includes(generation.state) && <p role="status">{generation.state === 'ingesting' ? 'Saving every candidate into Leaf Assets…' : 'Generating with the confirmed brief…'}</p>}{generation.candidates.map(candidate => <article className="candidate-row" key={candidate.id}><MusicArtwork src={candidate.cover} title={candidate.title} source="generated" /><div><strong>{candidate.title}</strong><small>{candidate.tags || brief?.style || 'generated score'} · {trackTime(candidate.durationSeconds * 1000)}</small><audio controls preload="metadata" src={candidate.audio}>Your browser cannot play this audio.</audio></div><button disabled={!!candidate.promotedTrack || !!busy} onClick={() => void promote(candidate.id)}><SiteIcon name="plus" />{candidate.promotedTrack ? 'Saved to pool' : 'Save to pool'}</button></article>)}{generation.state === 'failed' && generationCommand.current && <button disabled={!!busy} onClick={() => void generate()}>Retry same operation</button>}{generation.state === 'completed' && <p className="quiet">Credits recorded: {generation.creditsConsumed}. Every candidate is already stored durably, even before promotion.</p>}</section>}
@@ -627,7 +528,7 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
       <section className="music-tracks">
         <div className="music-section-title">
           <div><span className="eyebrow">{results.length ? 'SPOTIFY RESULTS' : selected ? 'PLAYLIST' : 'CAMPAIGN LIBRARY'}</span><h3>{results.length ? `For “${query}”` : selected?.name || 'Track pool'}</h3></div>
-          <span>{!spotifyPlayer.ready && !spotifyPlayer.error && gm && firstSpotifyUri ? 'Preparing player…' : spotifyPlayer.error ? 'Player needs attention' : `${visible.length} tracks`}</span>
+          <span>{visible.length} tracks · {projection?.outputReady ? 'Slideshow connected' : 'Slideshow offline'}</span>
         </div>
         {results.length > 0 && <button className="back-to-pool" onClick={() => setResults([])}><SiteIcon name="back" />Back to {selected ? selected.name : 'track pool'}</button>}
         {busy === 'playlist' ? <p role="status">Loading tracks…</p> : !visible.length ? <div className="music-empty"><SiteIcon name="music" size={32} /><p>{selected ? 'This playlist is empty. Add tracks from the pool.' : 'Search Spotify or save a generated candidate to begin.'}</p></div> : <div className="track-list">{visible.map((track, i) => {

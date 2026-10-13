@@ -9,6 +9,7 @@ export interface MusicTrack { id: string; name: string; artist: string; album: s
 export interface MusicQueueItem { queueId: string; track: MusicTrack }
 export interface MusicPage<T> { items: T[]; offset: number; limit: number; total: number; hasMore: boolean }
 export interface MusicPlayback { available: boolean; playing: boolean; track: MusicTrack | null; progressMs: number; deviceId: string | null; deviceName: string | null; volumePercent: number; error: string | null }
+export interface MusicProjectionState { campaignId: string; revision: number; playing: boolean; progressMs: number; serverTimeMs: number; track: MusicTrack | null; outputReady: boolean; outputName: string | null; spotifyReady: boolean }
 export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
 export interface MusicCandidate { id: string; title: string; tags: string; durationSeconds: number; audio: string; cover: string | null; promotedTrack: string }
 export interface MusicGeneration { id: string; state: 'pending' | 'generating' | 'ingesting' | 'completed' | 'failed'; error: string; creditsConsumed: number; candidates: MusicCandidate[] }
@@ -41,6 +42,10 @@ const messages: Record<string, string> = {
   music_service_error: 'The music service could not complete that request. Your queue was not changed.',
   spotify_no_active_device: 'Open Spotify on the device you want to use, start any track once, then try Play again. Your Storyboard queue is unchanged.',
   spotify_playback_restricted: 'Spotify rejected remote playback for this account or device. Open Spotify there once, then try again.',
+  projection_output_unavailable: 'Open the slideshow first. Its audio output must be online before music can play.',
+  music_session_changed: 'The slideshow music changed on another screen. Try that control again.',
+  music_queue_empty: 'The session queue is empty.',
+  music_track_required: 'Choose a track before starting playback.',
   music_playlist_empty: 'That playlist is empty. Add a track before enqueuing it.',
   invalid_music_track: 'That Spotify result could not be saved. Search again and retry.',
   invalid_music_queue_item: 'That item could not be added to the session queue.',

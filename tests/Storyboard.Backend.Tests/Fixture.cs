@@ -35,7 +35,7 @@ public sealed class FakeCompute:IAiInference,IComfyUiWorkflows,IComputeJobs,IAss
  public Task<AssetFile?> ReadAsync(string id,CancellationToken ct=default)=>Task.FromResult<AssetFile?>(new([1,2,3],id.EndsWith(".svg",StringComparison.OrdinalIgnoreCase)?"application/octet-stream":"image/png"));
 }
 public sealed class FakeMusic:IMusicPlayback {
- public List<string> Commands=[];public Exception? Failure;public int LastSearchLimit;public MusicTrack Track=new("fixture-track","Fixture track","Fixture artist","Fixture album",null,180000,"spotify:track:1234567890123456789012");
+ public List<string> Commands=[];public Exception? Failure;public int LastSearchLimit;public string? LastDevice;public IReadOnlyList<string>? LastTracks;public MusicTrack Track=new("fixture-track","Fixture track","Fixture artist","Fixture album",null,180000,"spotify:track:1234567890123456789012");
  public Task<MusicServiceStatus> GetStatusAsync(CancellationToken ct=default)=>Task.FromResult(new MusicServiceStatus(true,true,"Fixture Spotify"));
  public Task<MusicBrowserPlaybackAccess> GetBrowserPlaybackAccessAsync(CancellationToken ct=default)=>Task.FromResult(new MusicBrowserPlaybackAccess("fixture-browser-token",DateTimeOffset.UtcNow.AddMinutes(30)));
  public Task<MusicPage<MusicPlaylist>> GetPlaylistsAsync(int offset,int limit,CancellationToken ct=default)=>Task.FromResult(new MusicPage<MusicPlaylist>([new("fixture-playlist","Fixture playlist",null,1,"spotify:playlist:fixture")],offset,limit,78,offset+1<78));
@@ -43,8 +43,8 @@ public sealed class FakeMusic:IMusicPlayback {
  public Task<MusicPage<MusicTrack>> SearchTracksAsync(string query,int limit,CancellationToken ct=default){LastSearchLimit=limit;return Task.FromResult(new MusicPage<MusicTrack>([Track],0,limit,1,false));}
  public Task<MusicPlaybackState> GetPlaybackAsync(CancellationToken ct=default)=>Task.FromResult(new MusicPlaybackState(true,true,Track,12000,"fixture-device","Fixture room",30));
  public Task<IReadOnlyList<MusicTrack>> GetQueueAsync(CancellationToken ct=default)=>Task.FromResult<IReadOnlyList<MusicTrack>>([Track]);
- public Task PlayAsync(string? context,IReadOnlyList<string>? tracks,string? device,CancellationToken ct=default){Commands.Add("play");return Failure is null?Task.CompletedTask:Task.FromException(Failure);}
- public Task PauseAsync(string? device,CancellationToken ct=default){Commands.Add("pause");return Task.CompletedTask;}
+ public Task PlayAsync(string? context,IReadOnlyList<string>? tracks,string? device,CancellationToken ct=default){Commands.Add("play");LastDevice=device;LastTracks=tracks;return Failure is null?Task.CompletedTask:Task.FromException(Failure);}
+ public Task PauseAsync(string? device,CancellationToken ct=default){Commands.Add("pause");LastDevice=device;return Task.CompletedTask;}
  public Task NextAsync(string? device,CancellationToken ct=default){Commands.Add("next");return Task.CompletedTask;}
  public Task PreviousAsync(string? device,CancellationToken ct=default){Commands.Add("previous");return Task.CompletedTask;}
  public Task QueueAsync(string uri,string? device,CancellationToken ct=default){Commands.Add("queue:"+uri);return Task.CompletedTask;}

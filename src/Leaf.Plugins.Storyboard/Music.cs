@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Leaf.Sdk.Services;
@@ -14,6 +15,8 @@ public sealed record MusicPlaylistWrite(string Name, string? Description, string
 public sealed record MusicPlaylistTrackWrite(string TrackId);
 public sealed record MusicQueueWrite(string? TrackId, string? PlaylistId, string OperationId);
 public sealed record MusicCommand(string Action, string? Uri, string? ContextUri, string[]? TrackUris, string? DeviceId, string? TrackId = null);
+public sealed record MusicProjectionOutputWrite(string ClientId, string? DeviceId, string? Name);
+public sealed record MusicProjectionCommand(string Action, string OperationId, long ExpectedRevision, string? TrackId = null);
 public sealed record MusicBriefWrite(string Title, string Prompt, string Style, string NegativeTags, string Mood, string Energy, string Tempo, string[] Instruments, string NarrativeArc, int DurationSeconds, bool Instrumental);
 public sealed record MusicGenerationWrite(string OperationId, string Situation, MusicBriefWrite Brief, bool Confirmed)
 {
@@ -24,7 +27,23 @@ public sealed record MusicGenerationWrite(string OperationId, string Situation, 
 public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, ILogger<StoryMusic> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
+    private readonly ConcurrentDictionary<string, ProjectionMusicSession> projectionSessions = new(StringComparer.Ordinal);
     private IMusicPlayback Playback => services.GetService<IMusicPlayback>() ?? throw new StoryException("music_service_unavailable", 503);
+
+    private sealed class ProjectionMusicSession
+    {
+        public object Gate { get; } = new();
+        public string TrackId { get; set; } = "";
+        public bool Playing { get; set; }
+        public long ProgressMs { get; set; }
+        public long StartedAtMs { get; set; }
+        public long Revision { get; set; }
+        public string LastOperation { get; set; } = "";
+        public string ClientId { get; set; } = "";
+        public string DeviceId { get; set; } = "";
+        public string OutputName { get; set; } = "Slideshow";
+        public long OutputSeenAtMs { get; set; }
+    }
 
     public async Task<object> StatusAsync(string campaign, string account, CancellationToken ct)
     {
@@ -93,7 +112,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             var data = await store.ProtectAsync(new JsonObject
             {
                 ["campaign"] = campaign, ["source_kind"] = "spotify", ["spotify_uri"] = input.Uri,
-                ["artist"] = StoryJson.Bounded(input.Artist, 300, true), ["album"] = StoryJson.Bounded(input.Album, 300),
+                ["artist"] = StoryJson.Bounded(input.Artist, 300, true), ["album"] = StoryJson.Bounded(input.Album ?? "", 300),
                 ["image_url"] = image, ["duration_ms"] = Math.Clamp(input.DurationMs, 0, 24 * 60 * 60 * 1000),
                 ["source"] = "search", ["parent"] = campaignEntity.Data.Text("workspace")
             }, ct);
@@ -223,6 +242,148 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         }
         catch (Exception e) { throw ServiceError(e); }
     }
+
+    public async Task<object> ProjectionStateAsync(string campaign, string account, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        return await ProjectionAsync(campaign, ct);
+    }
+
+    public async Task<object> RegisterProjectionOutputAsync(string campaign, string account, MusicProjectionOutputWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        if (input is null) throw new StoryException("invalid_json");
+        var client = StoryJson.Bounded(input.ClientId, 100, true);
+        var device = StoryJson.Bounded(input.DeviceId, 200);
+        var name = StoryJson.Bounded(input.Name, 100);
+        var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+        lock (session.Gate)
+        {
+            session.ClientId = client;
+            session.DeviceId = device;
+            session.OutputName = string.IsNullOrWhiteSpace(name) ? "Slideshow" : name;
+            session.OutputSeenAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+        return await ProjectionAsync(campaign, ct);
+    }
+
+    public async Task<object> ProjectionCommandAsync(string campaign, string account, MusicProjectionCommand input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        if (input is null) throw new StoryException("invalid_json");
+        var operation = StoryJson.Id(input.OperationId).ToString();
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+            string action;
+            string trackId;
+            string deviceId;
+            bool duplicate;
+            lock (session.Gate)
+            {
+                duplicate = session.LastOperation == operation;
+                if (duplicate) { action = ""; trackId = session.TrackId; deviceId = session.DeviceId; }
+                else
+                {
+                    if (session.Revision != input.ExpectedRevision) throw new StoryException("music_session_changed", 409);
+                    action = StoryJson.Bounded(input.Action, 20, true);
+                    trackId = input.TrackId ?? session.TrackId;
+                    deviceId = session.DeviceId;
+                }
+            }
+            if (duplicate) return await ProjectionAsync(campaign, ct);
+
+            if (action is "next" or "previous") trackId = await AdjacentQueueTrackAsync(campaign, trackId, action == "next", ct);
+            var track = string.IsNullOrWhiteSpace(trackId) ? null : await RequireTrackAsync(campaign, trackId, ct);
+            if (action is "play" or "next" or "previous")
+            {
+                if (track is null) throw new StoryException("music_track_required", 409);
+                EnsureProjectionOutput(session, track.Data.Text("source_kind") == "spotify");
+                if (track.Data.Text("source_kind") == "spotify")
+                {
+                    try { await Playback.PlayAsync(null, [track.Data.Text("spotify_uri")], deviceId, ct); }
+                    catch (Exception e) { throw ServiceError(e); }
+                }
+            }
+            else if (action == "pause")
+            {
+                if (track?.Data.Text("source_kind") == "spotify" && !string.IsNullOrWhiteSpace(deviceId))
+                {
+                    try { await Playback.PauseAsync(deviceId, ct); }
+                    catch (Exception e) { throw ServiceError(e); }
+                }
+            }
+            else if (action != "ended") throw new StoryException("invalid_music_command");
+
+            lock (session.Gate)
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                session.ProgressMs = CurrentProgress(session, now);
+                if (action is "play" or "next" or "previous")
+                {
+                    var changed = session.TrackId != trackId;
+                    session.TrackId = trackId;
+                    session.ProgressMs = changed ? 0 : session.ProgressMs;
+                    session.StartedAtMs = now;
+                    session.Playing = true;
+                }
+                else { session.Playing = false; session.StartedAtMs = 0; }
+                session.Revision++;
+                session.LastOperation = operation;
+            }
+            await store.AuditAsync("music.projection.commanded", account, campaign, new JsonObject { ["action"] = action, ["track"] = trackId }, ct);
+            return await ProjectionAsync(campaign, ct);
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    private async Task<object> ProjectionAsync(string campaign, CancellationToken ct)
+    {
+        var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+        Leaf.Sdk.LeafEntity? track = null;
+        string trackId;
+        lock (session.Gate) trackId = session.TrackId;
+        if (!string.IsNullOrWhiteSpace(trackId))
+        {
+            try { track = await RequireTrackAsync(campaign, trackId, ct); }
+            catch (StoryException e) when (e.Status == 404) { }
+        }
+        return ProjectionSnapshot(campaign, session, track);
+    }
+
+    private static object ProjectionSnapshot(string campaign, ProjectionMusicSession session, Leaf.Sdk.LeafEntity? track)
+    {
+        lock (session.Gate)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var ready = now - session.OutputSeenAtMs <= 15_000;
+            var progress = CurrentProgress(session, now);
+            if (track is not null && track.Data.Number("duration_ms") > 0) progress = Math.Min(progress, track.Data.Number("duration_ms"));
+            return new { campaignId = campaign, revision = session.Revision, playing = session.Playing, progressMs = progress, serverTimeMs = now, track = track is null ? null : TrackProjection(track), outputReady = ready, outputName = ready ? session.OutputName : null, spotifyReady = ready && !string.IsNullOrWhiteSpace(session.DeviceId) };
+        }
+    }
+
+    private async Task<string> AdjacentQueueTrackAsync(string campaign, string current, bool next, CancellationToken ct)
+    {
+        var queue = (await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id).ToArray();
+        if (queue.Length == 0) throw new StoryException("music_queue_empty", 409);
+        var index = Array.FindIndex(queue, item => item.Data.Text("track") == current);
+        if (index < 0) index = next ? -1 : 0;
+        index = next ? (index + 1) % queue.Length : (index - 1 + queue.Length) % queue.Length;
+        return queue[index].Data.Text("track");
+    }
+
+    private static void EnsureProjectionOutput(ProjectionMusicSession session, bool spotify)
+    {
+        lock (session.Gate)
+        {
+            var fresh = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - session.OutputSeenAtMs <= 15_000;
+            if (!fresh || spotify && string.IsNullOrWhiteSpace(session.DeviceId)) throw new StoryException("projection_output_unavailable", 409);
+        }
+    }
+
+    private static long CurrentProgress(ProjectionMusicSession session, long now) => session.Playing && session.StartedAtMs > 0 ? Math.Max(0, session.ProgressMs + now - session.StartedAtMs) : Math.Max(0, session.ProgressMs);
 
     public async Task<object> QueueAsync(string campaign, string account, CancellationToken ct)
     {

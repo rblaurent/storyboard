@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
-import { api, ApiError, explain, imageSource, type Account, type MusicPlayback, type MusicQueueItem, type MusicTrack, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
+import { api, ApiError, explain, imageSource, type Account, type MusicProjectionState, type Visual, type VisualBrief, type VisualCandidate, type VisualGeneration, type VisualMatch, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
@@ -189,110 +189,90 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
 function musicTime(ms: number) { const seconds = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
 
 function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
-  const [queue, setQueue] = useState<MusicQueueItem[]>([])
-  const [track, setTrack] = useState<MusicTrack | null>(null)
-  const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [session, setSession] = useState<MusicProjectionState | null>(null)
   const [error, setError] = useState('')
   const [coverFailed, setCoverFailed] = useState(false)
   const audio = useRef<HTMLAudioElement>(null)
   const spotify = useRef<SpotifyWebPlayer | null>(null)
-  const spotifyCreating = useRef<Promise<SpotifyWebPlayer> | null>(null)
-  const spotifyDeviceId = useRef('')
+  const deviceId = useRef('')
+  const clientId = useRef(crypto.randomUUID())
+  const currentTrack = useRef('')
+  const stateRef = useRef<MusicProjectionState | null>(null)
   const disposed = useRef(false)
-  const ownsPlayback = useRef(false)
 
-  async function ensureSpotify() {
-    if (spotify.current && spotifyDeviceId.current) return spotify.current
-    if (spotifyCreating.current) return spotifyCreating.current
-    spotifyCreating.current = spotifyWebPlaybackSdk().then(() => new Promise<SpotifyWebPlayer>((resolve, reject) => {
-      if (disposed.current || !window.Spotify) { reject(new Error('spotify_sdk_unavailable')); return }
+  async function register() {
+    return api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection/output`, csrfToken, 'POST', { clientId: clientId.current, deviceId: deviceId.current || null, name: 'Slideshow' })
+  }
+
+  useEffect(() => {
+    disposed.current = false
+    if (window.location.hash === '#autostart') history.replaceState(null, '', window.location.pathname + window.location.search)
+    void register().catch(cause => setError(explain(cause)))
+    void spotifyWebPlaybackSdk().then(() => {
+      if (disposed.current || !window.Spotify) return
       const player = new window.Spotify.Player({
         name: 'Storyboard · Slideshow', volume: 0.72, enableMediaSession: true,
         getOAuthToken: callback => { void api<{ accessToken: string }>(`/campaigns/${campaignId}/music/browser-player`, csrfToken, 'POST', {}).then(value => callback(value.accessToken)).catch(() => callback('')) },
       })
       spotify.current = player
-      let settled = false
-      const timer = window.setTimeout(() => fail('Spotify took too long to connect.'), 12000)
-      const fail = (message: string) => { setError(message); if (!settled) { settled = true; window.clearTimeout(timer); reject(new Error('spotify_player_unavailable')) } }
-      player.addListener('ready', ({ device_id }: { device_id: string }) => { if (disposed.current) { player.disconnect(); return }; if (settled) return; settled = true; window.clearTimeout(timer); spotifyDeviceId.current = device_id; resolve(player) })
-      player.addListener('not_ready', () => { spotifyDeviceId.current = ''; setPlaying(false); setError('The slideshow audio device went offline. Select Play to reconnect it.') })
-      player.addListener('player_state_changed', state => { if (!state) return; setPlaying(!state.paused); setProgress(state.position || 0) })
-      player.addListener('initialization_error', () => fail('This browser cannot start protected Spotify playback.'))
-      player.addListener('authentication_error', () => fail('Reconnect Spotify in Smart Home settings to play it here.'))
-      player.addListener('account_error', () => fail('Spotify playback here requires a Premium account.'))
-      player.addListener('playback_error', () => setError('Spotify could not play this track.'))
-      player.addListener('autoplay_failed', () => { setPlaying(false); setError('Select Play once to let this screen output audio.') })
-      void player.connect().then(connected => { if (!connected) fail('Spotify could not connect the slideshow player.') }).catch(() => fail('Spotify could not connect the slideshow player.'))
-    })).catch(cause => { spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; throw cause }).finally(() => { spotifyCreating.current = null })
-    return spotifyCreating.current
-  }
-
-  async function play(value: MusicTrack) {
-    ownsPlayback.current = true; setTrack(value); setCoverFailed(false); setProgress(0); setError('')
-    if (value.sourceKind === 'generated' && value.audioUrl) {
-      void spotify.current?.pause(); if (!audio.current) return; audio.current.src = value.audioUrl; audio.current.currentTime = 0
-      try { await audio.current.play(); setPlaying(true) } catch { setPlaying(false); setError('Select Play once to let this screen output audio.') }
-      return
-    }
-    if (!value.uri) { setError('This track has no playable source.'); return }
-    audio.current?.pause()
-    try {
-      const player = await ensureSpotify(); await player.activateElement()
-      await api(`/campaigns/${campaignId}/music/playback`, csrfToken, 'POST', { action: 'play', trackUris: [value.uri], deviceId: spotifyDeviceId.current })
-      setPlaying(true)
-    } catch (cause) { setPlaying(false); setError(cause instanceof ApiError ? explain(cause) : 'Spotify could not play in this slideshow.') }
-  }
-
-  useEffect(() => {
-    disposed.current = false
-    let alive = true
-    Promise.all([api<MusicQueueItem[]>(`/campaigns/${campaignId}/music/queue`), api<MusicPlayback>(`/campaigns/${campaignId}/music/playback`)]).then(([items, state]) => {
-      if (!alive) return
-      setQueue(items)
-      const autostart = window.location.hash === '#autostart'
-      if (autostart) history.replaceState(null, '', window.location.pathname + window.location.search)
-      if (autostart && items.length) void play(items[0].track)
-      else if (state.track) { setTrack(state.track); setPlaying(state.playing); setProgress(state.progressMs) }
-      else if (items.length) setTrack(items[0].track)
-    }).catch(cause => { if (alive) setError(explain(cause)) })
-    return () => { alive = false; disposed.current = true; spotify.current?.disconnect(); spotify.current = null; spotifyDeviceId.current = ''; audio.current?.pause() }
+      player.addListener('ready', ({ device_id }: { device_id: string }) => { deviceId.current = device_id; setError(''); void player.activateElement(); void register().catch(cause => setError(explain(cause))) })
+      player.addListener('not_ready', () => { deviceId.current = ''; void register(); setError('The slideshow Spotify output went offline.') })
+      player.addListener('initialization_error', () => setError('This screen cannot initialize protected Spotify playback.'))
+      player.addListener('authentication_error', () => setError('Reconnect Spotify in Smart Home settings to use it on the slideshow.'))
+      player.addListener('account_error', () => setError('Spotify playback on the slideshow requires Premium.'))
+      player.addListener('playback_error', () => setError('Spotify could not play this track on the slideshow.'))
+      player.addListener('autoplay_failed', () => setError('Select Enable audio once on the slideshow.'))
+      void player.connect()
+    }).catch(() => setError('Spotify could not prepare the slideshow output.'))
+    const heartbeat = window.setInterval(() => void register().catch(() => {}), 5000)
+    return () => { disposed.current = true; window.clearInterval(heartbeat); spotify.current?.disconnect(); spotify.current = null; deviceId.current = ''; audio.current?.pause() }
   }, [campaignId, csrfToken])
 
   useEffect(() => {
-    if (ownsPlayback.current) return
     let alive = true
-    const read = () => void api<MusicPlayback>(`/campaigns/${campaignId}/music/playback`).then(state => { if (alive && state.track) { setTrack(state.track); setPlaying(state.playing); setProgress(state.progressMs) } }).catch(() => {})
-    const timer = window.setInterval(read, 2000)
+    const read = () => void api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection`).then(value => { if (alive) { stateRef.current = value; setSession(value) } }).catch(cause => { if (alive) setError(explain(cause)) })
+    read(); const timer = window.setInterval(read, 1000)
     return () => { alive = false; window.clearInterval(timer) }
   }, [campaignId])
 
-  async function toggle() {
-    const value = track || queue[0]?.track
-    if (!value) return
-    if (!ownsPlayback.current) { await play(value); return }
-    if (value.sourceKind === 'generated') {
-      if (!audio.current) return
-      if (playing) audio.current.pause(); else { try { await audio.current.play() } catch { setError('This screen needs one click before it can output audio.') } }
-      return
-    }
-    try { const player = await ensureSpotify(); await player.activateElement(); await player.togglePlay() } catch { setError('Spotify could not change playback.') }
+  useEffect(() => {
+    const track = session?.track
+    if (!track || track.sourceKind !== 'generated' || !track.audioUrl || !audio.current) return
+    const element = audio.current
+    if (currentTrack.current !== track.id) { currentTrack.current = track.id; element.src = track.audioUrl; element.currentTime = Math.max(0, session.progressMs / 1000) }
+    else if (Math.abs(element.currentTime * 1000 - session.progressMs) > 2500) element.currentTime = Math.max(0, session.progressMs / 1000)
+    if (session.playing && element.paused) void element.play().then(() => setError('')).catch(() => setError('Select Enable audio once on the slideshow.'))
+    if (!session.playing && !element.paused) element.pause()
+  }, [session?.revision, session?.playing, session?.track?.id, session?.progressMs])
+
+  async function ended() {
+    const current = stateRef.current
+    if (!current) return
+    try { setSession(await api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection/commands`, csrfToken, 'POST', { action: 'ended', operationId: crypto.randomUUID(), expectedRevision: current.revision })) } catch { /* The rail may already have moved on. */ }
+  }
+  async function enableAudio() {
+    setError('')
+    try {
+      await spotify.current?.activateElement()
+      if (session?.track?.sourceKind === 'generated' && session.playing) await audio.current?.play()
+    } catch { setError('This screen still cannot output audio. Check the browser sound permission.') }
   }
 
+  const track = session?.track
   if (!track) return error ? <p className="projection-music-error" role="alert">{error}</p> : null
   const hash = projectionHash(track.id || `${track.name}:${track.artist}`)
   const heights = Array.from({ length: 64 }, (_, index) => 22 + ((hash >>> (index % 24)) + index * 17) % 70)
+  const progress = session?.progressMs || 0
   const percentage = track.durationMs > 0 ? Math.min(100, progress / track.durationMs * 100) : 0
   const cover = imageSource(track.imageUrl)
   const wave = <>{heights.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</>
-  return <section className={`projection-music${playing ? ' is-playing' : ''}`} aria-label="Projection music player">
-    <audio ref={audio} hidden onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onTimeUpdate={event => setProgress(event.currentTarget.currentTime * 1000)} onEnded={() => setPlaying(false)} />
+  return <section className={`projection-music${session?.playing ? ' is-playing' : ''}`} aria-label="Slideshow music output">
+    <audio ref={audio} hidden onEnded={() => void ended()} />
     {cover && !coverFailed ? <img src={cover} alt={`${track.name} cover`} onError={() => setCoverFailed(true)} /> : <span className="projection-music-cover"><SiteIcon name={track.sourceKind === 'spotify' ? 'spotify' : 'music'} size={32} /></span>}
-    <div className="projection-music-copy"><small>{playing ? 'NOW PLAYING' : 'READY'}</small><strong>{track.name}</strong><span>{track.artist}</span></div>
-    <button className="projection-music-toggle" aria-label={playing ? 'Pause slideshow music' : 'Play slideshow music'} onClick={() => void toggle()}><SiteIcon name={playing ? 'pause' : 'play'} /></button>
+    <div className="projection-music-copy"><small>{session?.playing ? 'NOW PLAYING' : 'PAUSED'}</small><strong>{track.name}</strong><span>{track.artist}</span></div>
     <div className="projection-wave" aria-label={`${musicTime(progress)} of ${musicTime(track.durationMs)}`}><span className="projection-wave-base">{wave}</span><span className="projection-wave-played" style={{ clipPath: `inset(0 ${100 - percentage}% 0 0)` }}>{wave}</span></div>
     <span className="projection-music-time">{musicTime(progress)} / {musicTime(track.durationMs)}</span>
-    {error && <p role="alert">{error}</p>}
+    {error && <p role="alert">{error} <button className="projection-audio-enable" onClick={() => void enableAudio()}>Enable audio</button></p>}
   </section>
 }
 
