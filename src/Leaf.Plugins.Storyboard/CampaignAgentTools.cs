@@ -161,6 +161,17 @@ public sealed class StoryCampaignAgentTools(
         return await visuals.GenerationAsync(campaign, conversation.Campaign.Data.Text("creator"), operation, ct);
     }
 
+    public async Task<object> VisualProfileSaveAsync(string campaign, HttpContext http, VisualProfileWrite input, CancellationToken ct)
+    {
+        var conversation = await RequireInteractiveAsync(campaign, http, ct);
+        return await visuals.SaveProfileForAgentAsync(
+            campaign,
+            conversation.Campaign.Data.Text("creator"),
+            conversation.Agent.Id.ToString(),
+            input,
+            ct);
+    }
+
     public async Task<object> PlaybooksAsync(string campaign, HttpContext http, CancellationToken ct)
     {
         await agent.RequireCampaignAgentAsync(campaign, http, ct);

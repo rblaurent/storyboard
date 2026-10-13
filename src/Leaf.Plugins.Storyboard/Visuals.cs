@@ -98,6 +98,17 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     public async Task<object> SaveProfileAsync(string campaign, string account, VisualProfileWrite input, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, true, ct);
+        return await SaveProfileCoreAsync(campaign, account, account, input, false, ct);
+    }
+
+    public async Task<object> SaveProfileForAgentAsync(string campaign, string account, string agentId, VisualProfileWrite input, CancellationToken ct)
+    {
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        return await SaveProfileCoreAsync(campaign, account, agentId, input, true, ct);
+    }
+
+    private async Task<object> SaveProfileCoreAsync(string campaign, string account, string auditActor, VisualProfileWrite input, bool agentGenerated, CancellationToken ct)
+    {
         var profile = await identities.ValidateAsync(input, ct);
         await store.Commands.WaitAsync(ct);
         try
@@ -120,7 +131,12 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
                 next["portrait_workflow"] = profile.PortraitWorkflow; next["scene_workflow"] = profile.SceneWorkflow;
                 next["default_interval_seconds"] = profile.DefaultIntervalSeconds; next["transition"] = profile.Transition; next["updated_by"] = account; return next;
             }, ct);
-            await store.AuditAsync("visual.profile.updated", account, saved.Id.ToString(), ct: ct);
+            await store.AuditAsync("visual.profile.updated", auditActor, saved.Id.ToString(), new JsonObject
+            {
+                ["campaign"] = campaign,
+                ["beneficiary"] = account,
+                ["agent_generated"] = agentGenerated,
+            }, ct);
             return identities.Projection(await identities.GetAsync(campaign, ct));
         }
         finally { store.Commands.Release(); }

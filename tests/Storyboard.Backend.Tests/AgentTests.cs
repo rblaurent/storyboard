@@ -395,12 +395,48 @@ public sealed class AgentTests
             default));
         Assert.Equal("fixture-note", compatible.Text("typeSlug"));
 
+        var visualContext = Context(campaign.Data.Text("agent"),
+            ("storyboard-campaign-discussion", normal.Data.Text("discussion_id")));
+        var visualProfile = new VisualProfileWrite(
+            "Painterly civic fantasy under pressure.",
+            "lettering, interface, watermark",
+            24,
+            "crossfade",
+            "Natural faces and practical ceremonial clothing.",
+            "Monumental infrastructure with human-scale figures.",
+            "qwen_fixture");
+        var savedProfile = StoryJson.Object(await tools.VisualProfileSaveAsync(campaignId, visualContext, visualProfile, default));
+        Assert.Equal("Painterly civic fantasy under pressure.", savedProfile.Text("artDirection"));
+        Assert.Equal("qwen_fixture", savedProfile.Text("defaultWorkflow"));
+        var profileEntity = (await fixture.Entities.GetBySlugAsync("storyboard-visual-profile", "visual-profile-" + campaignId))!;
+        Assert.Equal(fixture.Gm.Id.ToString(), profileEntity.Data.Text("updated_by"));
+        var profileAudit = (await fixture.Records.QueryAsync("audit"))
+            .Single(record => record.Data.Text("action") == "visual.profile.updated");
+        Assert.Equal(campaign.Data.Text("agent"), profileAudit.Data.Text("actor"));
+        Assert.Equal(fixture.Gm.Id.ToString(), profileAudit.Data["details"]!.AsObject().Text("beneficiary"));
+        Assert.True(profileAudit.Data["details"]!.AsObject().Flag("agent_generated"));
+
+        var genericProfileWrite = await Assert.ThrowsAsync<StoryException>(() => tools.WorkspaceSaveAsync(
+            campaignId,
+            profileEntity.Id.ToString(),
+            visualContext,
+            new WorkspaceEntityWrite(profileEntity.Name, profileEntity.Data.DeepClone().AsObject(), profileEntity.UpdatedAt.ToString("O")),
+            default));
+        Assert.Equal("workspace_entity_read_only", genericProfileWrite.Code);
+
         var wrongDiscussion = await Assert.ThrowsAsync<StoryException>(() => tools.WorkspaceCreateAsync(
             campaignId,
             Context(campaign.Data.Text("agent"), ("storyboard-campaign-discussion", "sb" + Guid.NewGuid().ToString("N")[..14])),
             new WorkspaceEntityCreate("fixture-note", "Wrong discussion", null, new JsonObject()),
             default));
         Assert.Equal("interactive_agent_discussion_required", wrongDiscussion.Code);
+
+        var wrongProfileDiscussion = await Assert.ThrowsAsync<StoryException>(() => tools.VisualProfileSaveAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"), ("storyboard-campaign-discussion", "sb" + Guid.NewGuid().ToString("N")[..14])),
+            visualProfile with { ArtDirection = "Wrong discussion must not save this." },
+            default));
+        Assert.Equal("interactive_agent_discussion_required", wrongProfileDiscussion.Code);
 
         await play.SetAsync(campaignId, fixture.Gm.Id.ToString(), new CampaignPlayWrite(true, Guid.NewGuid().ToString()));
         var heartbeat = (await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
@@ -416,6 +452,15 @@ public sealed class AgentTests
             new WorkspaceEntityCreate("fixture-note", "Autonomous canon", null, new JsonObject()),
             default));
         Assert.Equal("interactive_agent_discussion_required", denied.Code);
+
+        var heartbeatProfile = await Assert.ThrowsAsync<StoryException>(() => tools.VisualProfileSaveAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"),
+                ("storyboard-campaign-heartbeat", heartbeat.Data.Text("discussion_id"))),
+            visualProfile with { ArtDirection = "Heartbeat must not save this." },
+            default));
+        Assert.Equal("interactive_agent_discussion_required", heartbeatProfile.Code);
+        Assert.Equal("Painterly civic fantasy under pressure.", (await fixture.Identity.GetAsync(campaignId, default)).ArtDirection);
     }
 
     [Fact]

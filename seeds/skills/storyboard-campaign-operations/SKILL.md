@@ -54,6 +54,11 @@ in the heartbeat discussion or use a cockpit proposal. Never delete workspace en
 - During a heartbeat, visibility may change directly only in active play mode when the Information playbook enables
   autonomous drafts. Otherwise create a reveal proposal for GM approval. Hiding follows the same authority rule.
 - Find existing music with `POST .../agent/music/find`; find an existing visual with `POST .../agent/visuals/match`.
+- In an interactive GM discussion, update the campaign visual identity with `PUT .../agent/visuals/profile`. First read
+  the current profile from `GET .../agent/visuals`, then send the complete profile object with the requested changes
+  and every unchanged field preserved. This route validates the image workflow and visual settings. The generic
+  Workspace update remains intentionally read-only for the underlying system record, and heartbeats cannot use this
+  operation.
 - Music generation uses `POST .../agent/music/generations`. It produces reviewable candidates and is allowed only
   during active play mode when the music playbook enables autonomous drafts.
 - Generate one reusable 16:9 campaign image with `POST .../agent/visuals/images` and
