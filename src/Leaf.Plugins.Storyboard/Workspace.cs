@@ -10,8 +10,10 @@ public sealed record WorkspaceEntityWrite(string Name, JsonObject Data, string E
 public sealed record WorkspaceEntityCreate(string TypeSlug, string Name, string? Parent, JsonObject? Data);
 public sealed record WorkspaceEntityDelete(string ExpectedUpdatedAt);
 public sealed record WorkspaceLocalizationWrite(string? LocalizedName, JsonObject? Fields, string? Status, string? ExpectedUpdatedAt = null);
+public sealed record WorkspacePlayerViewWrite(string Title, string Description, string? ImageField, string[]? FieldKeys, string ExpectedUpdatedAt, string OperationId);
 internal sealed record CockpitWorkspaceEntity(LeafEntity Entity, string TypeName, object Projection);
 internal sealed record WorkspaceArtworkContext(string EntityId, string EntityName, string EntityType, string Field, string FieldName, string ImageAssetId, string Source);
+internal sealed record WorkspacePlayerContext(LeafEntity Entity, JsonObject Projection, string ImageAssetId);
 
 public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
 {
@@ -22,7 +24,8 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         "storyboard-music-candidate", "storyboard-music-queue-item", "storyboard-visual-profile",
         "storyboard-visual", "storyboard-visual-set", "storyboard-visual-set-item",
         "storyboard-visual-generation", "storyboard-visual-candidate", "storyboard-visual-queue-item",
-        "storyboard-visual-session", "storyboard-cockpit-item", "storyboard-cockpit-suggestion"
+        "storyboard-visual-session", "storyboard-cockpit-item", "storyboard-cockpit-suggestion",
+        "storyboard-entity-visibility"
     };
     private static readonly string[] ProtectedKeys = ["owner_id", "owner_agent_id", "owner_plugin", "installation", "confidential", "parent"];
 
@@ -132,6 +135,99 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
 
     internal Task<object> AgentSaveAsync(string campaign, string agentId, string entityId, WorkspaceEntityWrite input, CancellationToken ct = default)
         => SaveCoreAsync(campaign, "", agentId, false, entityId, input, ct);
+
+    public Task<object> SavePlayerViewAsync(string campaign, string account, string entityId, WorkspacePlayerViewWrite input, CancellationToken ct = default)
+        => SavePlayerViewCoreAsync(campaign, account, account, true, entityId, input, ct);
+
+    internal Task<object> AgentSavePlayerViewAsync(string campaign, string agentId, string entityId, WorkspacePlayerViewWrite input, CancellationToken ct = default)
+        => SavePlayerViewCoreAsync(campaign, "", agentId, false, entityId, input, ct);
+
+    private async Task<object> SavePlayerViewCoreAsync(string campaign, string account, string auditActor, bool requireMembership, string entityId, WorkspacePlayerViewWrite input, CancellationToken ct)
+    {
+        if (input is null || !DateTimeOffset.TryParse(input.ExpectedUpdatedAt, out var expected)) throw new StoryException("invalid_player_view");
+        var operation = StoryJson.Id(input.OperationId).ToString();
+        var title = StoryJson.Bounded(input.Title, 300, true);
+        var description = StoryJson.Bounded(input.Description, 20_000);
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var context = requireMembership ? await ContextAsync(campaign, account, ct) : await ContextCoreAsync(campaign, ct);
+            var entity = context.Entities.SingleOrDefault(value => value.Id == StoryJson.Id(entityId)) ?? throw new StoryException("not_found", 404);
+            var type = context.Types.GetValueOrDefault(entity.TypeSlug) ?? throw new StoryException("workspace_type_unavailable", 409);
+            if (type.System || entity.TypeSlug == "page") throw new StoryException("workspace_entity_read_only", 409);
+            var allowed = type.Fields.Where(value => !value.Sensitive).ToDictionary(value => value.Key, StringComparer.Ordinal);
+            var fieldKeys = (input.FieldKeys ?? []).Select(value => StoryJson.Bounded(value, 160, true)).Distinct(StringComparer.Ordinal).Take(24).ToArray();
+            if (fieldKeys.Any(value => !allowed.ContainsKey(value))) throw new StoryException("invalid_player_view");
+            var imageField = string.IsNullOrWhiteSpace(input.ImageField) ? "" : StoryJson.Bounded(input.ImageField, 160, true);
+            if (imageField != "" && (!allowed.TryGetValue(imageField, out var image) || !ImageField(image))) throw new StoryException("invalid_player_view");
+            var payloadHash = StoryJson.Hash(new JsonObject
+            {
+                ["title"] = title,
+                ["description"] = description,
+                ["image_field"] = imageField,
+                ["field_keys"] = new JsonArray(fieldKeys.Select(value => (JsonNode?)value).ToArray()),
+            }.ToJsonString());
+            var current = entity.Data["player_view"] as JsonObject;
+            if (current?.Text("last_operation") == operation)
+            {
+                if (current.Text("last_payload_hash") != payloadHash) throw new StoryException("idempotency_conflict", 409);
+                return Project(entity, type, null, "en");
+            }
+            var next = entity.Data.DeepClone().AsObject();
+            next["player_view"] = new JsonObject
+            {
+                ["title"] = title,
+                ["description"] = description,
+                ["image_field"] = imageField,
+                ["field_keys"] = new JsonArray(fieldKeys.Select(value => (JsonNode?)value).ToArray()),
+                ["updated_by"] = auditActor,
+                ["updated_at"] = DateTimeOffset.UtcNow.ToString("O"),
+                ["last_operation"] = operation,
+                ["last_payload_hash"] = payloadHash,
+            };
+            LeafEntity? saved;
+            try { saved = await store.Entities.CompareExchangeCanonicalAsync(entity.Id, entity.Name, next, expected, ct); }
+            catch (InvalidOperationException) { throw new StoryException("workspace_entity_read_only", 409); }
+            if (saved is null) throw new StoryException("workspace_entity_changed", 409);
+            await store.AuditAsync("workspace.player-view.updated", auditActor, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["type"] = saved.TypeSlug, ["agent_generated"] = !requireMembership }, ct);
+            return Project(saved, type, null, "en");
+        }
+        finally { store.Commands.Release(); }
+    }
+
+    internal async Task<WorkspacePlayerContext> PlayerContextAsync(string campaign, string entityId, CancellationToken ct = default)
+    {
+        var context = await ContextCoreAsync(campaign, ct);
+        var entity = context.Entities.SingleOrDefault(value => value.Id == StoryJson.Id(entityId)) ?? throw new StoryException("not_found", 404);
+        var type = context.Types.GetValueOrDefault(entity.TypeSlug) ?? throw new StoryException("workspace_type_unavailable", 409);
+        if (type.System || entity.TypeSlug == "page") throw new StoryException("not_found", 404);
+        var view = entity.Data["player_view"] as JsonObject ?? throw new StoryException("player_view_required", 409);
+        var fieldKeys = Strings(view["field_keys"]).ToHashSet(StringComparer.Ordinal);
+        var fields = new JsonArray();
+        foreach (var field in type.Fields.Where(value => !value.Sensitive && fieldKeys.Contains(value.Key)))
+            if (entity.Data.TryGetPropertyValue(field.Key, out var value) && value is not null)
+                fields.Add(new JsonObject { ["key"] = field.Key, ["name"] = field.Name, ["fieldType"] = field.FieldType, ["value"] = value.DeepClone() });
+        var imageField = view.Text("image_field");
+        var imageAsset = imageField != ""
+                         && entity.Data.TryGetPropertyValue(imageField, out var image)
+                         && image is JsonValue imageValue
+                         && imageValue.TryGetValue<string>(out var imageText)
+            ? imageText
+            : "";
+        var projection = new JsonObject
+        {
+            ["id"] = entity.Id.ToString(),
+            ["typeSlug"] = entity.TypeSlug,
+            ["typeName"] = type.Name,
+            ["title"] = view.Text("title", entity.Name),
+            ["description"] = view.Text("description"),
+            ["fields"] = fields,
+            ["imageUrl"] = imageAsset == "" ? null : $"/api/campaigns/{campaign}/journal/entities/{entity.Id}/image",
+            ["updatedAt"] = entity.UpdatedAt.ToString("O"),
+        };
+        return new WorkspacePlayerContext(entity, projection, imageAsset);
+    }
 
     private async Task<object> SaveCoreAsync(string campaign, string account, string auditActor, bool requireMembership, string entityId, WorkspaceEntityWrite input, CancellationToken ct)
     {
@@ -339,8 +435,10 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         {
             var definition = scoped.GetValueOrDefault(slug) ?? typeDefinitions.FirstOrDefault(e => e.Slug == slug);
             if (definition is not null) schemaEntities[definition.Id] = definition;
-            var fields = (await QueryAsync("field-definition", new Dictionary<string, object?> { ["parent_type"] = slug }, ct)).Select(Field).Where(f => !f.Sensitive).OrderBy(f => f.SortOrder).ToArray();
-            foreach (var field in fields) schemaEntities[field.Definition.Id] = field.Definition;
+            var fields = (await QueryAsync("field-definition", new Dictionary<string, object?> { ["parent_type"] = slug }, ct)).Select(Field).Where(f => !f.Sensitive).OrderBy(f => f.SortOrder).ToList();
+            if (!SystemTypes.Contains(slug) && slug != "page" && fields.All(field => field.Key != "description"))
+                fields.Insert(0, new WorkspaceField("description", "Description", "text", -1, false, "The canonical description of this entity.", null, new JsonObject { ["multiline"] = true }, null, false, null));
+            foreach (var field in fields) if (field.Definition is not null) schemaEntities[field.Definition.Id] = field.Definition;
             types[slug] = new WorkspaceType(slug, definition?.Name ?? Humanize(slug), definition?.Data.Text("description"), definition?.Data.Text("icon"), definition?.Data.Text("color"), definition?.Data.Text("folder"), SystemTypes.Contains(slug), fields, definition);
         }
         return new(root, entities.Values.ToArray(), types, schemaEntities.Values.ToArray());
@@ -418,7 +516,20 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             foreach (var field in fields) ApplyPointer(data, field.Key.StartsWith("/", StringComparison.Ordinal) ? field.Key : "/" + EscapePointer(field.Key), field.Value);
         var translatedName = exact ? localization!.Data.Text("localized_name") : "";
         var localizationState = locale == "en" ? "source" : localization is null ? "missing" : exact ? localization.Data.Text("status", "draft") : "stale";
-        return new { id = entity.Id, typeSlug = entity.TypeSlug, slug = entity.Slug, name = translatedName == "" ? entity.Name : translatedName, data, createdAt = entity.CreatedAt, updatedAt = entity.UpdatedAt, localization = new { locale, status = localizationState, sourceFingerprint = fingerprint } };
+        return new { id = entity.Id, typeSlug = entity.TypeSlug, slug = entity.Slug, name = translatedName == "" ? entity.Name : translatedName, data, createdAt = entity.CreatedAt, updatedAt = entity.UpdatedAt, playerView = PlayerViewProjection(entity), localization = new { locale, status = localizationState, sourceFingerprint = fingerprint } };
+    }
+    private static object PlayerViewProjection(LeafEntity entity)
+    {
+        var view = entity.Data["player_view"] as JsonObject;
+        return new
+        {
+            prepared = view is not null,
+            title = view?.Text("title", entity.Name) ?? entity.Name,
+            description = view?.Text("description") ?? "",
+            imageField = view?.Text("image_field") is { Length: > 0 } image ? image : null,
+            fieldKeys = Strings(view?["field_keys"]),
+            updatedAt = view?.Text("updated_at") is { Length: > 0 } updated ? updated : null,
+        };
     }
     private static string SchemaFingerprint(LeafEntity entity)
     {
@@ -479,5 +590,6 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
     private static string Humanize(string slug) => string.Join(' ', slug.Split('-', StringSplitOptions.RemoveEmptyEntries).Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
     private sealed record WorkspaceContext(LeafEntity Root, IReadOnlyList<LeafEntity> Entities, IReadOnlyDictionary<string, WorkspaceType> Types, IReadOnlyList<LeafEntity> SchemaEntities);
     private sealed record WorkspaceType(string Slug, string Name, string? Description, string? Icon, string? Color, string? Folder, bool System, IReadOnlyList<WorkspaceField> Fields, LeafEntity? Definition);
-    private sealed record WorkspaceField(string Key, string Name, string FieldType, long SortOrder, bool Required, string? Description, JsonNode? Constraints, JsonNode? DisplayHints, JsonNode? DefaultValue, bool Sensitive, LeafEntity Definition);
+    private static string[] Strings(JsonNode? node) => node is JsonArray array ? array.Select(value => value?.GetValue<string>() ?? "").Where(value => value != "").ToArray() : [];
+    private sealed record WorkspaceField(string Key, string Name, string FieldType, long SortOrder, bool Required, string? Description, JsonNode? Constraints, JsonNode? DisplayHints, JsonNode? DefaultValue, bool Sensitive, LeafEntity? Definition);
 }

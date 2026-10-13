@@ -230,5 +230,11 @@
     "slug": "storyboard-cockpit-suggestion",
     "name": "Storyboard cockpit suggestion",
     "data": { "icon": "ph-bold ph-sparkle", "color": "orange", "versioning": true, "description": "Grounded, transcript-evidenced AI proposal awaiting a GM decision." }
+  },
+  {
+    "typeSlug": "entity-type",
+    "slug": "storyboard-entity-visibility",
+    "name": "Storyboard entity visibility",
+    "data": { "icon": "ph-bold ph-eye", "color": "orange", "versioning": true, "description": "Campaign player access to one canonical Workspace entity's safe player view." }
   }
 ]

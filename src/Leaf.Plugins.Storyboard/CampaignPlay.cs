@@ -23,7 +23,7 @@ internal sealed record CampaignPlaybookSnapshot(JsonArray Items, string Hash);
 
 public sealed class StoryAgentPlaybooks(StoryStore store, StoryCampaigns campaigns)
 {
-    public static readonly string[] Capabilities = ["planning", "information", "music", "visuals", "handouts"];
+    public static readonly string[] Capabilities = ["planning", "information", "music", "visuals"];
 
     public async Task<object> ListAsync(string campaign, string account, CancellationToken ct = default)
     {

@@ -11,6 +11,7 @@ public sealed class StoryCampaignAgentTools(
     StoryWorkspace workspace,
     StoryTranscript transcript,
     StoryCockpit cockpit,
+    StoryEntityVisibility visibility,
     StoryCampaignPlay play,
     StoryAgentPlaybooks playbooks,
     StoryMusic music,
@@ -36,6 +37,7 @@ public sealed class StoryCampaignAgentTools(
             playMode = await play.StatusAsync(campaign, actor, ct),
             playbooks = new { revisionHash = playbookSnapshot.Hash, items = playbookSnapshot.Items },
             cockpit = await cockpit.SnapshotAsync(campaign, actor, ct),
+            reveals = await visibility.IndexAsync(campaign, actor, ct),
             currentTranscript = await transcript.CurrentAsync(campaign, actor, ct),
             music = new
             {
@@ -74,6 +76,31 @@ public sealed class StoryCampaignAgentTools(
     {
         var conversation = await RequireInteractiveAsync(campaign, http, ct);
         return await workspace.AgentSaveAsync(campaign, conversation.Agent.Id.ToString(), entity, input, ct);
+    }
+
+    public async Task<object> WorkspacePlayerViewSaveAsync(string campaign, string entity, HttpContext http, WorkspacePlayerViewWrite input, CancellationToken ct)
+    {
+        var conversation = await RequireInteractiveAsync(campaign, http, ct);
+        return await workspace.AgentSavePlayerViewAsync(campaign, conversation.Agent.Id.ToString(), entity, input, ct);
+    }
+
+    public async Task<object> VisibilityAsync(string campaign, HttpContext http, CancellationToken ct)
+    {
+        var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        return await visibility.IndexAsync(campaign, conversation.Campaign.Data.Text("creator"), ct);
+    }
+
+    public async Task<object> RevealAsync(string campaign, string entity, HttpContext http, EntityVisibilityWrite input, CancellationToken ct)
+    {
+        CampaignConversation conversation;
+        try { conversation = await RequireInteractiveAsync(campaign, http, ct); }
+        catch (StoryException error) when (error.Code == "interactive_agent_discussion_required")
+        {
+            conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+            await RequirePlayModeAsync(campaign, ct);
+            await playbooks.RequireAutonomousDraftAsync(campaign, "information", ct);
+        }
+        return await visibility.AgentSetAsync(campaign, conversation.Agent.Id.ToString(), entity, input, ct);
     }
 
     public async Task<object> PlayersAsync(string campaign, HttpContext http, CancellationToken ct)

@@ -16,7 +16,7 @@ export function route(url: URL, method: string): Route | null {
   if (new Set(keys).size !== keys.length) return null
   const query = (allowed: string[]) => keys.every(k => allowed.includes(k))
   const match = (pattern: string) => new RegExp(`^${pattern}$`).test(p)
-  if (p === '/' || match(`/campaigns/${id}/(?:description|players|agent|cockpit|transcript|music|visuals|workspace|projection)`)) {
+  if (p === '/' || match(`/campaigns/${id}/(?:description|players|agent|cockpit|journal|transcript|music|visuals|workspace|projection)`)) {
     // Campaign URLs are client-side SPA routes. Always fetch the site entrypoint from
     // Leaf instead of asking the static host for a file at the browser route.
     return method === 'GET' && query([]) ? { target: mount + '/site/', static: true, immutable: false } : null
@@ -55,12 +55,16 @@ export function route(url: URL, method: string): Route | null {
     allowed = method === 'POST' && query([]) || method === 'GET' && query(['types', 'query', 'cursor', 'limit', 'locale']) && keys.includes('types') && types.length <= 4000 && /^[a-z0-9-]+(?:,[a-z0-9-]+)*$/.test(types) && (cursor === null || /^\d{1,9}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit)) && (search === null || search.length <= 200) && (locale === null || /^(?:en|fr)$/.test(locale))
   }
   if (match(`/api/campaigns/${id}/workspace/entities/${id}`)) allowed = method === 'PUT' && query([])
+  if (match(`/api/campaigns/${id}/workspace/entities/${id}/player-view`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/images/[a-z0-9_-]{1,160}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/cockpit`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/cockpit/entities`)) allowed = method === 'GET' && query(['query']) && keys.length <= 1 && (url.searchParams.get('query')?.length ?? 0) <= 200
   if (match(`/api/campaigns/${id}/cockpit/items`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/cockpit/items/${id}/move`) || match(`/api/campaigns/${id}/cockpit/observe`) || match(`/api/campaigns/${id}/cockpit/suggestions/${id}/decide`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/cockpit/entities/${id}/visibility`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/journal`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/journal/entities/${id}/image`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/agent/chat`)) {
     const epoch = url.searchParams.get('afterEpoch')
     const sequence = url.searchParams.get('afterSequence')
@@ -77,7 +81,7 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/artwork/brief`) || match(`/api/campaigns/${id}/artwork/generations`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/artwork/generations/${id}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/agent/playbooks`)) allowed = method === 'GET' && query([])
-  if (match(`/api/campaigns/${id}/agent/playbooks/(?:planning|information|music|visuals|handouts)`)) allowed = method === 'PUT' && query([])
+  if (match(`/api/campaigns/${id}/agent/playbooks/(?:planning|information|music|visuals)`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/play-mode`)) allowed = ['GET', 'POST'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/agent/discussions/${discussion}/chat`)) {
     const epoch = url.searchParams.get('afterEpoch')

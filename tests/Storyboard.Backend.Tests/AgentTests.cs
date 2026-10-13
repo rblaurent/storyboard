@@ -349,6 +349,7 @@ public sealed class AgentTests
             fixture.Workspace,
             fixture.Transcript,
             fixture.Cockpit,
+            fixture.Visibility,
             play,
             playbooks,
             null!,
@@ -418,7 +419,7 @@ public sealed class AgentTests
         var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
         var tools = new StoryCampaignAgentTools(
             fixture.Store, fixture.Agent, fixture.Campaigns, fixture.Workspace, fixture.Transcript,
-            fixture.Cockpit, play, playbooks, null!, fixture.Visuals);
+            fixture.Cockpit, fixture.Visibility, play, playbooks, null!, fixture.Visuals);
         var generationInput = new VisualImageGenerationWrite(
             Guid.NewGuid().ToString(), "A rain-soaked observatory above a sleeping city", "Midnight observatory", false);
 
@@ -453,6 +454,66 @@ public sealed class AgentTests
     }
 
     [Fact]
+    public async Task CampaignAgentRevealsDirectlyInConversationAndNeedsInformationAutonomyInHeartbeat()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaignId = fixture.Campaign.Id.ToString();
+        await fixture.Agent.ReadAsync(campaignId, fixture.Gm.Id.ToString(), null, null);
+        var campaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var root = (await fixture.Entities.GetAsync(StoryJson.Id(campaign.Data.Text("workspace"))))!;
+        await fixture.Entities.UpsertBySlugAsync("entity-type", "fixture-reveal", "Reveal", new JsonObject { ["scope"] = root.Slug, ["system"] = false });
+        var entity = await fixture.Entities.UpsertBySlugAsync("fixture-reveal", "agent-reveal", "Agent reveal", new JsonObject { ["parent"] = root.Id.ToString(), ["description"] = "Canonical private description." });
+        var prepared = StoryJson.Object(await fixture.Workspace.SavePlayerViewAsync(campaignId, fixture.Gm.Id.ToString(), entity.Id.ToString(), new(
+            "Player-safe reveal", "Only this description crosses the boundary.", null, [], entity.UpdatedAt.ToString("O"), Guid.NewGuid().ToString())));
+        var membership = await fixture.Campaigns.MembershipAsync(campaignId, fixture.Player.Id.ToString());
+        var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var tools = new StoryCampaignAgentTools(
+            fixture.Store, fixture.Agent, fixture.Campaigns, fixture.Workspace, fixture.Transcript,
+            fixture.Cockpit, fixture.Visibility, play, playbooks, null!, fixture.Visuals);
+
+        static DefaultHttpContext Context(string agentId, string sessionId)
+        {
+            var identity = new JsonObject
+            {
+                ["actor"] = new JsonObject { ["kind"] = "agent", ["entityId"] = agentId },
+                ["context"] = new JsonArray(new JsonObject { ["kind"] = "session", ["id"] = sessionId }),
+            };
+            var context = new DefaultHttpContext();
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("token_use", "execution"), new Claim("execution_identity", identity.ToJsonString())],
+                "Bearer"));
+            return context;
+        }
+
+        var discussions = await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?> { ["campaign"] = campaignId },
+            Limit = 200,
+        });
+        var normal = discussions.Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign");
+        await tools.RevealAsync(campaignId, entity.Id.ToString(), Context(campaign.Data.Text("agent"), normal.Data.Text("session_id")), new(false, [membership.Id.ToString()], true, Guid.NewGuid().ToString()), default);
+        Assert.Single(StoryJson.Object(await fixture.Visibility.JournalAsync(campaignId, fixture.Player.Id.ToString()))["items"]!.AsArray());
+
+        await play.SetAsync(campaignId, fixture.Gm.Id.ToString(), new CampaignPlayWrite(true, Guid.NewGuid().ToString()));
+        var heartbeat = (await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
+        {
+            TypeSlug = "discussion",
+            DataEquals = new Dictionary<string, object?> { ["campaign"] = campaignId },
+            Limit = 200,
+        })).Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign-heartbeat");
+        var heartbeatContext = Context(campaign.Data.Text("agent"), heartbeat.Data.Text("session_id"));
+        var denied = await Assert.ThrowsAsync<StoryException>(() => tools.RevealAsync(campaignId, entity.Id.ToString(), heartbeatContext, new(false, [], false, Guid.NewGuid().ToString()), default));
+        Assert.Equal("agent_capability_disabled", denied.Code);
+
+        await playbooks.SaveAsync(campaignId, fixture.Gm.Id.ToString(), "information", new CampaignPlaybookWrite(true, true, 60, ["transcript-change"], "Reveal only explicit discoveries.", "Never reveal GM-only facts.", 0, Guid.NewGuid().ToString()));
+        await tools.RevealAsync(campaignId, entity.Id.ToString(), heartbeatContext, new(false, [], false, Guid.NewGuid().ToString()), default);
+        Assert.Empty(StoryJson.Object(await fixture.Visibility.JournalAsync(campaignId, fixture.Player.Id.ToString()))["items"]!.AsArray());
+        Assert.Equal("Player-safe reveal", prepared["playerView"]!.AsObject().Text("title"));
+    }
+
+    [Fact]
     public async Task PlayModeOwnsOneAutomationHeartbeatDiscussionAndRevisionedPlaybooks()
     {
         await using var fixture = await Fixture.Create();
@@ -460,7 +521,7 @@ public sealed class AgentTests
         var account = fixture.Gm.Id.ToString();
         var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
         var defaults = StoryJson.Object(await playbooks.ListAsync(campaign, account));
-        Assert.Equal(5, defaults["items"]!.AsArray().Count);
+        Assert.Equal(4, defaults["items"]!.AsArray().Count);
 
         var saved = StoryJson.Object(await playbooks.SaveAsync(campaign, account, "music", new CampaignPlaybookWrite(
             true, true, 90, ["scene-change", "queue-low"], "Brass motifs for the Concord.", "No generic trailer music.", 0, Guid.NewGuid().ToString())));

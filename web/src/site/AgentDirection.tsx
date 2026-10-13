@@ -20,7 +20,7 @@ function policy(capability: string) {
   if (capability === 'music') return 'The Agent may search the library and create draft candidates in play mode. Saving, queueing and playback stay with the GM.'
   if (capability === 'visuals') return 'In play mode, the Agent may generate reusable images and add, remove or immediately show them in the slideshow.'
   if (capability === 'planning') return 'The Agent may read campaign evidence and submit Cockpit proposals. Canon changes stay with the GM.'
-  if (capability === 'information') return 'The Agent may review and organise its working understanding. Campaign records are never destructively rewritten.'
+  if (capability === 'information') return 'The Agent may prepare player-safe entity views and propose grounded reveals. Automatic reveals use only prepared views and require explicit permission.'
   return 'The Agent may draft material in its discussion. Publishing and canon changes stay with the GM.'
 }
 
@@ -61,7 +61,7 @@ export function AgentDirection({ campaignId, capability, csrfToken, title }: { c
       <p className="agent-direction-policy"><SiteIcon name="info" />{policy(capability)}</p>
       <div className="agent-direction-controls">
         <label className="check"><input type="checkbox" checked={value.enabled} onChange={event => setValue({ ...value, enabled: event.target.checked })} />Agent may use this capability</label>
-        {(capability === 'music' || capability === 'visuals') && <label className="check"><input type="checkbox" checked={value.autoDrafts} onChange={event => setValue({ ...value, autoDrafts: event.target.checked })} />{capability === 'visuals' ? 'Generate live visuals during play mode' : 'Create draft candidates during play mode'}</label>}
+        {(capability === 'music' || capability === 'visuals' || capability === 'information') && <label className="check"><input type="checkbox" checked={value.autoDrafts} onChange={event => setValue({ ...value, autoDrafts: event.target.checked })} />{capability === 'visuals' ? 'Generate live visuals during play mode' : capability === 'information' ? 'Reveal prepared discoveries automatically during play mode' : 'Create draft candidates during play mode'}</label>}
         <label>Cooldown in seconds<input type="number" min={15} max={3600} value={value.cooldownSeconds} onChange={event => setValue({ ...value, cooldownSeconds: Number(event.target.value) })} /></label>
       </div>
       <label>When to consider acting<input value={triggers} onChange={event => setTriggers(event.target.value)} placeholder="scene-change, mood-change, queue-low" /><small>Comma-separated structured signals. The Agent still decides whether useful work is needed.</small></label>

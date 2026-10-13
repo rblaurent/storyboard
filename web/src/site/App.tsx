@@ -9,6 +9,7 @@ import { AgentDirection } from './AgentDirection'
 import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 import { LanguageSwitch, useLocale } from './i18n'
+import { Journal, type JournalSnapshot } from './Journal'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -116,7 +117,7 @@ export function App() {
       setMe(null); navigate('/')
     } catch (c) { setError(explain(c)) } finally { setSigningOut(false) }
   }
-  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|agent|cockpit|transcript|music|visuals|workspace)$/i.exec(path)
+  const match = /^\/campaigns\/([0-9a-f-]{36})\/(description|players|agent|cockpit|journal|transcript|music|visuals|workspace)$/i.exec(path)
   const projectionMatch = /^\/campaigns\/([0-9a-f-]{36})\/projection$/i.exec(path)
   const routedCampaignId = match?.[1] || projectionMatch?.[1] || ''
   const liveCampaignId = routedCampaignId || playerCampaignId
@@ -266,6 +267,7 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
   const [operation, setOperation] = useState<Operation | null>(null)
   const [pollError, setPollError] = useState('')
   const [pollVersion, setPollVersion] = useState(0)
+  const [journalAlert, setJournalAlert] = useState('')
   const mounted = useRef(true)
   const tabsRef = useRef<HTMLElement>(null)
   const lock = useRef(false)
@@ -287,6 +289,26 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
     if (currentBox.left < tabsBox.left) tabs.scrollTo({ left: tabs.scrollLeft - (tabsBox.left - currentBox.left), behavior: 'auto' })
     else if (currentBox.right > tabsBox.right) tabs.scrollTo({ left: tabs.scrollLeft + (currentBox.right - tabsBox.right), behavior: 'auto' })
   }, [tab, gm])
+  useEffect(() => {
+    if (!campaign || campaign.role === 'gm') return
+    const key = `storyboard:journal-seen:${me.id}:${id}`
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    async function poll() {
+      try {
+        const value = await api<JournalSnapshot>(`${base}/journal`)
+        if (cancelled) return
+        const latest = value.latestRevealAt || ''
+        const seen = (() => { try { return sessionStorage.getItem(key) || '' } catch { return '' } })()
+        if (tab === 'journal') {
+          if (latest) try { sessionStorage.setItem(key, latest) } catch { /* notification hints are optional */ }
+          setJournalAlert('')
+        } else if (latest && latest > seen) setJournalAlert(value.items[0]?.title || 'New discovery')
+      } catch { /* The Journal owns visible errors; notification polling stays quiet. */ }
+      if (!cancelled) timer = setTimeout(() => void poll(), 5000)
+    }
+    void poll(); return () => { cancelled = true; if (timer) clearTimeout(timer) }
+  }, [campaign?.role, me.id, id, base, tab])
   function retain(value: Receipt | null) { setReceipt(value); try { if (value) sessionStorage.setItem(receiptKey, JSON.stringify(value)); else sessionStorage.removeItem(receiptKey) } catch { /* resume hints are optional, never authority */ } }
   useEffect(() => {
     if (!receipt?.id || !gm) return
@@ -339,10 +361,10 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
           </Menu>
         </div>
       </div>
-      <nav ref={tabsRef} className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', ...(gm ? ['agent', 'cockpit'] : []), 'transcript', 'music', 'visuals', ...(gm ? ['workspace'] : [])].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'agent' ? 'agent' : t === 'cockpit' ? 'clock' : t === 'transcript' ? 'transcript' : t === 'music' ? 'music' : t === 'visuals' ? 'images' : 'workspace'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'agent' ? 'Agent' : t === 'cockpit' ? 'Cockpit' : t === 'transcript' ? 'Transcript' : t === 'music' ? 'Music' : t === 'visuals' ? 'Visuals' : 'Workspace'}</Link>)}</nav>
+      <nav ref={tabsRef} className="campaign-tabs" aria-label="Campaign tabs">{['description', 'players', ...(gm ? ['agent', 'cockpit'] : []), 'journal', 'transcript', 'music', 'visuals', ...(gm ? ['workspace'] : [])].map(t => <Link key={t} href={`${base}/${t}`} navigate={navigate} aria-current={tab === t ? 'page' : undefined}><SiteIcon name={t === 'description' ? 'description' : t === 'players' ? 'players' : t === 'agent' ? 'agent' : t === 'cockpit' ? 'clock' : t === 'journal' ? 'notebook' : t === 'transcript' ? 'transcript' : t === 'music' ? 'music' : t === 'visuals' ? 'images' : 'workspace'} />{t === 'description' ? 'Description' : t === 'players' ? 'Players' : t === 'agent' ? 'Agent' : t === 'cockpit' ? 'Cockpit' : t === 'journal' ? 'Journal' : t === 'transcript' ? 'Transcript' : t === 'music' ? 'Music' : t === 'visuals' ? 'Visuals' : 'Workspace'}</Link>)}</nav>
     </header>
-    <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}
-    {tab === 'workspace' ? gm ? <CampaignWorkspace id={id} me={me} /> : <GmOnlyPage title="Workspace" /> : tab === 'cockpit' ? gm ? <section className="cockpit-page"><CampaignPageHeader title="Game Master Cockpit" description="Track what happened, what was prepared, what the players know, and what you may need next." /><Cockpit campaignId={id} csrfToken={me.csrfToken} /></section> : <GmOnlyPage title="Cockpit" /> : tab === 'agent' ? gm ? <section className="agent-page"><CampaignChat campaignId={id} csrfToken={me.csrfToken} /></section> : <GmOnlyPage title="Agent" /> : tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'transcript' ? <TranscriptWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
+    <ErrorMessage error={error} />{notice && <Feedback tone="notice">{notice}</Feedback>}{journalAlert && <Link className="journal-notification" href={`${base}/journal`} navigate={navigate}><SiteIcon name="notebook" /><span><strong>New discovery</strong>{journalAlert}</span></Link>}
+    {tab === 'workspace' ? gm ? <CampaignWorkspace id={id} me={me} /> : <GmOnlyPage title="Workspace" /> : tab === 'cockpit' ? gm ? <section className="cockpit-page"><CampaignPageHeader title="Game Master Cockpit" description="Track what happened, what was prepared, what the players know, and what you may need next." /><Cockpit campaignId={id} csrfToken={me.csrfToken} /></section> : <GmOnlyPage title="Cockpit" /> : tab === 'agent' ? gm ? <section className="agent-page"><CampaignChat campaignId={id} csrfToken={me.csrfToken} /></section> : <GmOnlyPage title="Agent" /> : tab === 'journal' ? <Journal campaignId={id} /> : tab === 'visuals' ? <VisualsWorkspace id={id} gm={!!gm} me={me} /> : tab === 'music' ? <MusicWorkspace id={id} gm={!!gm} me={me} /> : tab === 'transcript' ? <TranscriptWorkspace id={id} gm={!!gm} me={me} /> : tab === 'players' ? <Players id={id} gm={!!gm} me={me} onMembershipChange={async () => { await refresh() }} /> : <section className="description-page"><CampaignPageHeader title="Description" description="Edit the campaign premise, summary, and artwork." /><div className="description-grid">
       <div>
         {gm ? <form className="description-form" onSubmit={e => { e.preventDefault(); if (active) return; void perform(async () => { const value = await api<Campaign>(base, me.csrfToken, 'PUT', draftRef.current); if (mounted.current) { accept(value, true); setNotice('Campaign saved.') } }) }}><label htmlFor="campaign-name">Campaign name</label><input id="campaign-name" value={draft.name} onChange={e => edit('name', e.target.value)} required maxLength={120} /><label htmlFor="campaign-description">Description</label><textarea id="campaign-description" rows={12} maxLength={40000} value={draft.description} onChange={e => edit('description', e.target.value)} placeholder="Set the scene. What kind of world will your players step into?" /><label htmlFor="campaign-summary">Summary</label><textarea id="campaign-summary" rows={4} maxLength={1500} value={draft.summary} onChange={e => edit('summary', e.target.value)} placeholder="A short introduction for your table" /><div className="form-actions"><button className="primary" disabled={busy || active || !draft.name.trim() || !dirty.current}><SiteIcon name={busy ? 'busy' : 'save'} className={busy ? 'is-spinning' : undefined} />{busy ? 'Saving…' : 'Save changes'}</button><span className="quiet">{active ? 'Wait for the current request before saving.' : dirty.current ? 'Unsaved changes' : 'All changes saved'}</span></div></form> : <article className="read-description"><p>{campaign.description || 'Your Game Master has not added a description yet.'}</p></article>}
         {gm && dirty.current && <details className="saved-version"><summary>Review latest saved version</summary><button disabled={busy || active} onClick={() => void perform(async () => { await refresh(); setNotice('The latest saved version is shown below. Your draft is kept.') })}>Refresh saved version</button><h3>{campaign.name}</h3><p>{campaign.description || 'No saved description.'}</p><p>{campaign.summary || 'No saved summary.'}</p>{draft.expectedRevision !== campaign.revision && <button disabled={busy || active} onClick={reviewLatest}>Keep draft against latest revision</button>}</details>}

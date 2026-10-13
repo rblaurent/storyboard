@@ -107,7 +107,7 @@ export async function api<T>(path: string, csrf = '', method = 'GET', body?: unk
 // Remote images are limited to Google's verified avatar hosts. Campaign artwork is scoped media.
 export function imageSource(value: string | null | undefined): string | undefined {
   if (!value) return undefined
-  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/(?:candidates|tracks)\/[0-9a-f-]{36}\/cover|visuals\/(?:images\/[0-9a-f-]{36}|candidates\/[0-9a-f-]{36}\/image))$/i.test(value)) return value
+  if (/^\/api\/campaigns\/[0-9a-f-]{36}\/(?:media\/(?:cover|characters\/[0-9a-f-]{36})|music\/(?:candidates|tracks)\/[0-9a-f-]{36}\/cover|visuals\/(?:images\/[0-9a-f-]{36}|candidates\/[0-9a-f-]{36}\/image)|journal\/entities\/[0-9a-f-]{36}\/image)$/i.test(value)) return value
   try { const u = new URL(value); if (u.protocol === 'https:' && (/^lh[3-6]\.googleusercontent\.com$/.test(u.hostname) || u.hostname === 'i.scdn.co') && !u.username && !u.password && !u.port) return u.href } catch { /* Untrusted image URL. */ }
   return undefined
 }

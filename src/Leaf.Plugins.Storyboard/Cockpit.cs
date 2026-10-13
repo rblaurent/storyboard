@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Leaf.Plugins.Storyboard;
 
-public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, IAiInference ai)
+public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, StoryEntityVisibility visibility, IAiInference ai)
 {
     private static readonly HashSet<string> Phases = new(StringComparer.Ordinal) { "prepared", "now", "played" };
     private static readonly HashSet<string> Lenses = new(StringComparer.Ordinal) { "beat", "discovery", "belief" };
@@ -16,10 +16,11 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         var current = (await store.AllAsync("storyboard-campaign-session", new Dictionary<string, object?> { ["campaign"] = campaign, ["state"] = "active" }, ct)).OrderByDescending(value => value.CreatedAt).FirstOrDefault();
         var entities = await workspace.CockpitEntitiesAsync(campaign, account, limit: 500, ct: ct);
         var byId = entities.ToDictionary(value => value.Entity.Id.ToString(), StringComparer.Ordinal);
+        var visibilityState = await visibility.StateAsync(campaign, ct);
         var items = (await store.AllAsync("storyboard-cockpit-item", new Dictionary<string, object?> { ["campaign"] = campaign }, ct))
             .Where(item => item.Data.Flag("active") && byId.ContainsKey(item.Data.Text("entity")))
             .OrderBy(item => item.Data.Text("phase") == "played" ? 0 : item.Data.Text("phase") == "now" ? 1 : 2).ThenBy(item => item.Data.Number("position")).ThenBy(item => item.CreatedAt)
-            .Select(item => ProjectItem(item, byId[item.Data.Text("entity")])).ToArray();
+            .Select(item => ProjectItem(item, byId[item.Data.Text("entity")], visibilityState.GetValueOrDefault(item.Data.Text("entity")))).ToArray();
         var suggestions = current is null ? [] : (await store.AllAsync("storyboard-cockpit-suggestion", new Dictionary<string, object?> { ["campaign"] = campaign, ["session"] = current.Id.ToString() }, ct))
             .Where(value => value.Data.Text("state") == "proposed").OrderByDescending(value => value.UpdatedAt).Take(8).Select(ProjectSuggestion).ToArray();
         object[] events = [];
@@ -30,7 +31,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             events = recent.Events.Where(value => value.Data.Text("kind") is not "audio" and not "tts").Select(ProjectEvent).ToArray();
             cursor = recent.Events.FirstOrDefault(value => value.Data.Text("kind") is not "audio" and not "tts")?.Data.Text("event_id");
         }
-        return new { session = current is null ? null : new { id = current.Id, name = current.Name, state = current.Data.Text("state"), roleplayAnchor = current.Data.Text("roleplay_anchor") }, items, suggestions, events, observationCursor = cursor };
+        return new { session = current is null ? null : new { id = current.Id, name = current.Name, state = current.Data.Text("state"), roleplayAnchor = current.Data.Text("roleplay_anchor") }, players = await campaigns.PlayersAsync(campaign, account, ct), items, suggestions, events, observationCursor = cursor };
     }
 
     public async Task<object> SearchAsync(string campaign, string account, string? query, CancellationToken ct = default)
@@ -61,7 +62,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
                 return next;
             }, ct);
             await store.AuditAsync("cockpit.item.pinned", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["entity"] = target.Entity.Id.ToString(), ["phase"] = phase }, ct);
-            return ProjectItem(saved, target);
+            return ProjectItem(saved, target, null);
         }
         finally { store.Commands.Release(); }
     }
@@ -80,7 +81,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             await campaigns.MembershipAsync(campaign, account, true, ct);
             item = await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["phase"] = phase; next["lens"] = lens; next["position"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); next["last_operation"] = operation; return next; }, ct);
             var target = (await workspace.CockpitEntitiesAsync(campaign, account, limit: 500, ct: ct)).SingleOrDefault(value => value.Entity.Id.ToString() == item.Data.Text("entity")) ?? throw new StoryException("cockpit_entity_unavailable", 409);
-            return ProjectItem(item, target);
+            return ProjectItem(item, target, null);
         }
         finally { store.Commands.Release(); }
     }
@@ -138,7 +139,13 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         var suggestion = await store.RequireAsync("storyboard-cockpit-suggestion", suggestionId, ct);
         if (suggestion.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
         await campaigns.MembershipAsync(campaign, account, true, ct);
-        if (input.Decision == "accept" && suggestion.Data.Text("entity") != "") await PinAsync(campaign, account, new CockpitPinWrite(suggestion.Data.Text("entity"), "now", operation), ct);
+        if (input.Decision == "accept" && suggestion.Data.Text("entity") != "")
+        {
+            if (suggestion.Data.Text("action", "pin") == "reveal")
+                await visibility.SetAsync(campaign, account, suggestion.Data.Text("entity"), new EntityVisibilityWrite(suggestion.Data.Flag("everyone"), Strings(suggestion.Data["players"]), true, operation), ct);
+            else
+                await PinAsync(campaign, account, new CockpitPinWrite(suggestion.Data.Text("entity"), "now", operation), ct);
+        }
         await store.Commands.WaitAsync(ct);
         try
         {
@@ -174,6 +181,10 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         var confidence = (input.Confidence ?? "medium").Trim().ToLowerInvariant();
         if (confidence is not "low" and not "medium" and not "high")
             throw new StoryException("invalid_cockpit_confidence");
+        var action = string.IsNullOrWhiteSpace(input.Action) ? "pin" : input.Action.Trim().ToLowerInvariant();
+        if (action is not "pin" and not "reveal") throw new StoryException("invalid_cockpit_action");
+        var players = (input.PlayerIds ?? []).Select(value => StoryJson.Id(value).ToString()).Distinct(StringComparer.Ordinal).Take(50).ToArray();
+        if (action == "reveal") await workspace.PlayerContextAsync(campaign, target.Entity.Id.ToString(), ct);
 
         await store.Commands.WaitAsync(ct);
         try
@@ -191,6 +202,9 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
                 ["summary"] = StoryJson.Bounded(input.Summary, 500, true),
                 ["evidence"] = new JsonArray(evidence.Select(value => (JsonNode?)value).ToArray()),
                 ["confidence"] = confidence,
+                ["action"] = action,
+                ["everyone"] = input.Everyone,
+                ["players"] = new JsonArray(players.Select(value => (JsonNode?)value).ToArray()),
                 ["created_by_agent"] = agentId,
                 ["last_operation"] = operation,
             }, ct);
@@ -220,8 +234,8 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
     private static string Lens(string? value) { value = string.IsNullOrWhiteSpace(value) ? "beat" : StoryJson.Bounded(value, 24, true).ToLowerInvariant(); return Lenses.Contains(value) ? value : throw new StoryException("invalid_cockpit_lens"); }
     private static int Relevance(CockpitWorkspaceEntity candidate, IReadOnlyList<string> terms) { var text = candidate.Entity.Name + " " + StoryJson.Object(candidate.Projection)["data"]?.ToJsonString(); return terms.Count(term => text.Contains(term, StringComparison.OrdinalIgnoreCase)); }
     private static string BoundedForPrompt(string value, int max) => value.Length <= max ? value : value[..max];
-    private static object ProjectItem(LeafEntity item, CockpitWorkspaceEntity entity) => new { id = item.Id, phase = item.Data.Text("phase"), lens = item.Data.Text("lens", "beat"), position = item.Data.Number("position"), entity = entity.Projection, typeName = entity.TypeName };
-    private static object ProjectSuggestion(LeafEntity value) => new { id = value.Id, title = value.Data.Text("title"), summary = value.Data.Text("summary"), entityId = value.Data.Text("entity"), evidence = value.Data["evidence"]?.DeepClone(), confidence = value.Data.Text("confidence"), state = value.Data.Text("state") };
+    private static object ProjectItem(LeafEntity item, CockpitWorkspaceEntity entity, JsonObject? visibility) => new { id = item.Id, phase = item.Data.Text("phase"), lens = item.Data.Text("lens", "beat"), position = item.Data.Number("position"), entity = entity.Projection, typeName = entity.TypeName, visibility };
+    private static object ProjectSuggestion(LeafEntity value) => new { id = value.Id, title = value.Data.Text("title"), summary = value.Data.Text("summary"), entityId = value.Data.Text("entity"), evidence = value.Data["evidence"]?.DeepClone(), confidence = value.Data.Text("confidence"), state = value.Data.Text("state"), action = value.Data.Text("action", "pin"), everyone = value.Data.Flag("everyone"), playerIds = Strings(value.Data["players"]) };
     private static object ProjectEvent(LeafRecord value) => new { id = value.Data.Text("event_id"), kind = value.Data.Text("kind"), channel = value.Data.Text("channel"), text = value.Data.Text("text"), actor = value.Data["actor"]?.DeepClone(), occurredAt = value.Data.Text("occurred_at", value.CreatedAt.ToString("O")) };
     private static CockpitAnswer ParseAnswer(string text, IReadOnlyList<CockpitWorkspaceEntity> candidates, IReadOnlyList<LeafRecord> events)
     {
@@ -235,4 +249,5 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         return new(true, entityId, StoryJson.Bounded(value.Text("title", "Relevant now"), 120, true), StoryJson.Bounded(value.Text("summary"), 500), evidence, confidence);
     }
     private sealed record CockpitAnswer(bool Suggest, string EntityId, string Title, string Summary, string[] Evidence, string Confidence);
+    private static string[] Strings(JsonNode? node) => node is JsonArray array ? array.Select(value => value?.GetValue<string>() ?? "").Where(value => value != "").ToArray() : [];
 }

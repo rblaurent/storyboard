@@ -18,7 +18,6 @@ const playbooks = [
   ['information', 'Information and player model'],
   ['music', 'Music'],
   ['visuals', 'Visuals'],
-  ['handouts', 'Handouts and documents'],
 ] as const
 
 export function AgentSettings({ campaignId, csrfToken, onChanged }: { campaignId: string; csrfToken: string; onChanged: (agent: AgentSettingsValue['agent']) => void }) {
