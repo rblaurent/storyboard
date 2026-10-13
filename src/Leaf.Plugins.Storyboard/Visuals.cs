@@ -23,12 +23,19 @@ public sealed record VisualGenerationWrite(string OperationId, string Situation,
     public int? Width { get; init; }
     public int? Height { get; init; }
     public string? WorkflowRole { get; init; }
+    public bool AutoPromote { get; init; }
+}
+public sealed record VisualImageGenerationWrite(string OperationId, string Prompt, string? Title, bool Confirmed)
+{
+    public string? PlaybookHash { get; init; }
+    public string? HeartbeatTurn { get; init; }
 }
 public sealed record ArtworkBriefWrite(string TargetKind, string? EntityId, string? Field, string Prompt, int CandidateCount = 3);
 public sealed record ArtworkGenerationWrite(string OperationId, string TargetKind, string? EntityId, string? Field, string Prompt, string RefinedPrompt, string? NegativePrompt, string? Title, int CandidateCount, bool Confirmed);
 public sealed record VisualSetWrite(string Name, string? Description, string OperationId);
 public sealed record VisualSetItemWrite(string VisualId);
 public sealed record VisualQueueWrite(string? VisualId, string? SetId, string OperationId);
+public sealed record VisualShowWrite(string VisualId, string OperationId);
 public sealed record VisualSessionCommand(string Action, string OperationId, long ExpectedRevision, string? VisualId = null, int? IntervalSeconds = null, string? Transition = null, bool? Loop = null, bool? Blackout = null);
 
 public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, ILogger<StoryVisuals> logger) : BackgroundService
@@ -230,6 +237,27 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
         }, ct);
     }
 
+    public async Task<object> StartImageGenerationAsync(string campaign, string account, VisualImageGenerationWrite input, CancellationToken ct)
+    {
+        if (input is null || !input.Confirmed) throw new StoryException("visual_generation_confirmation_required", 409);
+        var prompt = StoryJson.Bounded(input.Prompt, 4000, true);
+        var requestedTitle = StoryJson.Bounded(input.Title, 160);
+        var title = requestedTitle.Length > 0 ? requestedTitle : VisualTitle(prompt);
+        return await StartGenerationAsync(campaign, account, new VisualGenerationWrite(
+            input.OperationId,
+            prompt,
+            new VisualBriefWrite(title, "crossfade", 30, [new VisualFrameWrite(title, prompt, "", [])]),
+            true)
+        {
+            SourcePrompt = prompt,
+            RefinedPrompt = prompt,
+            WorkflowRole = "scene",
+            AutoPromote = true,
+            PlaybookHash = input.PlaybookHash,
+            HeartbeatTurn = input.HeartbeatTurn,
+        }, ct);
+    }
+
     public async Task<object> ArtworkGenerationAsync(string campaign, string account, string operation, CancellationToken ct)
         => await GenerationAsync(campaign, account, operation, ct);
 
@@ -271,7 +299,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             if (previous is not null)
             {
                 await store.CheckProtectionAsync(previous, ct);
-                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief) || previous.Data.Text("playbook_hash") != (input.PlaybookHash ?? "") || previous.Data.Text("heartbeat_turn") != (input.HeartbeatTurn ?? "") || previous.Data.Text("source_prompt") != (input.SourcePrompt ?? "") || previous.Data.Text("refined_prompt") != (input.RefinedPrompt ?? "") || previous.Data.Text("negative_prompt") != (input.NegativePrompt ?? "") || !JsonNode.DeepEquals(previous.Data["artwork_target"], target)) throw new StoryException("operation_reused", 409);
+                if (previous.Data.Text("campaign") != campaign || previous.Data.Text("account") != account || previous.Data.Text("situation") != situation || !JsonNode.DeepEquals(previous.Data["brief"], brief) || previous.Data.Text("playbook_hash") != (input.PlaybookHash ?? "") || previous.Data.Text("heartbeat_turn") != (input.HeartbeatTurn ?? "") || previous.Data.Text("source_prompt") != (input.SourcePrompt ?? "") || previous.Data.Text("refined_prompt") != (input.RefinedPrompt ?? "") || previous.Data.Text("negative_prompt") != (input.NegativePrompt ?? "") || previous.Data.Flag("auto_promote") != input.AutoPromote || !JsonNode.DeepEquals(previous.Data["artwork_target"], target)) throw new StoryException("operation_reused", 409);
                 if (previous.Data.Text("state") == "failed") previous = await PatchAsync(previous, new JsonObject { ["state"] = "pending", ["error"] = "" }, ct);
                 return await GenerationProjectionAsync(previous, ct);
             }
@@ -291,7 +319,8 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
                 ["workflow"] = workflow.Slug, ["workflow_id"] = workflow.Id.ToString(), ["workflow_revision"] = workflow.UpdatedAt.ToString("O"),
                 ["workflow_inputs"] = workflowInputs, ["quality_mode"] = config.Data.Text("quality_mode", "deep"), ["width"] = width, ["height"] = height, ["steps"] = steps, ["cfg"] = cfg, ["seeds"] = seeds, ["jobs"] = new JsonObject(),
                 ["source_prompt"] = input.SourcePrompt ?? "", ["refined_prompt"] = input.RefinedPrompt ?? "", ["negative_prompt"] = input.NegativePrompt ?? "", ["artwork_target"] = target,
-                ["target_kind"] = input.TargetKind ?? "", ["target_entity"] = input.TargetEntityId ?? "", ["target_field"] = input.TargetField ?? "", ["workflow_role"] = workflowRole
+                ["target_kind"] = input.TargetKind ?? "", ["target_entity"] = input.TargetEntityId ?? "", ["target_field"] = input.TargetField ?? "", ["workflow_role"] = workflowRole,
+                ["auto_promote"] = input.AutoPromote
             }, ct);
             var created = await store.ChangeAsync("storyboard-visual-generation", slug, brief.Text("title"), old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
             return await GenerationProjectionAsync(created, ct);
@@ -312,16 +341,8 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
         {
             await store.WritableAsync(ct); var candidate = await store.RequireAsync("storyboard-visual-candidate", candidateId, ct);
             if (candidate.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
-            if (candidate.Data.Text("promoted_visual") is { Length: > 0 } existing) return VisualProjection(await store.RequireAsync("storyboard-visual", existing, ct));
             var generation = await store.RequireAsync("storyboard-visual-generation", candidate.Data.Text("generation"), ct);
-            var data = await store.ProtectAsync(new JsonObject
-            {
-                ["campaign"] = campaign, ["image_asset"] = candidate.Data.Text("image_asset"), ["prompt"] = candidate.Data.Text("prompt"), ["mood"] = candidate.Data.Text("mood"),
-                ["tags"] = candidate.Data["tags"]?.DeepClone(), ["width"] = generation.Data.Number("width"), ["height"] = generation.Data.Number("height"), ["generation"] = generation.Id.ToString(),
-                ["compute_job"] = candidate.Data.Text("compute_job"), ["workflow_id"] = generation.Data.Text("workflow_id"), ["workflow_revision"] = generation.Data.Text("workflow_revision"), ["active"] = true
-            }, ct);
-            var visual = await store.ChangeAsync("storyboard-visual", "visual-" + candidate.Id.ToString("N"), candidate.Name, old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
-            await PatchAsync(candidate, new JsonObject { ["promoted_visual"] = visual.Id.ToString() }, ct); await store.AuditAsync("visual.candidate.promoted", account, visual.Id.ToString(), ct: ct); return VisualProjection(visual);
+            return VisualProjection(await PromoteCandidateAsync(candidate, generation, account, ct));
         }
         finally { store.Commands.Release(); }
     }
@@ -375,6 +396,35 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     public async Task<object> SessionAsync(string campaign, string account, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, ct: ct); return await SessionProjectionAsync(campaign, await SessionEntityAsync(campaign, false, ct), ct);
+    }
+
+    public async Task<object> ShowAsync(string campaign, string account, VisualShowWrite input, CancellationToken ct)
+    {
+        if (input is null) throw new StoryException("invalid_visual_command");
+        await campaigns.MembershipAsync(campaign, account, true, ct);
+        var operation = StoryJson.Id(input.OperationId);
+        var visualId = StoryJson.Id(input.VisualId).ToString();
+        await store.Commands.WaitAsync(ct);
+        try
+        {
+            await store.WritableAsync(ct);
+            var session = await SessionEntityAsync(campaign, true, ct) ?? throw new InvalidOperationException();
+            if (session.Data.Text("last_operation") == operation.ToString())
+            {
+                if (session.Data.Text("last_operation_visual") != visualId) throw new StoryException("operation_reused", 409);
+                return await SessionProjectionAsync(campaign, session, ct);
+            }
+            var visual = await RequireVisualAsync(campaign, visualId, ct);
+            session = await PatchSessionAsync(session, new JsonObject
+            {
+                ["current_visual"] = visual.Id.ToString(), ["current_queue_item"] = "", ["playing"] = false,
+                ["blackout"] = false, ["next_at"] = 0, ["last_operation"] = operation.ToString(),
+                ["last_operation_visual"] = visual.Id.ToString(), ["updated_by"] = account
+            }, ct);
+            await store.AuditAsync("visual.session.show", account, session.Id.ToString(), ct: ct);
+            return await SessionProjectionAsync(campaign, session, ct);
+        }
+        finally { store.Commands.Release(); }
     }
 
     public async Task<object> CommandAsync(string campaign, string account, VisualSessionCommand input, CancellationToken ct)
@@ -443,7 +493,12 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
         op = await PatchAsync(op, new JsonObject { ["state"] = "generating" }, ct); var brief = op.Data["brief"]!.AsObject(); var frames = (JsonArray)brief["frames"]!; var jobsNode = op.Data["jobs"]?.DeepClone().AsObject() ?? new JsonObject(); var profile = op.Data["profile"]!.AsObject(); var seeds = (JsonArray)op.Data["seeds"]!;
         for (var index = 0; index < frames.Count; index++)
         {
-            if (await store.Entities.GetBySlugAsync("storyboard-visual-candidate", $"visual-candidate-{op.Id:N}-{index}", ct) is not null) continue;
+            var existingCandidate = await store.Entities.GetBySlugAsync("storyboard-visual-candidate", $"visual-candidate-{op.Id:N}-{index}", ct);
+            if (existingCandidate is not null)
+            {
+                if (op.Data.Flag("auto_promote")) await PromoteCandidateAsync(existingCandidate, op, op.Data.Text("account"), ct);
+                continue;
+            }
             var frame = frames[index]!.AsObject(); var key = index.ToString(); var receipt = jobsNode[key] as JsonObject; var jobId = receipt?.Text("id") ?? jobsNode.Text(key); var capability = receipt?.Text("capability", "image-gen") ?? "image-gen";
             if (jobId == "")
             {
@@ -457,7 +512,8 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
                 if (string.IsNullOrWhiteSpace(job.JobId)) throw new StoryException("image_job_missing", 502); jobId = job.JobId; capability = string.IsNullOrWhiteSpace(job.CapabilitySlug) ? "image-gen" : job.CapabilitySlug; jobsNode[key] = new JsonObject { ["id"] = jobId, ["capability"] = capability }; op = await PatchAsync(op, new JsonObject { ["jobs"] = jobsNode.DeepClone(), ["state"] = "generating" }, ct);
             }
             await jobs.WaitAsync(capability, jobId, options: new ComputeJobOptions { Timeout = TimeSpan.FromMinutes(20) }, ct: ct); await store.WritableAsync(ct); await campaigns.MembershipAsync(op.Data.Text("campaign"), op.Data.Text("account"), true, ct); using var image = await jobs.DownloadOutputAsync(capability, jobId, ct: ct) ?? throw new StoryException("image_output_missing", 502);
-            var asset = await assets.UploadIdempotentAsync(image.Content, $"storyboard-visual-{op.Id}-{index}", $"storyboard-visual-{op.Id:N}-{index}.png", image.ContentType, ct); var data = await store.ProtectAsync(new JsonObject { ["campaign"] = op.Data.Text("campaign"), ["generation"] = op.Id.ToString(), ["image_asset"] = asset.AssetId, ["prompt"] = frame.Text("prompt"), ["mood"] = frame.Text("mood"), ["tags"] = frame["tags"]?.DeepClone(), ["compute_job"] = jobId, ["promoted_visual"] = "" }, ct); await store.ChangeAsync("storyboard-visual-candidate", $"visual-candidate-{op.Id:N}-{index}", frame.Text("title"), old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
+            var asset = await assets.UploadIdempotentAsync(image.Content, $"storyboard-visual-{op.Id}-{index}", $"storyboard-visual-{op.Id:N}-{index}.png", image.ContentType, ct); var data = await store.ProtectAsync(new JsonObject { ["campaign"] = op.Data.Text("campaign"), ["generation"] = op.Id.ToString(), ["image_asset"] = asset.AssetId, ["prompt"] = frame.Text("prompt"), ["mood"] = frame.Text("mood"), ["tags"] = frame["tags"]?.DeepClone(), ["compute_job"] = jobId, ["promoted_visual"] = "" }, ct); var candidate = await store.ChangeAsync("storyboard-visual-candidate", $"visual-candidate-{op.Id:N}-{index}", frame.Text("title"), old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
+            if (op.Data.Flag("auto_promote")) await PromoteCandidateAsync(candidate, op, op.Data.Text("account"), ct);
         }
         await PatchAsync(op, new JsonObject { ["state"] = "completed", ["error"] = "" }, ct); await store.AuditAsync("visual.generation.completed", op.Data.Text("account"), op.Id.ToString(), new JsonObject { ["count"] = frames.Count }, ct);
     }
@@ -501,6 +557,21 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     }
     private async Task<LeafEntity> RequireVisualAsync(string campaign, string id, CancellationToken ct) { var visual = await store.RequireAsync("storyboard-visual", id, ct); if (visual.Data.Text("campaign") != campaign || !visual.Data.Flag("active")) throw new StoryException("not_found", 404); return visual; }
     private async Task<LeafEntity> RequireSetAsync(string campaign, string id, CancellationToken ct) { var set = await store.RequireAsync("storyboard-visual-set", id, ct); if (set.Data.Text("campaign") != campaign || !set.Data.Flag("active")) throw new StoryException("not_found", 404); return set; }
+    private async Task<LeafEntity> PromoteCandidateAsync(LeafEntity candidate, LeafEntity generation, string account, CancellationToken ct)
+    {
+        if (candidate.Data.Text("promoted_visual") is { Length: > 0 } existing) return await store.RequireAsync("storyboard-visual", existing, ct);
+        var data = await store.ProtectAsync(new JsonObject
+        {
+            ["campaign"] = generation.Data.Text("campaign"), ["image_asset"] = candidate.Data.Text("image_asset"), ["prompt"] = candidate.Data.Text("prompt"), ["mood"] = candidate.Data.Text("mood"),
+            ["tags"] = candidate.Data["tags"]?.DeepClone(), ["width"] = generation.Data.Number("width"), ["height"] = generation.Data.Number("height"), ["generation"] = generation.Id.ToString(),
+            ["compute_job"] = candidate.Data.Text("compute_job"), ["workflow_id"] = generation.Data.Text("workflow_id"), ["workflow_revision"] = generation.Data.Text("workflow_revision"), ["active"] = true,
+            ["created_by"] = account
+        }, ct);
+        var visual = await store.ChangeAsync("storyboard-visual", "visual-" + candidate.Id.ToString("N"), candidate.Name, old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
+        await PatchAsync(candidate, new JsonObject { ["promoted_visual"] = visual.Id.ToString() }, ct);
+        await store.AuditAsync("visual.candidate.promoted", account, visual.Id.ToString(), ct: ct);
+        return visual;
+    }
     private async Task<object> SetProjectionAsync(LeafEntity set, CancellationToken ct) => new { id = set.Id, name = set.Name, description = set.Data.Text("description"), imageCount = (await SetItemsAsync(set.Data.Text("campaign"), set.Id.ToString(), ct)).Count };
     private async Task CheckWorkflowAsync(LeafEntity op, CancellationToken ct) { var workflow = await store.Entities.GetAsync(StoryJson.Id(op.Data.Text("workflow_id")), ct); if (workflow?.TypeSlug != "comfyui-workflow" || workflow.UpdatedAt.ToString("O") != op.Data.Text("workflow_revision")) throw new StoryException("workflow_changed", 409); }
     private async Task<LeafEntity> PatchAsync(LeafEntity entity, JsonObject patch, CancellationToken ct) => await store.ChangeAsync(entity.TypeSlug, entity.Slug, entity.Name, old => { var next = old!.Data.DeepClone().AsObject(); foreach (var p in patch) next[p.Key] = p.Value?.DeepClone(); return next; }, ct);
@@ -536,6 +607,13 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     private static VisualBriefWrite ValidateBrief(VisualBriefWrite input, int minimumFrames = 1) { if (input?.Frames is null || input.Frames.Length < minimumFrames || input.Frames.Length > 6) throw new StoryException("invalid_visual_brief"); return new(StoryJson.Bounded(input.Title, 160, true), ValidateTransition(input.Transition), Math.Clamp(input.IntervalSeconds, 5, 300), input.Frames.Select(ValidateFrame).ToArray()); }
     private static VisualFrameWrite ValidateFrame(VisualFrameWrite input) => new(StoryJson.Bounded(input?.Title, 160, true), StoryJson.Bounded(input?.Prompt, 4000, true), StoryJson.Bounded(input?.Mood, 80), (input?.Tags ?? []).Take(12).Select(t => StoryJson.Bounded(t, 40, true)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
     private static string ValidateTransition(string value) { value = StoryJson.Bounded(value, 20, true).ToLowerInvariant(); if (value is not "cut" and not "crossfade") throw new StoryException("invalid_visual_transition"); return value; }
+    private static string VisualTitle(string prompt)
+    {
+        var line = prompt.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        var stop = line.IndexOfAny(['.', '!', '?']);
+        if (stop is > 0 and < 120) line = line[..stop];
+        return line.Length <= 120 ? line : line[..117].TrimEnd() + "...";
+    }
     private static string[] Tags(JsonNode? node) => node is JsonArray a ? a.Select(v => v?.GetValue<string>() ?? "").Where(v => v != "").Take(12).ToArray() : [];
     private static long NumberOr(JsonObject data, string key, long fallback) => data[key] is null ? fallback : data.Number(key);
     private static HashSet<string> Tokens(string value) => value.ToLowerInvariant().Split([' ', ',', '.', ';', ':', '-', '_', '/', '\\', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries).Where(v => v.Length > 2).ToHashSet(StringComparer.OrdinalIgnoreCase);

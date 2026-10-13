@@ -191,6 +191,45 @@ public sealed class StoryCampaignAgentTools(
         }, ct);
     }
 
+    public async Task<object> VisualImageGenerationAsync(string campaign, HttpContext http, VisualImageGenerationWrite input, CancellationToken ct)
+    {
+        if (input is null) throw new StoryException("invalid_json");
+        var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        await RequirePlayModeAsync(campaign, ct);
+        var playbook = await playbooks.RequireAutonomousDraftAsync(campaign, "visuals", ct);
+        await RequireCooldownAsync(campaign, "storyboard-visual-generation", playbook, input.OperationId, ct);
+        return await visuals.StartImageGenerationAsync(campaign, conversation.Campaign.Data.Text("creator"), input with
+        {
+            Confirmed = true,
+            PlaybookHash = playbook.Text("playbookHash"),
+            HeartbeatTurn = ExecutionId(http),
+        }, ct);
+    }
+
+    public async Task<object> VisualEnqueueAsync(string campaign, HttpContext http, VisualQueueWrite input, CancellationToken ct)
+    {
+        var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        await RequirePlayModeAsync(campaign, ct);
+        await playbooks.RequireEnabledAsync(campaign, "visuals", ct);
+        return await visuals.EnqueueAsync(campaign, conversation.Campaign.Data.Text("creator"), input, ct);
+    }
+
+    public async Task<object> VisualQueueRemoveAsync(string campaign, string item, HttpContext http, CancellationToken ct)
+    {
+        var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        await RequirePlayModeAsync(campaign, ct);
+        await playbooks.RequireEnabledAsync(campaign, "visuals", ct);
+        return await visuals.RemoveQueueItemAsync(campaign, conversation.Campaign.Data.Text("creator"), item, ct);
+    }
+
+    public async Task<object> VisualShowAsync(string campaign, HttpContext http, VisualShowWrite input, CancellationToken ct)
+    {
+        var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        await RequirePlayModeAsync(campaign, ct);
+        await playbooks.RequireEnabledAsync(campaign, "visuals", ct);
+        return await visuals.ShowAsync(campaign, conversation.Campaign.Data.Text("creator"), input, ct);
+    }
+
     private async Task RequirePlayModeAsync(string campaign, CancellationToken ct)
     {
         var status = await play.EntityAsync(campaign, ct);

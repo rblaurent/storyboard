@@ -1057,7 +1057,7 @@ public sealed class StoryCampaignAgent(
             "Works only inside this campaign and its canonical workspace.",
             "Reads campaign content, players, transcript, music, visuals, Cockpit and capability playbooks.",
             "May create workspace records only in an interactive GM discussion.",
-            "May draft Cockpit, music and visual candidates; canon, playback and projection remain under GM control.",
+            "May draft Cockpit and music candidates; in play mode it may generate reusable visuals and control the visual queue or projection.",
             "Play-mode heartbeat is read-only for canon and records its work in the heartbeat discussion.",
         },
     };
@@ -1094,6 +1094,10 @@ public sealed class StoryCampaignAgent(
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/music/generations
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/match
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/generations
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/images
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/queue
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/queue/{item}/remove
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/show
 
         Send `Authorization: Bearer $REDLEAF_EXECUTION_TOKEN` only to trusted loopback RedLeaf.
         The API verifies that you are this campaign's Agent. Never print, log or forward the token.
@@ -1126,10 +1130,11 @@ public sealed class StoryCampaignAgent(
         music library/playback/queue, visual library/sets/projection and effective playbooks through
         campaign-scoped Storyboard tools. In interactive GM discussions you can create and revision-check
         update typed workspace entities. You can search existing music and visuals, submit grounded cockpit
-        proposals for GM approval, and,
-        while play mode and the corresponding autonomous-draft policy are active, start asynchronous
-        music or visual draft generation. Generated candidates are never canon, playback, queue or
-        projection. Those promotions remain explicit GM actions. Campaign id: {{campaign.Id}}.
+        proposals for GM approval, and, while play mode and the corresponding autonomous policy are
+        active, start asynchronous music drafts or generate one reusable visual at a time. Visuals
+        generated through the one-image command are saved directly to the campaign library. During
+        play mode you may add or remove slideshow queue items and show a library visual immediately.
+        Music promotion and playback remain explicit GM actions. Campaign id: {{campaign.Id}}.
 
         Campaign-scoped tools:
         - GET http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/state
@@ -1146,6 +1151,10 @@ public sealed class StoryCampaignAgent(
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/music/generations
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/match
         - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/generations
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/images
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/queue
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/queue/{item}/remove
+        - POST http://127.0.0.1:18804/api/apps/storyboard/campaigns/{{campaign.Id}}/agent/visuals/show
         """;
 
     private sealed record AgentPresentation(string Avatar, JsonArray Skills);

@@ -110,6 +110,7 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/visuals/profile/refine`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/visuals/workflows`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/visuals/library`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/visuals/images`) || match(`/api/campaigns/${id}/visuals/show`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/visuals/sets`) || match(`/api/campaigns/${id}/visuals/queue`)) allowed = ['GET', 'POST'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/visuals/(?:match|brief|generations)`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/visuals/generations/${id}`) || match(`/api/campaigns/${id}/visuals/sets/${id}`) || match(`/api/campaigns/${id}/visuals/session`)) allowed = method === 'GET' && query([])

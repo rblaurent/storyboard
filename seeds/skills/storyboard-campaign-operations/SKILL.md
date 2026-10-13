@@ -1,6 +1,6 @@
 ---
 name: storyboard-campaign-operations
-description: Operate one Storyboard campaign through its scoped workspace, roster, cockpit, transcript, music, visual and play-mode tools. Use whenever preparing, running, reviewing, organising or generating material for the campaign.
+description: Operate one Storyboard campaign through its scoped workspace, roster, cockpit, transcript, music, visual-generation, slideshow and play-mode tools. Use whenever preparing, running, reviewing, organising or generating material for the campaign.
 ---
 
 # Storyboard campaign operations
@@ -41,13 +41,21 @@ in the heartbeat discussion or use a cockpit proposal. Never delete workspace en
 
 - Submit grounded, reversible cockpit proposals with `POST .../agent/cockpit/proposals`.
 - Find existing music with `POST .../agent/music/find`; find an existing visual with `POST .../agent/visuals/match`.
-- Media generation uses `POST .../agent/music/generations` and `POST .../agent/visuals/generations`. The server allows
-  it only during active play mode when the corresponding playbook enables autonomous drafts, and applies cooldown and
-  idempotency rules. Read generation status through the matching detail endpoint.
+- Music generation uses `POST .../agent/music/generations`. It produces reviewable candidates and is allowed only
+  during active play mode when the music playbook enables autonomous drafts.
+- Generate one reusable 16:9 campaign image with `POST .../agent/visuals/images` and
+  `{operationId,prompt,title?,confirmed:true}`. Describe only the visible scene; Storyboard applies the saved campaign
+  visual identity, scene workflow, projection composition and negative prompt. The completed image is saved directly
+  to the campaign library. Read its exact operation through `GET .../agent/visuals/generations/{operation}` and use
+  the returned candidate's `promotedVisual` as the library visual id.
+- During active play mode, add a library image to the slideshow with `POST .../agent/visuals/queue` and
+  `{visualId,operationId}`, remove one with `POST .../agent/visuals/queue/{queueItemId}/remove`, or show it immediately
+  with `POST .../agent/visuals/show` and `{visualId,operationId}`. Queue removal never deletes the reusable image.
+- Visual playlists are optional preparation aids. Prefer one-image generation plus direct queue/show commands during
+  a live scene.
 
-Generated candidates are drafts. Do not promote them into canonical libraries, alter queues, start playback or change
-the player projection. Those are explicit GM actions. Do not add/remove players, change roles, expose credentials or
-rewrite the transcript.
+Music candidates remain drafts and music playback stays under GM control. Visual generation and slideshow mutation
+follow the narrower rules above. Do not add/remove players, change roles, expose credentials or rewrite the transcript.
 
 ## Working discipline
 

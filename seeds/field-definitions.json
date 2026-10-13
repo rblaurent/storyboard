@@ -1465,6 +1465,7 @@
   { "parentType": "storyboard-visual-generation", "slug": "target_kind", "name": "Target kind", "fieldType": "string", "sortOrder": 23 },
   { "parentType": "storyboard-visual-generation", "slug": "target_entity", "name": "Target entity", "fieldType": "string", "sortOrder": 24 },
   { "parentType": "storyboard-visual-generation", "slug": "target_field", "name": "Target field", "fieldType": "string", "sortOrder": 25 },
+  { "parentType": "storyboard-visual-generation", "slug": "auto_promote", "name": "Save directly to library", "fieldType": "boolean", "sortOrder": 26, "defaultValue": "false" },
 
   { "parentType": "storyboard-visual-candidate", "slug": "campaign", "name": "Campaign", "fieldType": "entity_ref", "sortOrder": 0, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-campaign\"}" },
   { "parentType": "storyboard-visual-candidate", "slug": "generation", "name": "Generation", "fieldType": "entity_ref", "sortOrder": 1, "isRequired": true, "constraints": "{\"target_type\": \"storyboard-visual-generation\"}" },

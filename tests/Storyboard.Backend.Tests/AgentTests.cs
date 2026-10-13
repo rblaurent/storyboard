@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Leaf.Plugins.Storyboard;
 using Leaf.Sdk.Services;
@@ -393,6 +394,62 @@ public sealed class AgentTests
             new WorkspaceEntityCreate("fixture-note", "Autonomous canon", null, new JsonObject()),
             default));
         Assert.Equal("interactive_agent_discussion_required", denied.Code);
+    }
+
+    [Fact]
+    public async Task CampaignAgentCanGenerateQueueShowAndRemoveVisualsOnlyDuringPlayMode()
+    {
+        await using var fixture = await Fixture.Create();
+        var campaignId = fixture.Campaign.Id.ToString();
+        await fixture.Agent.ReadAsync(campaignId, fixture.Gm.Id.ToString(), null, null);
+        var campaign = (await fixture.Entities.GetAsync(fixture.Campaign.Id))!;
+        var context = new DefaultHttpContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim("token_use", "execution"),
+            new Claim("execution_identity", new JsonObject
+            {
+                ["actor"] = new JsonObject { ["kind"] = "agent", ["entityId"] = campaign.Data.Text("agent") },
+                ["executionId"] = Guid.NewGuid().ToString(),
+            }.ToJsonString()),
+        ], "Bearer"));
+
+        var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var tools = new StoryCampaignAgentTools(
+            fixture.Store, fixture.Agent, fixture.Campaigns, fixture.Workspace, fixture.Transcript,
+            fixture.Cockpit, play, playbooks, null!, fixture.Visuals);
+        var generationInput = new VisualImageGenerationWrite(
+            Guid.NewGuid().ToString(), "A rain-soaked observatory above a sleeping city", "Midnight observatory", false);
+
+        var inactive = await Assert.ThrowsAsync<StoryException>(() =>
+            tools.VisualImageGenerationAsync(campaignId, context, generationInput, default));
+        Assert.Equal("play_mode_inactive", inactive.Code);
+
+        await play.SetAsync(campaignId, fixture.Gm.Id.ToString(), new CampaignPlayWrite(true, Guid.NewGuid().ToString()));
+        var started = StoryJson.Object(await tools.VisualImageGenerationAsync(campaignId, context, generationInput, default));
+        Assert.True(started.Flag("agentGenerated"));
+        Assert.Equal("pending", started.Text("state"));
+
+        var generation = await fixture.Store.RequireAsync("storyboard-visual-generation", started.Text("id"));
+        await fixture.Visuals.RunGenerationAsync(generation, default);
+        var completed = StoryJson.Object(await fixture.Visuals.GenerationAsync(campaignId, fixture.Gm.Id.ToString(), started.Text("id"), default));
+        var visualId = completed["candidates"]!.AsArray().Single()!.AsObject().Text("promotedVisual");
+        Assert.NotEmpty(visualId);
+
+        var queued = (JsonArray)JsonSerializer.SerializeToNode(await tools.VisualEnqueueAsync(
+            campaignId, context, new VisualQueueWrite(visualId, null, Guid.NewGuid().ToString()), default))!;
+        var queueId = queued.Single()!.AsObject().Text("queueId");
+        var shown = StoryJson.Object(await tools.VisualShowAsync(
+            campaignId, context, new VisualShowWrite(visualId, Guid.NewGuid().ToString()), default));
+        Assert.Equal(visualId, shown["current"]!.AsObject().Text("id"));
+
+        var afterRemoval = (JsonArray)JsonSerializer.SerializeToNode(await tools.VisualQueueRemoveAsync(
+            campaignId, queueId, context, default))!;
+        Assert.Empty(afterRemoval);
+        var library = (JsonArray)JsonSerializer.SerializeToNode(await fixture.Visuals.LibraryAsync(
+            campaignId, fixture.Gm.Id.ToString(), default))!;
+        Assert.Single(library);
     }
 
     [Fact]
