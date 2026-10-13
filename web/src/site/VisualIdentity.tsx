@@ -8,7 +8,7 @@ function sameProfile(left: VisualProfile | null, right: VisualProfile | null) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
-export function VisualIdentity({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
+export function VisualIdentity({ campaignId, csrfToken, onModelChange }: { campaignId: string; csrfToken: string; onModelChange?: (name: string) => void }) {
   const [saved, setSaved] = useState<VisualProfile | null>(null)
   const [draft, setDraft] = useState<VisualProfile | null>(null)
   const [workflows, setWorkflows] = useState<ImageWorkflowIndex | null>(null)
@@ -25,7 +25,11 @@ export function VisualIdentity({ campaignId, csrfToken }: { campaignId: string; 
     void Promise.all([
       api<VisualProfile>(`/campaigns/${campaignId}/visuals/profile`, '', 'GET', undefined, controller.signal),
       api<ImageWorkflowIndex>(`/campaigns/${campaignId}/visuals/workflows`, '', 'GET', undefined, controller.signal),
-    ]).then(([profile, options]) => { setSaved(profile); setDraft(profile); setWorkflows(options) })
+    ]).then(([profile, options]) => {
+      const model = profile.sceneWorkflow || profile.defaultWorkflow || options.defaultWorkflow
+      const simpleProfile = { ...profile, defaultWorkflow: model, portraitWorkflow: '', sceneWorkflow: '' }
+      setSaved(simpleProfile); setDraft(simpleProfile); setWorkflows(options)
+    })
       .catch(cause => { if (!controller.signal.aborted) setError(explain(cause)) })
     return () => controller.abort()
   }, [campaignId])
@@ -46,20 +50,18 @@ export function VisualIdentity({ campaignId, csrfToken }: { campaignId: string; 
     setBusy('save'); setError(''); setNotice('')
     try {
       const result = await api<VisualProfile>(`/campaigns/${campaignId}/visuals/profile`, csrfToken, 'PUT', draft)
-      setSaved(result); setDraft(result); setNotice('Visual identity saved. New images will use it.')
+      const simpleProfile = { ...result, portraitWorkflow: '', sceneWorkflow: '' }
+      setSaved(simpleProfile); setDraft(simpleProfile); setNotice('Visual identity and image model saved. New images will use them.')
     } catch (cause) { setError(explain(cause)) }
     finally { setBusy('') }
   }
 
-  const workflowName = (slug: string) => workflows?.items.find(value => value.slug === slug)?.name || slug
-  const fallbackName = workflows ? workflowName(workflows.defaultWorkflow) : 'Storyboard default'
-  const select = (label: string, key: 'defaultWorkflow' | 'portraitWorkflow' | 'sceneWorkflow', fallback: string) => <label>{label}<select value={draft?.[key] || ''} onChange={event => draft && setDraft({ ...draft, [key]: event.target.value })} disabled={!!busy}>
-    <option value="">{fallback}</option>
-    {workflows?.items.map(workflow => <option key={workflow.id} value={workflow.slug}>{workflow.name}{workflow.license ? ` · ${workflow.license}` : ''}</option>)}
-  </select></label>
+  const selectedWorkflow = workflows?.items.find(value => value.slug === saved?.defaultWorkflow)
+  const draftWorkflow = workflows?.items.find(value => value.slug === draft?.defaultWorkflow)
+  useEffect(() => { onModelChange?.(selectedWorkflow?.name || '') }, [onModelChange, selectedWorkflow?.name])
 
   return <details className="visual-identity panel" open={expanded ?? (saved !== null && !saved.configured)} onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary><span><SiteIcon name="images" /><span><strong>Campaign visual identity</strong><small>{saved?.configured ? 'Applied to every new campaign image' : 'Set a coherent style before generating more images'}</small></span></span><span className={`visual-identity-state${dirty ? ' is-dirty' : ''}`}>{dirty ? 'UNSAVED' : saved?.configured ? 'READY' : 'NEEDS DIRECTION'}</span></summary>
+    <summary><span><SiteIcon name="images" /><span><strong>Visual identity &amp; image model</strong><small>{selectedWorkflow ? `${selectedWorkflow.name} · Applied to every new campaign image` : 'Set a coherent style and image model before generating more images'}</small></span></span><span className={`visual-identity-state${dirty ? ' is-dirty' : ''}`}>{dirty ? 'UNSAVED' : saved?.configured ? 'READY' : 'NEEDS DIRECTION'}</span></summary>
     {!draft || !workflows ? <p role={error ? 'alert' : 'status'}>{error || 'Opening the campaign visual identity…'}</p> : <form onSubmit={save}>
       <section className="visual-identity-proposal">
         <div><span className="eyebrow">STYLE PROPOSAL</span><h3>Give the campaign one visual language</h3><p>Storyboard may read the campaign premise to choose genre and mood. The saved result contains only reusable image-making language, never lore or story details.</p></div>
@@ -75,12 +77,10 @@ export function VisualIdentity({ campaignId, csrfToken }: { campaignId: string; 
       </div>
 
       <section className="visual-identity-workflows">
-        <div><span className="eyebrow">RENDERING</span><h3>Choose compatible image workflows</h3><p>Only text-to-image workflow entities with the inputs Storyboard needs are shown.</p></div>
-        <div className="visual-workflow-grid">
-          {select('Campaign default', 'defaultWorkflow', `Storyboard default · ${fallbackName}`)}
-          {select('Portrait image workflow', 'portraitWorkflow', 'Use campaign default')}
-          {select('Scene image workflow', 'sceneWorkflow', 'Use campaign default')}
-        </div>
+        <div><span className="eyebrow">RENDERING</span><h3>Choose the campaign image model</h3><p>This RedCompute workflow is used for manual and Agent image generation throughout the campaign.</p></div>
+        <label>Image model<select value={draft.defaultWorkflow} onChange={event => setDraft({ ...draft, defaultWorkflow: event.target.value, portraitWorkflow: '', sceneWorkflow: '' })} disabled={!!busy}>
+          {workflows.items.map(workflow => <option key={workflow.id} value={workflow.slug}>{workflow.name}{workflow.providerModel && workflow.providerModel !== workflow.name ? ` · ${workflow.providerModel}` : ''}{workflow.license ? ` · ${workflow.license}` : ''}</option>)}
+        </select>{draftWorkflow?.description && <small>{draftWorkflow.description}</small>}</label>
       </section>
 
       <section className="visual-projection-defaults">

@@ -45,7 +45,7 @@ in the heartbeat discussion or use a cockpit proposal. Never delete workspace en
   during active play mode when the music playbook enables autonomous drafts.
 - Generate one reusable 16:9 campaign image with `POST .../agent/visuals/images` and
   `{operationId,prompt,title?,confirmed:true}`. Describe only the visible scene; Storyboard applies the saved campaign
-  visual identity, scene workflow, projection composition and negative prompt. The completed image is saved directly
+  visual identity, campaign image-model workflow, projection composition and negative prompt. The completed image is saved directly
   to the campaign library. Read its exact operation through `GET .../agent/visuals/generations/{operation}` and use
   the returned candidate's `promotedVisual` as the library visual id.
 - During active play mode, add a library image to the slideshow with `POST .../agent/visuals/queue` and

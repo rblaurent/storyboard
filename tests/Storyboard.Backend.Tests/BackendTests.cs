@@ -103,6 +103,9 @@ public sealed class BackendTests
         await using var f = await Fixture.Create();
         using var client = await f.Host();
         var root = "/campaigns/" + f.Campaign.Id + "/visuals";
+        await f.Visuals.SaveProfileAsync(f.Campaign.Id.ToString(), f.Gm.Id.ToString(), new(
+            "Painterly nocturnal fantasy", "lettering, watermark", 20, "crossfade",
+            "Readable character studies", "Atmospheric environments", "qwen_fixture"), default);
         var prompt = "A silent observatory above a copper cloud sea";
         var operation = Guid.NewGuid();
         var body = new JsonObject { ["operationId"] = operation.ToString(), ["prompt"] = prompt, ["title"] = "", ["confirmed"] = true }.ToJsonString();
@@ -115,6 +118,8 @@ public sealed class BackendTests
         }
         var generation = await f.Store.RequireAsync("storyboard-visual-generation", generationId);
         Assert.True(generation.Data.Flag("auto_promote"));
+        Assert.Equal("qwen_fixture", generation.Data.Text("workflow"));
+        Assert.Equal(40, generation.Data.Number("steps"));
         Assert.Equal(1280, generation.Data.Number("width"));
         Assert.Equal(720, generation.Data.Number("height"));
         await f.Visuals.RunGenerationAsync(generation, default);
