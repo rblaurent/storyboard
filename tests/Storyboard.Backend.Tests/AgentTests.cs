@@ -355,12 +355,17 @@ public sealed class AgentTests
             null!,
             fixture.Visuals);
 
-        static DefaultHttpContext Context(string agentId, string sessionId)
+        static DefaultHttpContext Context(string agentId, params (string Kind, string Id)[] references)
         {
             var identity = new JsonObject
             {
                 ["actor"] = new JsonObject { ["kind"] = "agent", ["entityId"] = agentId },
-                ["context"] = new JsonArray(new JsonObject { ["kind"] = "session", ["id"] = sessionId }),
+                ["context"] = new JsonArray(references
+                    .Select(reference => (JsonNode)new JsonObject
+                    {
+                        ["kind"] = reference.Kind,
+                        ["id"] = reference.Id,
+                    }).ToArray()),
             };
             var context = new DefaultHttpContext();
             context.User = new ClaimsPrincipal(new ClaimsIdentity(
@@ -377,10 +382,25 @@ public sealed class AgentTests
         })).Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign");
         var created = StoryJson.Object(await tools.WorkspaceCreateAsync(
             campaignId,
-            Context(campaign.Data.Text("agent"), normal.Data.Text("session_id")),
+            Context(campaign.Data.Text("agent"),
+                ("storyboard-campaign-discussion", normal.Data.Text("discussion_id"))),
             new WorkspaceEntityCreate("fixture-note", "Agent-authored note", null, new JsonObject()),
             default));
         Assert.Equal("fixture-note", created.Text("typeSlug"));
+
+        var compatible = StoryJson.Object(await tools.WorkspaceCreateAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"), ("session", normal.Data.Text("session_id"))),
+            new WorkspaceEntityCreate("fixture-note", "Session-compatible note", null, new JsonObject()),
+            default));
+        Assert.Equal("fixture-note", compatible.Text("typeSlug"));
+
+        var wrongDiscussion = await Assert.ThrowsAsync<StoryException>(() => tools.WorkspaceCreateAsync(
+            campaignId,
+            Context(campaign.Data.Text("agent"), ("storyboard-campaign-discussion", "sb" + Guid.NewGuid().ToString("N")[..14])),
+            new WorkspaceEntityCreate("fixture-note", "Wrong discussion", null, new JsonObject()),
+            default));
+        Assert.Equal("interactive_agent_discussion_required", wrongDiscussion.Code);
 
         await play.SetAsync(campaignId, fixture.Gm.Id.ToString(), new CampaignPlayWrite(true, Guid.NewGuid().ToString()));
         var heartbeat = (await fixture.Entities.QueryAsync(new Leaf.Sdk.EntityQuery
@@ -391,7 +411,8 @@ public sealed class AgentTests
         })).Single(value => value.Data.Text("conversation_kind") == "storyboard-campaign-heartbeat");
         var denied = await Assert.ThrowsAsync<StoryException>(() => tools.WorkspaceCreateAsync(
             campaignId,
-            Context(campaign.Data.Text("agent"), heartbeat.Data.Text("session_id")),
+            Context(campaign.Data.Text("agent"),
+                ("storyboard-campaign-heartbeat", heartbeat.Data.Text("discussion_id"))),
             new WorkspaceEntityCreate("fixture-note", "Autonomous canon", null, new JsonObject()),
             default));
         Assert.Equal("interactive_agent_discussion_required", denied.Code);

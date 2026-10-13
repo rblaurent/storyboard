@@ -291,9 +291,13 @@ public sealed class StoryCampaignAgentTools(
     {
         var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
         var identity = JsonNode.Parse(http.User.FindFirst("execution_identity")?.Value ?? "null") as JsonObject;
-        var sessionId = (identity?["context"] as JsonArray)?.OfType<JsonObject>()
+        var contexts = (identity?["context"] as JsonArray)?.OfType<JsonObject>().ToArray() ?? [];
+        var discussionId = contexts
+            .FirstOrDefault(value => value.Text("kind") == "storyboard-campaign-discussion")?.Text("id") ?? "";
+        var sessionId = contexts
             .FirstOrDefault(value => value.Text("kind") == "session")?.Text("id") ?? "";
-        if (sessionId.Length == 0) throw new StoryException("interactive_agent_discussion_required", 403);
+        if (discussionId.Length == 0 && sessionId.Length == 0)
+            throw new StoryException("interactive_agent_discussion_required", 403);
         var discussions = await store.Entities.QueryAsync(new EntityQuery
         {
             TypeSlug = "discussion",
@@ -305,7 +309,9 @@ public sealed class StoryCampaignAgentTools(
             },
             Limit = 200,
         }, ct);
-        var discussion = discussions.SingleOrDefault(value => value.Data.Text("session_id") == sessionId);
+        var discussion = discussions.SingleOrDefault(value =>
+            (discussionId.Length == 0 || value.Data.Text("discussion_id") == discussionId)
+            && (sessionId.Length == 0 || value.Data.Text("session_id") == sessionId));
         if (discussion is null
             || discussion.Data.Text("agent") != conversation.Agent.Id.ToString()
             || discussion.Data.Text("conversation_kind") == "storyboard-campaign-heartbeat")
