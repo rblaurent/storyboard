@@ -9,7 +9,7 @@ export interface MusicTrack { id: string; name: string; artist: string; album: s
 export interface MusicQueueItem { queueId: string; track: MusicTrack }
 export interface MusicPage<T> { items: T[]; offset: number; limit: number; total: number; hasMore: boolean }
 export interface MusicPlayback { available: boolean; playing: boolean; track: MusicTrack | null; progressMs: number; deviceId: string | null; deviceName: string | null; volumePercent: number; error: string | null }
-export interface MusicProjectionState { campaignId: string; revision: number; playing: boolean; progressMs: number; serverTimeMs: number; track: MusicTrack | null; outputReady: boolean; outputName: string | null; spotifyReady: boolean }
+export interface MusicProjectionState { campaignId: string; revision: number; playing: boolean; progressMs: number; serverTimeMs: number; track: MusicTrack | null; outputReady: boolean; outputName: string | null; spotifyReady: boolean; repeatMode: 'off' | 'queue' | 'track'; endless: boolean; endlessError: string; lookaheadPending: boolean }
 export interface MusicBrief { title: string; prompt: string; style: string; negativeTags: string; mood: string; energy: string; tempo: string; instruments: string[]; narrativeArc: string; durationSeconds: number; instrumental: true }
 export interface MusicCandidate { id: string; title: string; tags: string; durationSeconds: number; audio: string; cover: string | null; promotedTrack: string }
 export interface MusicGeneration { id: string; state: 'pending' | 'generating' | 'ingesting' | 'completed' | 'failed'; error: string; creditsConsumed: number; candidates: MusicCandidate[] }
@@ -25,7 +25,7 @@ export interface VisualGeneration { id: string; state: 'pending' | 'generating' 
 export interface VisualSet { id: string; name: string; description: string; imageCount: number }
 export interface VisualQueueItem { queueId: string; visual: Visual }
 export interface VisualSession { campaignId: string; revision: number; playing: boolean; blackout: boolean; loop: boolean; intervalSeconds: number; transition: 'cut' | 'crossfade'; current: Visual | null; currentQueueId: string }
-export interface TranscriptSession { id: string; name: string; state: 'active' | 'ended'; startedAt: string; endedAt: string | null; startedBy: string; roleplayAnchor: string; roleplayAnchorAt: string }
+export interface TranscriptSession { id: string; name: string; state: 'active' | 'ended'; startedAt: string; endedAt: string | null; startedBy: string; roleplayAnchor: string; roleplayAnchorAt: string; recorderClientId: string; recorderLabel: string; recorderMic: string; recorderHeartbeatAt: string | null; recorderLive: boolean; recorderState: string; recorderWarning: string }
 export interface TranscriptActor { type: 'player' | 'character' | 'gm' | 'npc' | 'agent' | 'system' | 'table'; name: string; id?: string | null; avatar?: string | null; characterId?: string | null }
 export interface TranscriptEvent { id: string; sequence: number; irlAt: string; roleplayTime: string; roleplayConfidence: 'explicit' | 'estimated' | 'unknown'; kind: string; channel: 'roleplay' | 'irl' | 'meta'; text: string; actor: TranscriptActor; speakerCluster?: string | null; speakerMapped?: boolean; corrects: string | null; sourceEvent: string | null; durationMs: number; derivationState: string | null; audioUrl: string | null }
 export interface TranscriptPage { session: TranscriptSession; events: TranscriptEvent[]; nextCursor: string | null; hasEarlier: boolean }

@@ -114,12 +114,12 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
   const [draggingOver, setDraggingOver] = useState(false)
   const [intervalDraft, setIntervalDraft] = useState('30')
   async function read() {
-    const [nextSession, nextQueue] = await Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`)])
+    const [nextSession, nextQueue] = await Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), canControl ? api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`) : Promise.resolve([])])
     setSession(nextSession); setQueue(nextQueue)
   }
   useEffect(() => {
     let alive = true
-    const refresh = () => void Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`)]).then(([nextSession, nextQueue]) => { if (alive) { setSession(nextSession); setQueue(nextQueue) } }).catch(() => {})
+    const refresh = () => void Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), canControl ? api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`) : Promise.resolve([])]).then(([nextSession, nextQueue]) => { if (alive) { setSession(nextSession); setQueue(nextQueue) } }).catch(() => {})
     const changed = (event: Event) => {
       const detail = (event as CustomEvent<{ campaignId?: string }>).detail
       if (alive && (!detail?.campaignId || detail.campaignId === campaignId)) refresh()
@@ -128,7 +128,7 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
     const timer = window.setInterval(refresh, 3000)
     window.addEventListener('storyboard:visual-queue-changed', changed)
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:visual-queue-changed', changed) }
-  }, [campaignId])
+  }, [campaignId, canControl])
   useEffect(() => { if (session) setIntervalDraft(String(session.intervalSeconds)) }, [session?.intervalSeconds])
   async function work(label: string, action: () => Promise<void>) {
     if (!canControl || busy) return
@@ -164,17 +164,17 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
   }
   const title = session?.blackout ? 'Blackout' : session?.current?.name || 'Nothing showing'
   return <LiveFoldout module="visuals" label="Visuals" icon="projector" open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className={`live-visual${session?.blackout ? ' is-blackout' : ''}${draggingOver ? ' is-drop-target' : ''}`} aria-label="Live visuals" data-live-drop="visuals" onDragEnter={() => canControl && setDraggingOver(true)} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDraggingOver(false) }} onDragOver={event => { if (!canControl) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy' }} onDrop={drop} status={session?.playing && <i className="live-module-active" aria-label="Slideshow playing" />}>
-    <button className="live-visual-preview" onClick={() => navigate(`/campaigns/${campaignId}/visuals`)} aria-label={`Open Visuals. ${title}`}>
+    <button className="live-visual-preview" disabled={!canControl} onClick={() => canControl && navigate(`/campaigns/${campaignId}/visuals`)} aria-label={canControl ? `Open Visuals. ${title}` : `Current visual. ${title}`}>
       {session?.blackout ? <span className="live-visual-blank" /> : session?.current ? <img src={imageSource(session.current.imageUrl)} alt="" /> : <span className="live-visual-empty"><SiteIcon name="images" size={32} /></span>}
       <span><small>{session?.playing ? 'SLIDESHOW PLAYING' : 'NOW SHOWING'}</small><strong>{title}</strong></span>
     </button>
     {canControl && <><div className="live-slideshow-launch"><button className="primary" disabled={!!busy || !queue.length} onClick={launch}><SiteIcon name="projector" />{session?.playing ? 'Open slideshow' : 'Start slideshow'}</button><label><span>Slide duration</span><span><input aria-label="Slide duration in seconds" type="number" min={5} max={300} value={intervalDraft} onChange={event => setIntervalDraft(event.target.value)} onBlur={configureInterval} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); configureInterval(); event.currentTarget.blur() } }} /> sec</span></label></div><div className="live-projection-controls"><button aria-label="Previous visual" disabled={!!busy || !queue.length} onClick={() => void command('previous')}><SiteIcon name="previous" /></button><button aria-label={session?.playing ? 'Pause slideshow' : 'Play slideshow'} disabled={!!busy || !queue.length} onClick={() => void command(session?.playing ? 'pause' : 'play')}><SiteIcon name={session?.playing ? 'pause' : 'play'} /></button><button aria-label="Next visual" disabled={!!busy || !queue.length} onClick={() => void command('next')}><SiteIcon name="next" /></button><button className={session?.blackout ? 'is-active' : ''} aria-label="Toggle blackout" disabled={!!busy} onClick={() => void command('blackout')}><SiteIcon name="blackout" /></button></div></>}
-    <div className="live-queue-panel" aria-label="Projection queue">
+    {canControl && <div className="live-queue-panel" aria-label="Projection queue">
       <div className="live-queue-heading"><strong>Projection queue</strong><span>{queue.length}</span></div>
       {error && <p className="live-module-error" role="alert">{error}</p>}
       {queue.length ? <ol className="live-visual-queue">{queue.map((item, index) => <li key={item.queueId} className={session?.currentQueueId === item.queueId ? 'is-current' : ''}><button disabled={!canControl || !!busy} onClick={() => void command('show', { visualId: item.visual.id })}><img src={imageSource(item.visual.imageUrl)} alt="" /><span><strong>{item.visual.name}</strong><small>{String(index + 1).padStart(2, '0')}</small></span></button>{canControl && <button className="icon-button" disabled={!!busy} aria-label={`Remove ${item.visual.name} from queue`} onClick={() => void work('remove', async () => setQueue(await api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue/${item.queueId}/remove`, csrfToken, 'POST', {})))}><SiteIcon name="close" size={16} /></button>}</li>)}</ol> : <div className="live-drop-empty"><SiteIcon name="images" /><span>{canControl ? 'Drop an image or visual playlist here' : 'The projection queue is empty'}</span></div>}
       {canControl && queue.length > 0 && <button className="live-clear-queue" disabled={!!busy} onClick={() => void work('clear', async () => setQueue(await api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue/clear`, csrfToken, 'POST', {})))}>Clear queue</button>}
-    </div>
+    </div>}
   </LiveFoldout>
 }
 
@@ -190,6 +190,8 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
   const clientId = useRef(crypto.randomUUID())
   const currentTrack = useRef('')
   const stateRef = useRef<MusicProjectionState | null>(null)
+  const spotifyWasPlaying = useRef(false)
+  const spotifyLastPosition = useRef(0)
   const disposed = useRef(false)
 
   async function register() {
@@ -214,6 +216,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
       player.addListener('account_error', () => setError('Spotify playback on the slideshow requires Premium.'))
       player.addListener('playback_error', () => setError('Spotify could not play this track on the slideshow.'))
       player.addListener('autoplay_failed', () => setError('Select Enable audio once on the slideshow.'))
+      player.addListener('player_state_changed', (value: { paused: boolean; position: number; duration: number } | null) => { if (!value) return; const finished = spotifyWasPlaying.current && value.paused && (value.position === 0 || spotifyLastPosition.current >= Math.max(0, value.duration - 1500)); spotifyWasPlaying.current = !value.paused; spotifyLastPosition.current = value.position; if (finished) void ended() })
       void player.connect()
     }).catch(() => setError('Spotify could not prepare the slideshow output.'))
     const heartbeat = window.setInterval(() => void register().catch(() => {}), 5000)
@@ -240,7 +243,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
   async function ended() {
     const current = stateRef.current
     if (!current) return
-    try { setSession(await api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection/commands`, csrfToken, 'POST', { action: 'ended', operationId: crypto.randomUUID(), expectedRevision: current.revision })) } catch { /* The rail may already have moved on. */ }
+    try { setSession(await api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection/commands`, csrfToken, 'POST', { action: 'ended', trackId: current.track?.id, operationId: crypto.randomUUID(), expectedRevision: current.revision })) } catch { /* The rail may already have moved on. */ }
   }
   async function enableAudio() {
     setError('')

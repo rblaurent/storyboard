@@ -28,6 +28,7 @@ export function route(url: URL, method: string): Route | null {
   if (p === '/auth/callback' && method === 'GET' && query(['code', 'state', 'error', 'error_description', 'scope', 'authuser', 'prompt', 'iss']) && keys.length > 0) return { target: mount + p, static: false, immutable: false }
   let allowed = false
   if (p === '/api/me') allowed = method === 'GET' && query([])
+  if (p === '/api/me/locale') allowed = method === 'PUT' && query([])
   if (p === '/api/logout') allowed = method === 'POST' && query([])
   if (p === '/api/campaigns') allowed = (method === 'GET' && query(['archived']) && (!keys.length || url.searchParams.get('archived') === 'true')) || (method === 'POST' && query([]))
   if (match(`/api/campaigns/${id}`)) allowed = ['GET', 'PUT'].includes(method) && query([])
@@ -38,7 +39,8 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/accounts`)) allowed = method === 'GET' && query(['email']) && keys.length === 1 && (url.searchParams.get('email')?.length ?? 0) <= 254 && /^[^\s@]+@[^\s@]+$/.test(url.searchParams.get('email') ?? '')
   if (match(`/api/campaigns/${id}/transcript/current`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/transcript/sessions`)) allowed = ['GET', 'POST'].includes(method) && query([])
-  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/(?:end|roleplay-time|speakers|audio)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/(?:end|recorder|roleplay-time|speakers|audio)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/jobs/${id}/retry`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/transcript/sessions/${id}/events`)) {
     const cursor = url.searchParams.get('cursor')
     const limit = url.searchParams.get('limit')
@@ -58,6 +60,8 @@ export function route(url: URL, method: string): Route | null {
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/player-view`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/delete`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/workspace/entities/${id}/images/[a-z0-9_-]{1,160}`)) allowed = method === 'GET' && query([])
+  if (match(`/api/campaigns/${id}/workspace/localizations`)) allowed = method === 'GET' && query(['locale']) && keys.length <= 1 && (url.searchParams.get('locale') === null || /^(?:en|fr)$/.test(url.searchParams.get('locale')!))
+  if (match(`/api/campaigns/${id}/workspace/entities/${id}/localizations/(?:en|fr)`)) allowed = method === 'PUT' && query([])
   if (match(`/api/campaigns/${id}/cockpit`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/cockpit/entities`)) allowed = method === 'GET' && query(['query']) && keys.length <= 1 && (url.searchParams.get('query')?.length ?? 0) <= 200
   if (match(`/api/campaigns/${id}/cockpit/items`)) allowed = method === 'POST' && query([])

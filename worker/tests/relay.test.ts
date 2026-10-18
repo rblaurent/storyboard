@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { relay, route, productCookies, safeSetCookie, safeRedirect } from '../src/index'
 
 const origin = 'https://storyboard.minititine.cc'
@@ -35,6 +36,7 @@ test('narrow route/method/query matrix includes only the frozen product boundary
     [`/api/campaigns/${campaign}/agent/discussions`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat`, ['GET', 'POST']], [`/api/campaigns/${campaign}/agent/discussions/sb0123456789abcd/chat?afterEpoch=0123456789abcdef&afterSequence=42`, ['GET']],
     [`/api/campaigns/${campaign}/agent/settings`, ['GET', 'PUT']], [`/api/campaigns/${campaign}/agent/avatar`, ['GET', 'PUT']],
     [`/api/campaigns/${campaign}/agent/playbooks`, ['GET']], [`/api/campaigns/${campaign}/agent/playbooks/music`, ['PUT']], [`/api/campaigns/${campaign}/play-mode`, ['GET', 'POST']],
+    ['/api/me/locale', ['PUT']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/recorder`, ['POST']], [`/api/campaigns/${campaign}/transcript/sessions/${member}/jobs/${member}/retry`, ['POST']], [`/api/campaigns/${campaign}/workspace/localizations?locale=fr`, ['GET']], [`/api/campaigns/${campaign}/workspace/entities/${member}/localizations/fr`, ['PUT']],
     ['/assets/index-abcdefgh.js', ['GET']],
   ]
   for (const [path, methods] of routes) {
@@ -55,6 +57,18 @@ test('request cookies are product only and ambiguous duplicate product values ar
   assert.equal(productCookies(`leaf=secret; __Host-storyboard=${token}; Agent=secret; __Host-storyboard-login=${token}; __Host-storyboard-evil=${token}`), `__Host-storyboard=${token}; __Host-storyboard-login=${token}`)
   assert.equal(productCookies(`__Host-storyboard=${token}; __Host-storyboard=${token}`), '')
   assert.equal(productCookies('__Host-storyboard=invalid'), '')
+})
+
+test('every campaign backend endpoint exposed to the site has Worker route parity', () => {
+  const source = readFileSync(new URL('../../src/Leaf.Plugins.Storyboard/Plugin.cs', import.meta.url), 'utf8')
+  const endpoints = [...source.matchAll(/new\("(GET|POST|PUT|DELETE)","(\/campaigns\/[^"]+)"/g)]
+  assert.ok(endpoints.length > 50)
+  for (const [, method, template] of endpoints) {
+    let path = template.replace(/\{([^}]+)\}/g, (_all, name: string) => name === 'discussionId' ? 'sb0123456789abcd' : name === 'capability' ? 'music' : name === 'locale' ? 'fr' : name === 'field' ? 'portrait' : member)
+    if (method === 'GET' && /\/accounts$/.test(path)) path += '?email=someone%40example.com'
+    if (method === 'GET' && /\/workspace\/entities$/.test(path)) path += '?types=page'
+    assert.ok(route(url('/api' + path), method), `${method} ${template}`)
+  }
 })
 test('Set-Cookie requires exact product name and secure HttpOnly host-only scope, including expiration', () => {
   assert.equal(safeSetCookie(`__Host-storyboard=${token}; path=/; secure; httponly; samesite=lax`), true)
