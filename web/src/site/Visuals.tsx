@@ -4,7 +4,7 @@ import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
 import { VisualIdentity } from './VisualIdentity'
-import { spotifyWebPlaybackSdk, type SpotifyWebPlayer } from './spotify'
+import { spotifyWebPlaybackSdk, type SpotifyWebPlaybackState, type SpotifyWebPlayer } from './spotify'
 
 const operation = () => crypto.randomUUID()
 type ProjectionFrame = { visual: Visual; source: string; motion: number; durationSeconds: number }
@@ -190,8 +190,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
   const clientId = useRef(crypto.randomUUID())
   const currentTrack = useRef('')
   const stateRef = useRef<MusicProjectionState | null>(null)
-  const spotifyWasPlaying = useRef(false)
-  const spotifyLastPosition = useRef(0)
+  const spotifyPlayback = useRef({ playing: false, position: 0, duration: 0, uri: '' })
   const disposed = useRef(false)
 
   async function register() {
@@ -200,6 +199,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
 
   useEffect(() => {
     disposed.current = false
+    spotifyPlayback.current = { playing: false, position: 0, duration: 0, uri: '' }
     if (window.location.hash === '#autostart') history.replaceState(null, '', window.location.pathname + window.location.search)
     void register().catch(cause => setError(explain(cause)))
     void spotifyWebPlaybackSdk().then(() => {
@@ -216,7 +216,18 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
       player.addListener('account_error', () => setError('Spotify playback on the slideshow requires Premium.'))
       player.addListener('playback_error', () => setError('Spotify could not play this track on the slideshow.'))
       player.addListener('autoplay_failed', () => setError('Select Enable audio once on the slideshow.'))
-      player.addListener('player_state_changed', (value: { paused: boolean; position: number; duration: number } | null) => { if (!value) return; const finished = spotifyWasPlaying.current && value.paused && (value.position === 0 || spotifyLastPosition.current >= Math.max(0, value.duration - 1500)); spotifyWasPlaying.current = !value.paused; spotifyLastPosition.current = value.position; if (finished) void ended() })
+      player.addListener('player_state_changed', (value: SpotifyWebPlaybackState | null) => {
+        if (!value) return
+        const previous = spotifyPlayback.current
+        const sessionTrack = stateRef.current?.track
+        const sessionUri = sessionTrack?.sourceKind === 'spotify' ? sessionTrack.uri || '' : ''
+        const currentUri = value.track_window?.current_track?.uri || ''
+        const sameTrack = !!sessionUri && previous.uri === sessionUri && (!currentUri || currentUri === sessionUri)
+        const reachedEnd = previous.duration > 0 && previous.position >= Math.max(0, previous.duration - 1500)
+        const finished = previous.playing && value.paused && reachedEnd && sameTrack
+        spotifyPlayback.current = { playing: !value.paused, position: value.position, duration: value.duration, uri: currentUri || previous.uri }
+        if (finished) void ended()
+      })
       void player.connect()
     }).catch(() => setError('Spotify could not prepare the slideshow output.'))
     const heartbeat = window.setInterval(() => void register().catch(() => {}), 5000)

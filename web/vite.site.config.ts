@@ -5,6 +5,7 @@ import path from 'node:path'
 const fixtures = !!process.env.STORYBOARD_UI_FIXTURE
 export default defineConfig({
   base: '/',
+  define: { __STORYBOARD_CAPTURE_INTERVAL_MS__: JSON.stringify(fixtures ? 1000 : 20000) },
   plugins: [react(), ...(fixtures ? [tailwindcss()] : [])],
   resolve: { dedupe: ['react', 'react-dom'] },
   server: fixtures ? { hmr: false } : undefined,

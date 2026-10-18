@@ -1,4 +1,4 @@
-export interface SpotifyWebPlaybackState { paused: boolean; position: number; duration: number }
+export interface SpotifyWebPlaybackState { paused: boolean; position: number; duration: number; track_window?: { current_track?: { uri?: string } } }
 
 export interface SpotifyWebPlayer {
   addListener(event: string, listener: (value: any) => void): boolean

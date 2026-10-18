@@ -4,8 +4,12 @@ import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 
 type PendingChunk = { operationId: string; campaignId: string; sessionId: string; blob: Blob; contentType: string; durationMs: number; capturedAt: string; actor: TranscriptActor; roleplayTime: string; language: string; attempts: number; nextAttemptAt: number; quarantined: boolean; lastError: string }
+type ActiveCapture = { recorder: MediaRecorder; session: TranscriptSession; startedAt: number; parts: BlobPart[]; expectedStop: boolean; stopRequestedAt: number; done: Promise<void>; resolveDone: () => void }
+declare const __STORYBOARD_CAPTURE_INTERVAL_MS__: number
 const DB = 'storyboard-transcript-capture-v1'
 const STORE = 'chunks'
+const CAPTURE_INTERVAL_MS = __STORYBOARD_CAPTURE_INTERVAL_MS__
+const CAPTURE_OVERLAP_MS = 250
 
 function openCaptureDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -40,12 +44,14 @@ export function LiveTranscript({ campaignId, csrfToken, canControl, open, panelE
   const [sessionName, setSessionName] = useState('')
   const [roleplayTime, setRoleplayTime] = useState('Opening scene')
   const stream = useRef<MediaStream | null>(null)
-  const recorder = useRef<MediaRecorder | null>(null)
+  const activeCapture = useRef<ActiveCapture | null>(null)
+  const captures = useRef(new Set<ActiveCapture>())
+  const rotationTimer = useRef<number | null>(null)
+  const overlapTimers = useRef(new Set<number>())
   const recordingRef = useRef(false)
   const flushTask = useRef<Promise<void> | null>(null)
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null)
   const restartTimer = useRef<number | null>(null)
-  const chunkStarted = useRef(Date.now())
   const activeMic = useRef('Microphone')
   const sessionRef = useRef<TranscriptSession | null>(null)
   const clientId = useMemo(() => { try { return localStorage.getItem('storyboard-recorder-client') || crypto.randomUUID() } catch { return crypto.randomUUID() } }, [])
@@ -58,24 +64,57 @@ export function LiveTranscript({ campaignId, csrfToken, canControl, open, panelE
   useEffect(() => { void flush(); const retry = window.setInterval(() => void flush(), 3000); const retryNow = () => void flush(); window.addEventListener('online', retryNow); document.addEventListener('visibilitychange', retryNow); return () => { window.clearInterval(retry); window.removeEventListener('online', retryNow); document.removeEventListener('visibilitychange', retryNow) } }, [flush])
   useEffect(() => { if (!uploadFailureSince) return; const timer = window.setInterval(() => setHealthTick(value => value + 1), 5000); return () => window.clearInterval(timer) }, [uploadFailureSince])
   function stopTracks() { stream.current?.getTracks().forEach(track => track.stop()); stream.current = null }
+  function clearCaptureTimers() { if (rotationTimer.current) window.clearTimeout(rotationTimer.current); rotationTimer.current = null; overlapTimers.current.forEach(timer => window.clearTimeout(timer)); overlapTimers.current.clear() }
+  function stopCapture(capture: ActiveCapture) { if (capture.recorder.state !== 'recording') return; capture.expectedStop = true; capture.stopRequestedAt = Date.now(); capture.recorder.stop() }
+  async function stopAllCaptures() { clearCaptureTimers(); const pendingStops = [...captures.current]; pendingStops.forEach(stopCapture); await Promise.all(pendingStops.map(capture => capture.done)) }
   async function holdWakeLock() { try { const manager = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> } }).wakeLock; if (recordingRef.current && document.visibilityState === 'visible' && manager && !wakeLock.current) wakeLock.current = await manager.request('screen') } catch { setCaptureWarning('Screen wake lock is unavailable. Keep this recording screen awake.') } }
   async function heartbeat(state = 'recording', warning = '', takeover = false) { const active = sessionRef.current; if (!active) return; const updated = await api<TranscriptSession>(`/campaigns/${campaignId}/transcript/sessions/${active.id}/recorder`, csrfToken, 'POST', { clientId, label: clientLabel, micLabel: activeMic.current, takeover, state, warning }); setSession(updated) }
-  function scheduleRestart(message: string) { if (!recordingRef.current || restartTimer.current) return; setCaptureWarning(message); setRecording(false); recordingRef.current = false; stopTracks(); restartTimer.current = window.setTimeout(() => { restartTimer.current = null; void startRecording(true, true) }, 1000) }
-  function startRecorder(activeSession: TranscriptSession) {
-    if (!recordingRef.current || !stream.current) return
-    const mime = recorderType(); const next = new MediaRecorder(stream.current, mime ? { mimeType: mime } : undefined); recorder.current = next; chunkStarted.current = Date.now()
-    next.ondataavailable = event => { if (event.data.size < 32) return; const capturedAt = new Date(chunkStarted.current).toISOString(); const durationMs = Math.max(250, Date.now() - chunkStarted.current); chunkStarted.current = Date.now(); const chunk: PendingChunk = { operationId: crypto.randomUUID(), campaignId, sessionId: activeSession.id, blob: event.data, contentType: event.data.type || next.mimeType || mime || 'audio/webm', durationMs, capturedAt, actor: { type: 'table', name: 'Table audio' }, roleplayTime: activeSession.roleplayAnchor, language: 'auto', attempts: 0, nextAttemptAt: 0, quarantined: false, lastError: '' }; void keepChunk(chunk).then(updateCounts).then(flush).catch(cause => setCaptureWarning(`Audio capture could not be queued: ${explain(cause)}`)) }
-    next.onerror = () => scheduleRestart('Recording stopped unexpectedly. Storyboard is reconnecting the microphone.')
-    next.onstop = () => { if (recordingRef.current) scheduleRestart('Recording stopped unexpectedly. Storyboard is reconnecting the microphone.') }
-    next.start(20_000); setRecording(next.state === 'recording'); setCaptureWarning('')
+  function scheduleRestart(message: string) { if (!recordingRef.current || restartTimer.current) return; setCaptureWarning(message); setRecording(false); recordingRef.current = false; void stopAllCaptures().finally(() => { stopTracks(); restartTimer.current = window.setTimeout(() => { restartTimer.current = null; void startRecording(true, true) }, 1000) }) }
+  function startRecorder(activeSession: TranscriptSession): ActiveCapture | null {
+    if (!recordingRef.current || !stream.current) return null
+    const mime = recorderType(); const next = new MediaRecorder(stream.current, mime ? { mimeType: mime } : undefined)
+    let resolveDone = () => {}
+    const done = new Promise<void>(resolve => { resolveDone = resolve })
+    const capture: ActiveCapture = { recorder: next, session: activeSession, startedAt: Date.now(), parts: [], expectedStop: false, stopRequestedAt: 0, done, resolveDone }
+    next.ondataavailable = event => { if (event.data.size) capture.parts.push(event.data) }
+    next.onerror = () => { if (!capture.expectedStop) scheduleRestart('Recording stopped unexpectedly. Storyboard is reconnecting the microphone.') }
+    next.onstop = () => {
+      if (activeCapture.current === capture) activeCapture.current = null
+      const stoppedAt = capture.stopRequestedAt || Date.now()
+      const durationMs = stoppedAt - capture.startedAt
+      const blob = new Blob(capture.parts, { type: next.mimeType || mime || 'audio/webm' })
+      void (async () => {
+        if (blob.size >= 32 && durationMs >= 250) {
+          const chunk: PendingChunk = { operationId: crypto.randomUUID(), campaignId, sessionId: capture.session.id, blob, contentType: blob.type || 'audio/webm', durationMs, capturedAt: new Date(capture.startedAt).toISOString(), actor: { type: 'table', name: 'Table audio' }, roleplayTime: capture.session.roleplayAnchor, language: 'auto', attempts: 0, nextAttemptAt: 0, quarantined: false, lastError: '' }
+          await keepChunk(chunk); await updateCounts(); await flush()
+        }
+      })().catch(cause => setCaptureWarning(`Audio capture could not be queued: ${explain(cause)}`)).finally(() => { captures.current.delete(capture); capture.resolveDone() })
+      if (!capture.expectedStop && recordingRef.current) scheduleRestart('Recording stopped unexpectedly. Storyboard is reconnecting the microphone.')
+    }
+    next.start()
+    captures.current.add(capture); activeCapture.current = capture
+    rotationTimer.current = window.setTimeout(() => {
+      rotationTimer.current = null
+      if (!recordingRef.current || activeCapture.current !== capture) return
+      try {
+        startRecorder(activeSession)
+        const timer = window.setTimeout(() => { overlapTimers.current.delete(timer); stopCapture(capture) }, CAPTURE_OVERLAP_MS)
+        overlapTimers.current.add(timer)
+      } catch (cause) {
+        setCaptureWarning(`Audio chunk rotation was delayed: ${explain(cause)}`)
+        rotationTimer.current = window.setTimeout(() => { rotationTimer.current = null; if (recordingRef.current && activeCapture.current === capture) { try { startRecorder(activeSession); stopCapture(capture) } catch { /* Keep the existing recorder alive and retry on the next health cycle. */ } } }, 1000)
+      }
+    }, Math.max(250, CAPTURE_INTERVAL_MS - CAPTURE_OVERLAP_MS))
+    setRecording(true); setCaptureWarning('')
+    return capture
   }
   async function startRecording(takeover = false, recovering = false) {
     if (!session || !canControl || recordingRef.current) return
     try { localStorage.setItem('storyboard-recorder-client', clientId) } catch { /* Identity remains stable for this page lifetime. */ }
     try { const storageKey = `storyboard-mic:${clientId}`; let remembered = ''; try { remembered = localStorage.getItem(storageKey) || '' } catch { /* Device memory is optional. */ }; let selected = deviceId || remembered; let permissionStream: MediaStream | null = null; if (!selected) permissionStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1 } }); const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput'); setDevices(inputs); if (selected && !inputs.some(input => input.deviceId === selected)) selected = ''; if (!selected && inputs.length) selected = inputs[0].deviceId; if (selected) { permissionStream?.getTracks().forEach(track => track.stop()); stream.current = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: selected }, channelCount: 1 } }); setDeviceId(selected); try { localStorage.setItem(storageKey, selected) } catch { /* Device memory is optional. */ } } else stream.current = permissionStream; activeMic.current = inputs.find(input => input.deviceId === selected)?.label || stream.current?.getAudioTracks()[0]?.label || 'Microphone'; await heartbeat('recording', recovering ? 'Microphone capture restarted.' : '', takeover); setTakeoverRequired(false); recordingRef.current = true; stream.current?.getAudioTracks().forEach(track => { track.onended = () => scheduleRestart('The microphone disconnected. Storyboard is trying to restore capture.') }); startRecorder(session); await holdWakeLock() } catch (cause) { stopTracks(); recordingRef.current = false; setRecording(false); if (cause instanceof ApiError && cause.code === 'recording_owned') { setTakeoverRequired(true); setError('Recording is already running on another device.') } else setError('Microphone access or recording startup failed. Choose a microphone and allow access in this browser.') }
   }
-  async function stopRecording() { recordingRef.current = false; setRecording(false); if (restartTimer.current) window.clearTimeout(restartTimer.current); restartTimer.current = null; try { if (recorder.current?.state === 'recording') { recorder.current.requestData?.(); recorder.current.stop() } } catch { try { recorder.current?.stop() } catch { /* already stopped */ } } stopTracks(); await wakeLock.current?.release().catch(() => {}); wakeLock.current = null; await heartbeat('stopped').catch(() => {}); await flush() }
-  useEffect(() => { const beat = window.setInterval(() => { if (recordingRef.current) void heartbeat().catch(cause => setCaptureWarning(explain(cause))) }, 5000); const visible = () => { if (document.visibilityState === 'visible') void holdWakeLock() }; document.addEventListener('visibilitychange', visible); return () => { window.clearInterval(beat); document.removeEventListener('visibilitychange', visible); recordingRef.current = false; try { if (recorder.current?.state === 'recording') recorder.current.stop() } catch { /* already stopped */ } stopTracks(); void wakeLock.current?.release(); wakeLock.current = null } }, [campaignId, session?.id])
+  async function stopRecording() { recordingRef.current = false; setRecording(false); if (restartTimer.current) window.clearTimeout(restartTimer.current); restartTimer.current = null; await stopAllCaptures(); stopTracks(); await wakeLock.current?.release().catch(() => {}); wakeLock.current = null; await heartbeat('stopped').catch(() => {}); await flush() }
+  useEffect(() => { const beat = window.setInterval(() => { if (recordingRef.current) void heartbeat().catch(cause => setCaptureWarning(explain(cause))) }, 5000); const visible = () => { if (document.visibilityState === 'visible') void holdWakeLock() }; document.addEventListener('visibilitychange', visible); return () => { window.clearInterval(beat); document.removeEventListener('visibilitychange', visible); recordingRef.current = false; void stopAllCaptures().finally(stopTracks); void wakeLock.current?.release(); wakeLock.current = null } }, [campaignId, session?.id])
   async function begin(e: FormEvent) { e.preventDefault(); try { const created = await api<TranscriptSession>(`/campaigns/${campaignId}/transcript/sessions`, csrfToken, 'POST', { name: sessionName.trim() || `Session ${new Date().toLocaleDateString()}`, roleplayTime: roleplayTime.trim(), operationId: crypto.randomUUID() }); setSession(created); setSessionName(''); window.dispatchEvent(new CustomEvent('storyboard:transcript-changed', { detail: { campaignId } })) } catch (cause) { setError(explain(cause)) } }
   async function end() { if (!session) return; try { await stopRecording(); await api(`/campaigns/${campaignId}/transcript/sessions/${session.id}/end`, csrfToken, 'POST', { operationId: crypto.randomUUID() }); setSession(null); window.dispatchEvent(new CustomEvent('storyboard:transcript-changed', { detail: { campaignId } })) } catch (cause) { setError(explain(cause)) } }
   const uploadsStale = uploadFailureSince > 0 && Date.now() - uploadFailureSince > 60_000

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 import path from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fixture, cid, mid, oid, second, csrf, workspacePlace, visualCandidate } from './fixture'
 const evidence = path.join(process.env.REDLEAF_SCRATCH_DIR!, 'storyboard-frontend')
 
@@ -229,7 +231,7 @@ test('visuals generate one reusable image, keep playlists optional, curate the q
   const incoming = projection.getByRole('img', { name: 'The moonlit vault' }); await expect(incoming).toBeVisible({ timeout: 4000 }); await incoming.evaluate(element => { element.dataset.motionContinuity = 'preserved' }); await expect(projection.locator('.projection-layer')).toHaveCount(2); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveCount(1); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveAttribute('aria-hidden', 'true'); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveCount(0, { timeout: 4000 }); await expect(incoming).toHaveAttribute('data-motion-continuity', 'preserved')
   projectionState.visualSession.blackout = true; await expect(projection.locator('.projection-view')).toHaveClass(/is-blackout/, { timeout: 3000 }); await expect(projection.locator('.projection-blackout')).toHaveCSS('opacity', '1')
 })
-test('projection is an output-only music client and follows the authoritative rail session', async ({ page }) => {
+test('projection advances Spotify only after the session track genuinely ends', async ({ page }) => {
   await page.addInitScript(() => {
     window.Spotify = { Player: class {
       listeners = new Map<string, (value: any) => void>(); constructor() { (window as any).__spotifyListeners = this.listeners }
@@ -248,7 +250,13 @@ test('projection is an output-only music client and follows the authoritative ra
   expect(state.requests.some(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands'))).toBe(false)
   state.musicProjection.track = state.queue[0].track; state.musicProjection.playing = true; state.musicProjection.progressMs = 1200; state.musicProjection.revision += 1
   const player = page.getByRole('region', { name: 'Slideshow music output' }); await expect(player).toContainText('The Orrery Turns'); await expect(player).toContainText('NOW PLAYING')
-  await page.evaluate(() => { const listeners = (window as any).__spotifyListeners as Map<string, (value: any) => void>; listeners.get('player_state_changed')?.({ paused: false, position: 178900, duration: 180000 }); listeners.get('player_state_changed')?.({ paused: true, position: 0, duration: 180000 }) }); await expect.poll(() => state.requests.find(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands') && request.body?.action === 'ended')?.body).toMatchObject({ trackId: state.queue[0].track.id }); await expect(player).toContainText('Lanterns Beneath the Tide')
+  const orreryUri = state.queue[0].track.uri!; const lanternsUri = state.tracks[0].uri!
+  const spotifyState = (uri: string, paused: boolean, position: number, duration = 180000) => page.evaluate(value => { const listeners = (window as any).__spotifyListeners as Map<string, (state: any) => void>; listeners.get('player_state_changed')?.(value) }, { paused, position, duration, track_window: { current_track: { uri } } })
+  const endedCount = () => state.requests.filter(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands') && request.body?.action === 'ended').length
+  await spotifyState(orreryUri, false, 0); await spotifyState(orreryUri, true, 0); await page.waitForTimeout(100); expect(endedCount()).toBe(0)
+  await spotifyState(orreryUri, false, 179000); await spotifyState(lanternsUri, true, 0); await page.waitForTimeout(100); expect(endedCount()).toBe(0)
+  await spotifyState(orreryUri, false, 179000); await spotifyState(orreryUri, true, 0); await expect.poll(endedCount).toBe(1); await spotifyState(orreryUri, true, 0); await page.waitForTimeout(100); expect(endedCount()).toBe(1)
+  expect(state.requests.find(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands') && request.body?.action === 'ended')?.body).toMatchObject({ trackId: state.queue[0].track.id }); await expect(player).toContainText('Lanterns Beneath the Tide')
   expect(await page.evaluate(() => location.hash)).toBe('')
 })
 test('campaign visual identity proposes reusable style, saves workflow entities and previews without changing artwork', async ({ page }) => {
@@ -298,31 +306,68 @@ test('live transcript uses the chosen default mic and uploads a durable audio ch
       static isTypeSupported() { return true }
       state: RecordingState = 'inactive'; mimeType: string; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null
       constructor(_stream: unknown, options?: { mimeType?: string }) { this.mimeType = options?.mimeType || 'audio/webm' }
-      start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderTimeslice = timeslice }
+      start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderStarts = [...((window as any).__recorderStarts || []), timeslice] }
       stop() { if (this.state !== 'recording') return; this.state = 'inactive'; this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(7)], { type: this.mimeType }) }); this.onstop?.() }
     }
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FixtureRecorder })
   })
-  const s = await fixture(page); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await expect(live.getByLabel('Microphone')).toHaveValue('laptop-mic'); await expect.poll(() => page.evaluate(() => (window as unknown as { __micConstraints: MediaStreamConstraints[] }).__micConstraints)).toHaveLength(2); expect(await page.evaluate(() => (window as unknown as { __micConstraints: MediaStreamConstraints[] }).__micConstraints[1])).toEqual({ audio: { channelCount: 1, deviceId: { exact: 'laptop-mic' } } }); await live.getByRole('button', { name: 'Stop recording' }).click(); await expect(live.getByRole('button', { name: 'Record room' })).toBeVisible(); await expect.poll(() => s.requests.find(request => request.method === 'POST' && request.path.endsWith('/audio'))?.body).toMatchObject({ contentType: 'audio/webm;codecs=opus', durationMs: 250, actor: { type: 'table', name: 'Table audio' }, roleplayTime: 'Night 1, observatory arrival', language: 'auto' })
-  expect(await page.evaluate(() => (window as any).__recorderTimeslice)).toBe(20_000); await expect(live.getByLabel('Speaker hint')).toHaveCount(0)
+  const s = await fixture(page); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await expect(live.getByLabel('Microphone')).toHaveValue('laptop-mic'); await expect.poll(() => page.evaluate(() => (window as unknown as { __micConstraints: MediaStreamConstraints[] }).__micConstraints)).toHaveLength(2); expect(await page.evaluate(() => (window as unknown as { __micConstraints: MediaStreamConstraints[] }).__micConstraints[1])).toEqual({ audio: { channelCount: 1, deviceId: { exact: 'laptop-mic' } } }); await page.waitForTimeout(300); await live.getByRole('button', { name: 'Stop recording' }).click(); await expect(live.getByRole('button', { name: 'Record room' })).toBeVisible(); await expect.poll(() => s.requests.find(request => request.method === 'POST' && request.path.endsWith('/audio'))?.body).toMatchObject({ contentType: 'audio/webm;codecs=opus', actor: { type: 'table', name: 'Table audio' }, roleplayTime: 'Night 1, observatory arrival', language: 'auto' })
+  expect(Number(s.requests.find(request => request.method === 'POST' && request.path.endsWith('/audio'))?.body?.durationMs)).toBeGreaterThanOrEqual(250); expect(await page.evaluate(() => (window as any).__recorderStarts)).toEqual([undefined]); await expect(live.getByLabel('Speaker hint')).toHaveCount(0)
 })
-test('continuous recorder quarantines a rejected chunk and still uploads the next timeslice', async ({ page }) => {
+test('rotating recorder quarantines a rejected chunk and still uploads the next standalone file', async ({ page }) => {
   await page.addInitScript(() => {
     const track = { stop() {}, onended: null as (() => void) | null }
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }), enumerateDevices: async () => [{ deviceId: 'room-mic', groupId: 'fixture', kind: 'audioinput', label: 'Room microphone', toJSON() { return this } }] } })
-    class FixtureRecorder { static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm;codecs=opus'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null; constructor() {} start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderTimeslice = timeslice; setTimeout(() => this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(1)], { type: this.mimeType }) }), 20); setTimeout(() => this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(2)], { type: this.mimeType }) }), 250) } requestData() {} stop() { this.state = 'inactive'; this.onstop?.() } }
+    class FixtureRecorder { static next = 0; static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm;codecs=opus'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null; id = ++FixtureRecorder.next; constructor() {} start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderStarts = [...((window as any).__recorderStarts || []), timeslice] } requestData() {} stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(this.id)], { type: this.mimeType }) }); this.onstop?.() } }
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FixtureRecorder })
   })
-  const state = await fixture(page); state.audioFailures.push(400); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length, { timeout: 7000 }).toBe(2); await expect(live).toContainText('Quarantined: 1'); await expect(live).toContainText(/Last upload: (?!none yet)/); expect(await page.evaluate(() => (window as any).__recorderTimeslice)).toBe(20_000); await live.getByRole('button', { name: 'Stop recording' }).click()
+  const state = await fixture(page); state.audioFailures.push(400); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length, { timeout: 7000 }).toBe(2); await expect(live).toContainText('Quarantined: 1'); await expect(live).toContainText(/Last upload: (?!none yet)/); expect((await page.evaluate(() => (window as any).__recorderStarts))?.every((value: unknown) => value === undefined)).toBe(true); await live.getByRole('button', { name: 'Stop recording' }).click()
 })
 test('transient upload failure retries from IndexedDB while capture remains active', async ({ page }) => {
   await page.addInitScript(() => {
     const track = { stop() {}, onended: null as (() => void) | null }
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }), enumerateDevices: async () => [{ deviceId: 'room-mic', groupId: 'fixture', kind: 'audioinput', label: 'Room microphone', toJSON() { return this } }] } })
-    class FixtureRecorder { static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm;codecs=opus'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null; constructor() {} start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderTimeslice = timeslice; setTimeout(() => this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(9)], { type: this.mimeType }) }), 20) } requestData() {} stop() { this.state = 'inactive'; this.onstop?.() } }
+    class FixtureRecorder { static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm;codecs=opus'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null; constructor() {} start(timeslice?: number) { this.state = 'recording'; (window as any).__recorderStarts = [...((window as any).__recorderStarts || []), timeslice] } requestData() {} stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(9)], { type: this.mimeType }) }); this.onstop?.() } }
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FixtureRecorder })
   })
-  const state = await fixture(page); state.audioFailures.push(503); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length, { timeout: 7000 }).toBe(2); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await expect(live).toContainText('Pending: 0'); await expect(live).toContainText(/Last upload: (?!none yet)/); expect(await page.evaluate(() => (window as any).__recorderTimeslice)).toBe(20_000); await live.getByRole('button', { name: 'Stop recording' }).click()
+  const state = await fixture(page); state.audioFailures.push(503); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length, { timeout: 7000 }).toBe(2); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await expect(live).toContainText('Pending: 0'); await expect(live).toContainText(/Last upload: (?!none yet)/); expect((await page.evaluate(() => (window as any).__recorderStarts))?.every((value: unknown) => value === undefined)).toBe(true); await live.getByRole('button', { name: 'Stop recording' }).click()
+})
+test('real Chromium recorder rotation uploads independently decodable gapless chunks', async ({ page }) => {
+  const state = await fixture(page)
+  await page.goto(`/campaigns/${cid}/transcript`)
+  const live = page.getByRole('region', { name: 'Live transcript' })
+  await live.getByRole('button', { name: 'Record room' }).click()
+  await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible()
+  const wallStartedAt = Date.now()
+  await expect.poll(() => state.requests.filter(request => request.method === 'POST' && request.path.endsWith('/audio')).length, { timeout: 10000 }).toBeGreaterThanOrEqual(3)
+  const wallStoppedAt = Date.now()
+  await live.getByRole('button', { name: 'Stop recording' }).click()
+  await expect.poll(() => state.requests.some(request => request.path.endsWith('/recorder') && request.body?.state === 'stopped')).toBe(true)
+  const audioRequests = state.requests.filter(request => request.method === 'POST' && request.path.endsWith('/audio'))
+  expect(audioRequests.length).toBeGreaterThanOrEqual(3)
+  const output = path.join(evidence, 'real-audio-chunks'); mkdirSync(output, { recursive: true })
+  const ffprobeAvailable = spawnSync('ffprobe', ['-version'], { encoding: 'utf8' }).status === 0
+  const chunks = audioRequests.map((request, index) => {
+    const bytes = Buffer.from(String(request.body?.audioBase64 || ''), 'base64')
+    const signature = [...bytes.subarray(0, 4)].map(value => value.toString(16).padStart(2, '0').toUpperCase()).join(' ')
+    expect(signature === '1A 45 DF A3' || bytes.subarray(0, 4).toString('ascii') === 'OggS').toBe(true)
+    const extension = String(request.body?.contentType).startsWith('audio/ogg') ? 'ogg' : 'webm'
+    const file = path.join(output, `chunk-${String(index + 1).padStart(2, '0')}.${extension}`); writeFileSync(file, bytes)
+    let ffprobeDurationSeconds: number | null = null
+    if (ffprobeAvailable) {
+      const result = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', file], { encoding: 'utf8' })
+      expect(result.status, result.stderr).toBe(0); ffprobeDurationSeconds = Number(result.stdout.trim()); expect(ffprobeDurationSeconds).toBeGreaterThan(0)
+    }
+    return { index: index + 1, signature, byteLength: bytes.length, contentType: request.body?.contentType, capturedAt: String(request.body?.capturedAt), durationMs: Number(request.body?.durationMs), ffprobeDurationSeconds }
+  }).sort((a, b) => a.capturedAt.localeCompare(b.capturedAt))
+  const sumDurationMs = chunks.reduce((total, chunk) => total + chunk.durationMs, 0)
+  const wallClockMs = wallStoppedAt - wallStartedAt
+  const coverageDeficitMs = Math.max(0, wallClockMs - sumDurationMs)
+  const maxGapMs = chunks.slice(1).reduce((largest, chunk, index) => Math.max(largest, Date.parse(chunk.capturedAt) - (Date.parse(chunks[index].capturedAt) + chunks[index].durationMs)), 0)
+  expect(coverageDeficitMs).toBeLessThanOrEqual(250); expect(maxGapMs).toBeLessThanOrEqual(250)
+  const result = { browser: await page.evaluate(() => navigator.userAgent), launchFlags: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'], productionIntervalMs: 20000, testIntervalMs: 1000, overlapToleranceMs: 250, wallClockMs, sumDurationMs, coverageDeficitMs, maxGapMs, ffprobeAvailable, chunks }
+  writeFileSync(path.join(output, 'evidence.json'), `${JSON.stringify(result, null, 2)}\n`)
+  console.log(`REAL_CHROMIUM_AUDIO_EVIDENCE ${JSON.stringify(result)}`)
 })
 test('live transcript requires an explicit takeover while another device owns recording', async ({ page }) => {
   await page.addInitScript(() => { const track = { stop() {}, onended: null }; Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => ({ getTracks: () => [track], getAudioTracks: () => [track] }), enumerateDevices: async () => [{ deviceId: 'tablet', groupId: 'fixture', kind: 'audioinput', label: 'Tablet microphone', toJSON() { return this } }] } }); class Recorder { static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm'; ondataavailable = null; onstop = null; constructor() {} start() { this.state = 'recording' } stop() { this.state = 'inactive' } requestData() {} } Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: Recorder }) })
@@ -335,7 +380,7 @@ test('switching campaigns stops capture without leaking chunks into the next cam
     class Recorder { static isTypeSupported() { return true } state: RecordingState = 'inactive'; mimeType = 'audio/webm'; ondataavailable: ((event: { data: Blob }) => void) | null = null; onstop: (() => void) | null = null; constructor() {} start() { this.state = 'recording' } requestData() {} stop() { if (this.state !== 'recording') return; this.state = 'inactive'; (window as any).__stoppedRecorders = ((window as any).__stoppedRecorders || 0) + 1; this.ondataavailable?.({ data: new Blob([new Uint8Array(64).fill(3)], { type: this.mimeType }) }); this.onstop?.() } }
     Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: Recorder })
   })
-  const state = await fixture(page); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await page.evaluate(id => { history.pushState(null, '', `/campaigns/${id}/description`); dispatchEvent(new PopStateEvent('popstate')) }, second); await expect(page.getByRole('heading', { name: 'Letters from the Coast' })).toBeVisible(); await expect.poll(() => page.evaluate(() => (window as any).__stoppedRecorders || 0)).toBe(1); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length).toBe(1); expect(state.requests.filter(request => request.path.endsWith('/audio')).every(request => request.path.includes(`/campaigns/${cid}/`))).toBe(true); expect(state.requests.some(request => request.path.includes(`/campaigns/${second}/`) && request.path.endsWith('/audio'))).toBe(false)
+  const state = await fixture(page); await page.goto(`/campaigns/${cid}/transcript`); const live = page.getByRole('region', { name: 'Live transcript' }); await live.getByRole('button', { name: 'Record room' }).click(); await expect(live.getByRole('button', { name: 'Stop recording' })).toBeVisible(); await page.waitForTimeout(300); await page.evaluate(id => { history.pushState(null, '', `/campaigns/${id}/description`); dispatchEvent(new PopStateEvent('popstate')) }, second); await expect(page.getByRole('heading', { name: 'Letters from the Coast' })).toBeVisible(); await expect.poll(() => page.evaluate(() => (window as any).__stoppedRecorders || 0)).toBe(1); await expect.poll(() => state.requests.filter(request => request.path.endsWith('/audio')).length).toBe(1); expect(state.requests.filter(request => request.path.endsWith('/audio')).every(request => request.path.includes(`/campaigns/${cid}/`))).toBe(true); expect(state.requests.some(request => request.path.includes(`/campaigns/${second}/`) && request.path.endsWith('/audio'))).toBe(false)
 })
 for (const viewport of [{ name: 'desktop', width: 1440, height: 1040 }, { name: 'phone', width: 390, height: 844 }]) {
   test(`transcript ledger remains readable without page overflow · ${viewport.name}`, async ({ page }) => { const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); await page.setViewportSize(viewport); await fixture(page); await page.goto(`/campaigns/${cid}/transcript`); await expect(page.getByRole('heading', { name: 'Transcript', exact: true })).toBeVisible(); await expect(page.getByText('The brass orrery is moving, but the sky above us is perfectly still.')).toBeVisible(); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); expect(errors).toEqual([]); await page.screenshot({ path: path.join(evidence, `fixture-transcript-${viewport.name}.png`), fullPage: true }) })
