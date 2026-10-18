@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Leaf.Plugins.Storyboard;
 
-public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, StoryEntityVisibility visibility, IAiInference ai, StoryChanges changes)
+public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, StoryEntityVisibility visibility, IAiInference ai, StoryChanges changes, StorySessionLedger ledger)
 {
     private static readonly HashSet<string> Phases = new(StringComparer.Ordinal) { "prepared", "now", "played" };
     private static readonly HashSet<string> Lenses = new(StringComparer.Ordinal) { "beat", "discovery", "belief" };
@@ -73,6 +73,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         if (input is null) throw new StoryException("invalid_json");
         var phase = Phase(input.Phase); var lens = Lens(input.Lens); var operation = StoryJson.Id(input.OperationId).ToString();
         var item = await store.RequireAsync("storyboard-cockpit-item", itemId, ct);
+        var previousPhase = item.Data.Text("phase");
         if (item.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
         await campaigns.MembershipAsync(campaign, account, true, ct);
         await store.Commands.WaitAsync(ct);
@@ -83,6 +84,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             item = await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["phase"] = phase; next["lens"] = lens; next["position"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); next["last_operation"] = operation; return next; }, ct);
             changes.BumpGm(campaign, "cockpit");
             var target = (await workspace.CockpitEntitiesAsync(campaign, account, limit: 500, ct: ct)).SingleOrDefault(value => value.Entity.Id.ToString() == item.Data.Text("entity")) ?? throw new StoryException("cockpit_entity_unavailable", 409);
+            if (previousPhase != phase) await ledger.AppendAsync(campaign, operation, "cockpit-phase", "gm", account, $"{target.Entity.Name}: {previousPhase} → {phase}", new JsonObject { ["entity"] = target.Entity.Id.ToString(), ["from"] = previousPhase, ["to"] = phase }, ct);
             return ProjectItem(item, target, null);
         }
         finally { store.Commands.Release(); }

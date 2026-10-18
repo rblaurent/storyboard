@@ -10,6 +10,7 @@ public sealed class StoryCampaignAgentTools(
     StoryCampaigns campaigns,
     StoryWorkspace workspace,
     StoryTranscript transcript,
+    StorySessionRecaps recaps,
     StoryCockpit cockpit,
     StoryEntityVisibility visibility,
     StoryCampaignPlay play,
@@ -119,6 +120,24 @@ public sealed class StoryCampaignAgentTools(
     {
         var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
         return await transcript.PageAsync(campaign, session, conversation.Campaign.Data.Text("creator"), cursor, limit, ct);
+    }
+
+    public async Task<object?> RecapAsync(string campaign, string session, HttpContext http, CancellationToken ct)
+    {
+        await agent.RequireCampaignAgentAsync(campaign, http, ct);
+        return await recaps.AgentGetAsync(campaign, session, ct);
+    }
+
+    public async Task<object> RecapRegenerateAsync(string campaign, string session, HttpContext http, SessionRecapRegenerateWrite input, CancellationToken ct)
+    {
+        var conversation = await RequireInteractiveAsync(campaign, http, ct);
+        return await recaps.AgentRegenerateAsync(campaign, session, conversation.Agent.Id.ToString(), input, ct);
+    }
+
+    public async Task<object> RecapProposalAsync(string campaign, string session, HttpContext http, SessionRecapAgentProposalWrite input, CancellationToken ct)
+    {
+        var conversation = await RequireInteractiveAsync(campaign, http, ct);
+        return await recaps.AgentAddProposalAsync(campaign, session, conversation.Agent.Id.ToString(), input, ct);
     }
 
     public async Task<object> MusicAsync(string campaign, HttpContext http, CancellationToken ct)
@@ -265,7 +284,7 @@ public sealed class StoryCampaignAgentTools(
         var conversation = await agent.RequireCampaignAgentAsync(campaign, http, ct);
         await RequirePlayModeAsync(campaign, ct);
         await playbooks.RequireEnabledAsync(campaign, "visuals", ct);
-        return await visuals.ShowAsync(campaign, conversation.Campaign.Data.Text("creator"), input, ct);
+        return await visuals.AgentShowAsync(campaign, conversation.Campaign.Data.Text("creator"), conversation.Agent.Id.ToString(), input, ct);
     }
 
     private async Task RequirePlayModeAsync(string campaign, CancellationToken ct)

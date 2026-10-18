@@ -24,7 +24,7 @@ public sealed record MusicGenerationWrite(string OperationId, string Situation, 
     public string? HeartbeatTurn { get; init; }
 }
 
-public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, StoryChanges changes, ILogger<StoryMusic> logger) : BackgroundService
+public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, StoryChanges changes, StorySessionLedger ledger, ILogger<StoryMusic> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
     private readonly ConcurrentDictionary<string, ProjectionMusicSession> projectionSessions = new(StringComparer.Ordinal);
@@ -420,6 +420,8 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             }
             await SaveProjectionSessionAsync(campaign, session, ct);
             await store.AuditAsync("music.projection.commanded", account, campaign, new JsonObject { ["action"] = action, ["track"] = trackId }, ct);
+            if (shouldPlay && track is not null)
+                await ledger.AppendAsync(campaign, operation, "music-started", action == "ended" ? "system" : "gm", account, $"Music started: {track.Name}", new JsonObject { ["track"] = track.Id.ToString(), ["name"] = track.Name, ["action"] = action }, ct);
             return await ProjectionAsync(campaign, ct);
         }
         finally { store.Commands.Release(); }

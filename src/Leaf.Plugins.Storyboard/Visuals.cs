@@ -39,7 +39,7 @@ public sealed record VisualQueueWrite(string? VisualId, string? SetId, string Op
 public sealed record VisualShowWrite(string VisualId, string OperationId);
 public sealed record VisualSessionCommand(string Action, string OperationId, long ExpectedRevision, string? VisualId = null, int? IntervalSeconds = null, string? Transition = null, bool? Loop = null, bool? Blackout = null);
 
-public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, StoryChanges changes, ILogger<StoryVisuals> logger) : BackgroundService
+public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, StoryChanges changes, StorySessionLedger ledger, ILogger<StoryVisuals> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
     private readonly ConcurrentDictionary<Guid, Task> generationTasks = new();
@@ -417,7 +417,13 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
         await campaigns.MembershipAsync(campaign, account, ct: ct); return await SessionProjectionAsync(campaign, await SessionEntityAsync(campaign, false, ct), ct);
     }
 
-    public async Task<object> ShowAsync(string campaign, string account, VisualShowWrite input, CancellationToken ct)
+    public Task<object> ShowAsync(string campaign, string account, VisualShowWrite input, CancellationToken ct)
+        => ShowCoreAsync(campaign, account, account, "gm", input, ct);
+
+    internal Task<object> AgentShowAsync(string campaign, string account, string agentId, VisualShowWrite input, CancellationToken ct)
+        => ShowCoreAsync(campaign, account, agentId, "agent", input, ct);
+
+    private async Task<object> ShowCoreAsync(string campaign, string account, string attributedActor, string actorType, VisualShowWrite input, CancellationToken ct)
     {
         if (input is null) throw new StoryException("invalid_visual_command");
         await campaigns.MembershipAsync(campaign, account, true, ct);
@@ -442,6 +448,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             }, ct);
             await store.AuditAsync("visual.session.show", account, session.Id.ToString(), ct: ct);
             changes.Bump(campaign, "visuals");
+            await ledger.AppendAsync(campaign, operation.ToString(), "visual-shown", actorType, attributedActor, $"Visual shown: {visual.Name}", new JsonObject { ["visual"] = visual.Id.ToString(), ["name"] = visual.Name }, ct);
             return await SessionProjectionAsync(campaign, session, ct);
         }
         finally { store.Commands.Release(); }
@@ -474,7 +481,13 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             }
             else if (action == "clear") { patch["current_visual"] = ""; patch["current_queue_item"] = ""; patch["playing"] = false; patch["blackout"] = false; }
             else throw new StoryException("invalid_visual_command");
-            patch["last_operation"] = operation.ToString(); patch["updated_by"] = account; session = await PatchSessionAsync(session, patch, ct); await store.AuditAsync("visual.session." + action, account, session.Id.ToString(), ct: ct); changes.Bump(campaign, "visuals"); return await SessionProjectionAsync(campaign, session, ct);
+            patch["last_operation"] = operation.ToString(); patch["updated_by"] = account; session = await PatchSessionAsync(session, patch, ct); await store.AuditAsync("visual.session." + action, account, session.Id.ToString(), ct: ct); changes.Bump(campaign, "visuals");
+            if (action is "show" or "next" or "previous" or "play" && session.Data.Text("current_visual") != "")
+            {
+                var shown = await RequireVisualAsync(campaign, session.Data.Text("current_visual"), ct);
+                await ledger.AppendAsync(campaign, operation.ToString(), "visual-shown", "gm", account, $"Visual shown: {shown.Name}", new JsonObject { ["visual"] = shown.Id.ToString(), ["name"] = shown.Name, ["action"] = action }, ct);
+            }
+            return await SessionProjectionAsync(campaign, session, ct);
         }
         finally { store.Commands.Release(); }
     }

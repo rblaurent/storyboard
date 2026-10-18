@@ -11,7 +11,8 @@ public sealed class StoryEntityVisibility(
     StoryCampaigns campaigns,
     StoryWorkspace workspace,
     IAssets assets,
-    StoryChanges changes)
+    StoryChanges changes,
+    StorySessionLedger ledger)
 {
     private const string OperationStream = "entity-visibility-operations";
     public Task<object> SetAsync(string campaign, string account, string entityId, EntityVisibilityWrite input, CancellationToken ct = default)
@@ -61,6 +62,8 @@ public sealed class StoryEntityVisibility(
                 }
                 await store.Entities.DeleteAsync(old.Id, ct);
                 changes.Bump(campaign, ["cockpit", .. selected.Where(valid.Contains).Distinct(StringComparer.Ordinal).Select(player => "journal:" + player)]);
+                var migratedPlayers = selected.Where(valid.Contains).Distinct(StringComparer.Ordinal).ToArray();
+                if (migratedPlayers.Length > 0) await ledger.AppendAsync(campaign, old.Id.ToString(), old.Data.Flag("active") ? "entity-revealed" : "entity-hidden", "system", "storyboard-migration", $"{old.Name} visibility migrated", new JsonObject { ["entity"] = entity, ["players"] = new JsonArray(migratedPlayers.Select(value => (JsonNode?)value).ToArray()), ["visible"] = old.Data.Flag("active"), ["migration"] = true }, ct);
             }
         }
         finally { store.Commands.Release(); }
@@ -162,7 +165,11 @@ public sealed class StoryEntityVisibility(
             }, ct);
         }
         finally { store.Commands.Release(); }
-        if (changedPlayers.Count > 0) changes.Bump(campaign, ["cockpit", .. changedPlayers.Select(player => "journal:" + player)]);
+        if (changedPlayers.Count > 0)
+        {
+            changes.Bump(campaign, ["cockpit", .. changedPlayers.Select(player => "journal:" + player)]);
+            await ledger.AppendAsync(campaign, operation, input.Visible ? "entity-revealed" : "entity-hidden", requireGm ? "gm" : "agent", auditActor, $"{playerContext.Entity.Name} {(input.Visible ? "revealed" : "hidden")}", new JsonObject { ["entity"] = playerContext.Entity.Id.ToString(), ["players"] = new JsonArray(changedPlayers.Select(value => (JsonNode?)value).ToArray()), ["visible"] = input.Visible }, ct);
+        }
         return await AggregateAsync(campaign, playerContext.Entity.Id.ToString(), players, ct);
     }
 

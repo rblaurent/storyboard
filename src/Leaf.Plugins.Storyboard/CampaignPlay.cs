@@ -226,7 +226,8 @@ public sealed class StoryCampaignPlay(
     StoryCampaigns campaigns,
     StoryCampaignAgent agent,
     IWorkflowAutomations workflows,
-    StoryChanges changes)
+    StoryChanges changes,
+    StorySessionLedger ledger)
 {
     public const string ActionType = "storyboard-campaign-heartbeat";
 
@@ -279,6 +280,7 @@ public sealed class StoryCampaignPlay(
             ["heartbeat_discussion"] = conversation.Discussion.Data.Text("discussion_id"),
         }, ct);
         changes.Bump(campaign, "play-mode");
+        await ledger.AppendAsync(campaign, operation, input.Enabled ? "play-mode-on" : "play-mode-off", "gm", account, input.Enabled ? "Play mode enabled" : "Play mode disabled", new JsonObject { ["enabled"] = input.Enabled }, ct);
         return Projection(campaign, status);
     }
 
