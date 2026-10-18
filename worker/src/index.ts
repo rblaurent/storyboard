@@ -50,6 +50,9 @@ export function route(url: URL, method: string): Route | null {
     const limit = url.searchParams.get('limit')
     allowed = method === 'POST' && query([]) || method === 'GET' && query(['cursor', 'limit']) && (cursor === null || /^[A-Za-z0-9_-]{20,512}$/.test(cursor)) && (limit === null || /^\d{1,3}$/.test(limit))
   }
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/recap`)) allowed = ['GET', 'PUT'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/recap/(?:regenerate|publish|pin|move-now)`)) allowed = method === 'POST' && query([])
+  if (match(`/api/campaigns/${id}/transcript/sessions/${id}/recap/proposals/\\d{1,4}/decide`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/transcript/audio/${id}`)) allowed = method === 'GET' && query([])
   if (match(`/api/campaigns/${id}/workspace`)) allowed = method === 'GET' && query(['locale']) && keys.length <= 1 && (url.searchParams.get('locale') === null || /^(?:en|fr)$/.test(url.searchParams.get('locale')!))
   if (match(`/api/campaigns/${id}/workspace/entities`)) {

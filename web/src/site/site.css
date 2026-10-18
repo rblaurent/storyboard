@@ -794,6 +794,10 @@ body { margin: 0; }
 .storyboard-site .transcript-event article audio { width: min(100%, 520px); margin-top: var(--space-3); }
 .storyboard-site .transcript-event article > small { display: block; margin-top: var(--space-2); color: var(--muted); }
 .storyboard-site .transcript-event.is-agent article,.storyboard-site .transcript-event.is-system article { padding: var(--space-4); border-left: 3px solid var(--accent); background: var(--art-surface); }
+.storyboard-site .transcript-event.is-kind-ledger { padding-block: var(--space-2); }
+.storyboard-site .transcript-event.is-kind-ledger article { padding: var(--space-2) var(--space-3); border-left: 2px solid var(--rule-strong); background: var(--paper-deep); }
+.storyboard-site .transcript-event.is-kind-ledger article > header { margin-bottom: 2px; }
+.storyboard-site .transcript-event.is-kind-ledger article p { margin: 0; color: var(--muted); font-size: var(--text-small); }
 .storyboard-site .transcript-empty { padding: var(--space-8); color: var(--muted); text-align: center; border-top: 1px solid var(--rule); }
 .storyboard-site .transcript-entry { margin-top: var(--space-7); }
 .storyboard-site .transcript-entry > .eyebrow { display: block; margin-bottom: var(--space-4); }
@@ -803,6 +807,26 @@ body { margin: 0; }
 .storyboard-site .transcript-entry button { margin-top: var(--space-4); }
 .storyboard-site .transcript-tts { display: flex; align-items: center; gap: var(--space-4); }
 .storyboard-site .transcript-tts input:not([type=checkbox]) { flex: 1; }
+.storyboard-site .session-recap { display: grid; gap: var(--space-6); }
+.storyboard-site .recap-header { display: flex; align-items: start; justify-content: space-between; gap: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--rule); }
+.storyboard-site .recap-header h3 { margin: var(--space-1) 0; font-size: var(--text-title); }
+.storyboard-site .recap-header p,.storyboard-site .recap-explicit-action p { margin: 0; color: var(--muted); }
+.storyboard-site .recap-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--space-5); }
+.storyboard-site .recap-grid textarea { width: 100%; resize: vertical; }
+.storyboard-site .recap-grid fieldset { display: grid; gap: var(--space-2); margin: var(--space-4) 0; border: 0; padding: 0; }
+.storyboard-site .recap-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.storyboard-site .recap-state { padding: 4px 9px; color: var(--muted); font-size: var(--text-caption); font-weight: 700; text-transform: uppercase; border: 1px solid var(--rule); border-radius: 999px; }
+.storyboard-site .recap-state.is-completed,.storyboard-site .recap-state.is-accepted { color: var(--success); border-color: #5f876e; background: var(--success-surface); }
+.storyboard-site .recap-section { display: grid; gap: var(--space-3); }
+.storyboard-site .recap-proposal { display: grid; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--rule); border-radius: var(--radius-panel); background: var(--ivory); }
+.storyboard-site .recap-proposal > header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.storyboard-site .recap-proposal label { display: grid; gap: var(--space-2); color: var(--muted); font-size: var(--text-small); }
+.storyboard-site .recap-proposal textarea { resize: vertical; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; }
+.storyboard-site .recap-item { padding: var(--space-3) 0; border-top: 1px solid var(--rule); }
+.storyboard-site .recap-item small { color: var(--muted); overflow-wrap: anywhere; }
+.storyboard-site .recap-conflict { padding: var(--space-3); color: var(--danger); border-left: 3px solid var(--danger); background: var(--danger-surface); }
+.storyboard-site .recap-conflict pre { max-height: 240px; overflow: auto; color: var(--ink); white-space: pre-wrap; }
+.storyboard-site .recap-explicit-action { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
 .storyboard-site :is(.sr-only,.skip-link:not(:focus)) { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .storyboard-site .skip-link:focus { position: fixed; top: 12px; left: 12px; z-index: 10; background: var(--ivory); padding: var(--space-3); }
 
@@ -891,6 +915,8 @@ body { margin: 0; }
   .storyboard-site .transcript-speakers > div { grid-template-columns: 1fr; }
   .storyboard-site .transcript-speakers select { width: 100%; min-width: 0; }
   .storyboard-site .transcript-tts { align-items: stretch; flex-direction: column; }
+  .storyboard-site .recap-header,.storyboard-site .recap-explicit-action { align-items: stretch; flex-direction: column; }
+  .storyboard-site .recap-grid { grid-template-columns: 1fr; }
   .storyboard-site .cockpit-page { height: auto; min-height: 0; overflow: visible; }
   .storyboard-site .cockpit-page .cockpit { min-height: calc(100dvh - 180px); overflow: visible; }
   .storyboard-site .cockpit-status { align-items: flex-start; padding: var(--space-4); }

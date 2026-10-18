@@ -20,6 +20,7 @@ Use the narrower reads when you need detail:
 - `GET .../agent/players` for players, attendance and their characters.
 - `GET .../agent/reveals` for the current entity visibility state.
 - `GET .../agent/transcript/sessions` and `GET .../agent/transcript/sessions/{session}/events?limit=200`.
+- `GET .../agent/transcript/sessions/{session}/recap` for the session's grounded, reviewable post-session recap.
 - `GET .../agent/music` and `GET .../agent/music/generations/{operation}`.
 - `GET .../agent/visuals` and `GET .../agent/visuals/generations/{operation}`.
 - `GET .../agent/playbooks` before autonomous or creative work.
@@ -76,6 +77,20 @@ in the heartbeat discussion or use a cockpit proposal. Never delete workspace en
 
 Music candidates remain drafts and music playback stays under GM control. Visual generation and slideshow mutation
 follow the narrower rules above. Do not add/remove players, change roles, expose credentials or rewrite the transcript.
+
+## Session recaps
+
+An ended transcript session is one numbered episode. Storyboard queues its recap automatically. Read it with
+`GET .../agent/transcript/sessions/{session}/recap`. In an interactive GM discussion only, you may request a fresh
+run with `POST .../agent/transcript/sessions/{session}/recap/regenerate` and `{operationId}` or add a grounded proposal
+with `POST .../agent/transcript/sessions/{session}/recap/proposals`. Every proposal must cite event ids from that
+session and target an entity or existing type in this campaign.
+
+Recaps and proposals are drafts. You may read them and help improve them, but only the GM can accept a canon update,
+resolve a revision conflict, publish the player recap, choose its audience, or move Cockpit cards after the session.
+Never claim a proposal is canon before its state is `accepted`. Never put GM notes, Agent intent or rationale, ledger
+details, sensitive fields, unrevealed content, or an inference based on any of those into a player recap. Player recap
+grounding is limited to table speech and the Player views already revealed to the session audience.
 
 ## Working discipline
 

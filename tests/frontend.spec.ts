@@ -355,6 +355,17 @@ test('transcript separates sessions, IRL and roleplay time, and records visible 
   const live = page.getByRole('complementary', { name: 'Live player', exact: true })
   await expect(live).toContainText('TRANSCRIPT'); await expect(live.getByRole('button', { name: 'Record room' })).toBeVisible()
 })
+test('ended session opens reviewed recap and keeps canon and publishing as explicit GM actions', async ({ page }) => {
+  const state = await fixture(page); state.transcriptSession.state = 'ended'; state.transcriptSession.endedAt = '2026-10-05T22:14:22.123Z'; await page.goto(`/campaigns/${cid}/transcript`)
+  await expect(page.getByRole('heading', { name: /Episode 1: Session 1/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Reviewed post-session recap' })).toBeVisible()
+  await expect(page.getByText('The crew found that the brass orrery contradicted the visible sky.')).toBeVisible()
+  await expect(page.getByText('The table established the contradiction.')).toBeVisible()
+  await page.getByRole('button', { name: 'Accept update' }).click(); await expect.poll(() => state.recap.proposals[0].state).toBe('accepted')
+  await page.getByRole('button', { name: 'Publish to players' }).click(); await expect.poll(() => state.requests.find(request => request.path.endsWith('/recap/publish'))?.body).toMatchObject({ playerIds: [second] })
+  await page.getByRole('button', { name: 'View transcript' }).click(); await page.getByRole('button', { name: 'Domain ledger' }).click(); await expect(page.getByText('Visual shown: The drowned court')).toBeVisible(); await expect(page.getByText('The brass orrery is moving, but the sky above us is perfectly still.')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
 test('live transcript uses the chosen default mic and uploads a durable audio chunk when stopped', async ({ page }) => {
   await page.addInitScript(() => {
     const track = { stop() {} }
