@@ -521,6 +521,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
                 }, ct);
             }
             await store.AuditAsync("music.queue.enqueued", account, campaign, new JsonObject { ["count"] = tracks.Count }, ct);
+            changes.BumpGm(campaign, "music");
             return await QueueAsync(campaign, account, ct);
         }
         finally { store.Commands.Release(); }
@@ -536,6 +537,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             var item = await store.RequireAsync("storyboard-music-queue-item", queueId, ct);
             if (item.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
             await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["active"] = false; return next; }, ct);
+            changes.BumpGm(campaign, "music");
             return await QueueAsync(campaign, account, ct);
         }
         finally { store.Commands.Release(); }
@@ -551,6 +553,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             foreach (var item in await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct))
                 await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["active"] = false; return next; }, ct);
             await store.AuditAsync("music.queue.cleared", account, campaign, ct: ct);
+            changes.BumpGm(campaign, "music");
             return Array.Empty<object>();
         }
         finally { store.Commands.Release(); }
@@ -645,6 +648,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             var track = await store.ChangeAsync("music-track", "storyboard-" + candidate.Id.ToString("N"), candidate.Name, old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
             await SetAsync(candidate, new JsonObject { ["promoted_track"] = track.Id.ToString() }, ct);
             await store.AuditAsync("music.candidate.promoted", account, track.Id.ToString(), new JsonObject { ["candidate"] = candidate.Id.ToString() }, ct);
+            changes.BumpGm(campaign, "music");
             return TrackProjection(track);
         }
         finally { store.Commands.Release(); }
@@ -800,6 +804,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         if (index == 0) throw new StoryException("music_output_invalid", 502);
         await SetAsync(op, new JsonObject { ["state"] = "completed", ["error"] = "" }, ct);
         await store.AuditAsync("music.generation.completed", op.Data.Text("account"), op.Id.ToString(), new JsonObject { ["credits"] = (root["credits"] as JsonObject)?.Number("consumed") ?? 0 }, ct);
+        changes.BumpGm(op.Data.Text("campaign"), "music");
     }
 
     private async Task<object> GenerationProjectionAsync(Leaf.Sdk.LeafEntity op, CancellationToken ct)

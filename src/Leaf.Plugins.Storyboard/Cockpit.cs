@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 
 namespace Leaf.Plugins.Storyboard;
 
-public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, StoryEntityVisibility visibility, IAiInference ai)
+public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryTranscript transcript, StoryEntityVisibility visibility, IAiInference ai, StoryChanges changes)
 {
     private static readonly HashSet<string> Phases = new(StringComparer.Ordinal) { "prepared", "now", "played" };
     private static readonly HashSet<string> Lenses = new(StringComparer.Ordinal) { "beat", "discovery", "belief" };
@@ -62,6 +62,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
                 return next;
             }, ct);
             await store.AuditAsync("cockpit.item.pinned", account, saved.Id.ToString(), new JsonObject { ["campaign"] = campaign, ["entity"] = target.Entity.Id.ToString(), ["phase"] = phase }, ct);
+            changes.BumpGm(campaign, "cockpit");
             return ProjectItem(saved, target, null);
         }
         finally { store.Commands.Release(); }
@@ -80,6 +81,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             await store.WritableAsync(ct);
             await campaigns.MembershipAsync(campaign, account, true, ct);
             item = await store.ChangeAsync(item.TypeSlug, item.Slug, item.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["phase"] = phase; next["lens"] = lens; next["position"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); next["last_operation"] = operation; return next; }, ct);
+            changes.BumpGm(campaign, "cockpit");
             var target = (await workspace.CockpitEntitiesAsync(campaign, account, limit: 500, ct: ct)).SingleOrDefault(value => value.Entity.Id.ToString() == item.Data.Text("entity")) ?? throw new StoryException("cockpit_entity_unavailable", 409);
             return ProjectItem(item, target, null);
         }
@@ -127,6 +129,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             {
                 var next = old!.Data.DeepClone().AsObject(); next["state"] = answer.Suggest ? "proposed" : "empty"; next["entity"] = answer.EntityId; next["title"] = answer.Title; next["summary"] = answer.Summary; next["evidence"] = new JsonArray(answer.Evidence.Select(value => (JsonNode?)value).ToArray()); next["confidence"] = answer.Confidence; next["compute_job"] = result.JobId; return next;
             }, ct);
+            changes.BumpGm(campaign, "cockpit");
         }
         finally { store.Commands.Release(); }
         return await SnapshotAsync(campaign, account, ct);
@@ -152,6 +155,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
             await store.WritableAsync(ct);
             await campaigns.MembershipAsync(campaign, account, true, ct);
             await store.ChangeAsync(suggestion.TypeSlug, suggestion.Slug, suggestion.Name, old => { var next = old!.Data.DeepClone().AsObject(); next["state"] = input.Decision == "accept" ? "accepted" : "dismissed"; next["decided_by"] = account; next["last_operation"] = operation; return next; }, ct);
+            changes.BumpGm(campaign, "cockpit");
         }
         finally { store.Commands.Release(); }
         return await SnapshotAsync(campaign, account, ct);
@@ -225,6 +229,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
                     ["evidence_count"] = evidence.Length,
                 },
                 ct);
+            changes.BumpGm(campaign, "cockpit");
             return ProjectSuggestion(saved);
         }
         finally { store.Commands.Release(); }

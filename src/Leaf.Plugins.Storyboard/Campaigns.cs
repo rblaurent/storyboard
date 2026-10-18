@@ -1,7 +1,7 @@
 using Leaf.Sdk;
 using System.Text.Json.Nodes;
 namespace Leaf.Plugins.Storyboard;
-public sealed class StoryCampaigns(StoryStore store) {
+public sealed class StoryCampaigns(StoryStore store,StoryChanges changes) {
  private SemaphoreSlim gate=>store.Commands;
  public static string PlayerSlug(string campaign,string account)=>"m-"+StoryJson.Hash(campaign+":"+account);
  public async Task<LeafEntity> MembershipAsync(string campaign,string account,bool gm=false,CancellationToken ct=default) {
@@ -54,7 +54,7 @@ public sealed class StoryCampaigns(StoryStore store) {
   if(role is not "gm" and not "player")throw new StoryException("invalid_role");
   var definition=await store.Entities.GetBySlugAsync("storyboard-role",role,ct)??throw new StoryException("roles_not_configured",503);
   var data=await store.ProtectAsync(new JsonObject{["account"]=account,["campaign"]=campaign,["role"]=role,["role_ref"]=definition.Id.ToString(),["active"]=true,["present"]=true,["parent"]=workspace},ct);
-  return await store.ChangeAsync("storyboard-player",PlayerSlug(campaign,account),"Campaign member",old=>{var next=old?.Data.DeepClone().AsObject()??data.DeepClone().AsObject();if(old is null||!old.Data.Flag("active"))next["present"]=true;next["role"]=role;next["role_ref"]=definition.Id.ToString();next["active"]=true;return next;},ct);
+  var saved=await store.ChangeAsync("storyboard-player",PlayerSlug(campaign,account),"Campaign member",old=>{var next=old?.Data.DeepClone().AsObject()??data.DeepClone().AsObject();if(old is null||!old.Data.Flag("active"))next["present"]=true;next["role"]=role;next["role_ref"]=definition.Id.ToString();next["active"]=true;return next;},ct);changes.Bump(campaign,"players");return saved;
  }
  private async Task CheckLastGmAsync(string campaign,CancellationToken ct) {if((await store.AllAsync("storyboard-player",new Dictionary<string,object?>{["campaign"]=campaign,["role"]="gm",["active"]=true},ct)).Count<=1)throw new StoryException("last_game_master",409);}
  public async Task SetMemberAsync(string campaign,string actor,MembershipWrite input,CancellationToken ct=default) {
@@ -71,14 +71,14 @@ public sealed class StoryCampaigns(StoryStore store) {
    await store.WritableAsync(ct);
    await MembershipAsync(campaign,actor,true,ct);var e=await store.RequireAsync("storyboard-player",memberId,ct);if(e.Data.Text("campaign")!=campaign)throw new StoryException("not_found",404);
    if(e.Data.Flag("active")&&e.Data.Text("role")=="gm")await CheckLastGmAsync(campaign,ct);
-   await store.ChangeAsync(e.TypeSlug,e.Slug,e.Name,old=>{var next=old!.Data.DeepClone().AsObject();next["active"]=false;return next;},ct);await store.AuditAsync("player.removed",actor,memberId,ct:ct);
+   await store.ChangeAsync(e.TypeSlug,e.Slug,e.Name,old=>{var next=old!.Data.DeepClone().AsObject();next["active"]=false;return next;},ct);changes.Bump(campaign,"players");await store.AuditAsync("player.removed",actor,memberId,ct:ct);
   }finally{gate.Release();}
  }
  public async Task SetPresenceAsync(string campaign,string actor,string memberId,PresenceWrite input,CancellationToken ct=default) {
   await gate.WaitAsync(ct);try{
    await store.WritableAsync(ct);if(input is null)throw new StoryException("invalid_json");await MembershipAsync(campaign,actor,true,ct);var member=await store.RequireAsync("storyboard-player",memberId,ct);
    if(member.Data.Text("campaign")!=campaign||!member.Data.Flag("active"))throw new StoryException("not_found",404);
-   await store.ChangeAsync(member.TypeSlug,member.Slug,member.Name,old=>{var next=old!.Data.DeepClone().AsObject();next["present"]=input.Present;return next;},ct);
+   await store.ChangeAsync(member.TypeSlug,member.Slug,member.Name,old=>{var next=old!.Data.DeepClone().AsObject();next["present"]=input.Present;return next;},ct);changes.Bump(campaign,"players");
    await store.AuditAsync(input.Present?"player.present":"player.absent",actor,memberId,ct:ct);
   }finally{gate.Release();}
  }

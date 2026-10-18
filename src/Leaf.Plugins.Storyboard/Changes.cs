@@ -10,6 +10,7 @@ public sealed class StoryChanges
 {
     private static readonly string[] GmTopics = ["visuals", "music", "transcript", "cockpit", "players", "play-mode"];
     private static readonly string[] PlayerTopics = ["visuals", "music", "players", "play-mode"];
+    private static readonly string[] GmVisibleTopics = [.. GmTopics, .. GmTopics.Select(topic => "gm:" + topic)];
     private readonly string epoch = Guid.NewGuid().ToString("N");
     private readonly ConcurrentDictionary<string, CampaignChanges> campaigns = new();
     private readonly ConcurrentDictionary<string, int> waiters = new();
@@ -29,13 +30,15 @@ public sealed class StoryChanges
         signal.TrySetResult();
     }
 
+    public void BumpGm(string campaign, params string[] topics) => Bump(campaign, topics.Select(topic => "gm:" + topic).ToArray());
+
     public async Task<StoryChangeEnvelope> WaitAsync(string campaign, string membership, bool gm, string? since, CancellationToken ct)
     {
-        var visible = gm ? GmTopics : [.. PlayerTopics, "journal:" + membership];
+        var visible = gm ? GmVisibleTopics : [.. PlayerTopics, "journal:" + membership];
         var state = campaigns.GetOrAdd(campaign, _ => new());
         var parsed = Decode(since);
         if (parsed is null || parsed.Epoch != epoch || parsed.Campaign != campaign)
-            return Snapshot(campaign, visible, state, visible);
+            return Snapshot(campaign, visible, state, visible.Select(DisplayTopic).Distinct(StringComparer.Ordinal).ToArray());
 
         var deadline = DateTimeOffset.UtcNow.AddSeconds(25);
         while (true)
@@ -45,7 +48,7 @@ public sealed class StoryChanges
             lock (state.Gate)
             {
                 changed = visible.Where(topic => state.Revisions.GetValueOrDefault(topic) > parsed.Revisions.GetValueOrDefault(topic)).ToArray();
-                if (changed.Length > 0) return SnapshotLocked(campaign, visible, state, changed);
+                if (changed.Length > 0) return SnapshotLocked(campaign, visible, state, changed.Select(DisplayTopic).Distinct(StringComparer.Ordinal).ToArray());
                 signal = state.Signal.Task;
             }
 
@@ -92,6 +95,7 @@ public sealed class StoryChanges
     }
 
     private static TaskCompletionSource NewSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static string DisplayTopic(string topic) => topic.StartsWith("gm:", StringComparison.Ordinal) ? topic[3..] : topic;
     private sealed class CampaignChanges { public object Gate { get; } = new(); public Dictionary<string, long> Revisions { get; } = new(StringComparer.Ordinal); public TaskCompletionSource Signal { get; set; } = NewSignal(); }
     private sealed record Token(string Epoch, string Campaign, Dictionary<string, long> Revisions);
 }

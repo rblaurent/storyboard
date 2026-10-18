@@ -225,7 +225,8 @@ public sealed class StoryCampaignPlay(
     StoryStore store,
     StoryCampaigns campaigns,
     StoryCampaignAgent agent,
-    IWorkflowAutomations workflows)
+    IWorkflowAutomations workflows,
+    StoryChanges changes)
 {
     public const string ActionType = "storyboard-campaign-heartbeat";
 
@@ -277,6 +278,7 @@ public sealed class StoryCampaignPlay(
             ["automation"] = automation.Id.ToString(),
             ["heartbeat_discussion"] = conversation.Discussion.Data.Text("discussion_id"),
         }, ct);
+        changes.Bump(campaign, "play-mode");
         return Projection(campaign, status);
     }
 
@@ -304,6 +306,7 @@ public sealed class StoryCampaignPlay(
             var config = await store.ConfigAsync(ct) ?? throw new StoryException("storyboard_not_configured", 503);
             var automation = await workflows.UpsertAsync(Definition(conversation, config, true), ct);
             if (status.Data.Text("automation") != automation.Id.ToString())
+            {
                 await store.ChangeAsync(status.TypeSlug, status.Slug, status.Name, old =>
                 {
                     var next = old!.Data.DeepClone().AsObject();
@@ -312,6 +315,8 @@ public sealed class StoryCampaignPlay(
                     next["heartbeat_session"] = conversation.Handle.SessionId;
                     return next;
                 }, ct);
+                changes.Bump(status.Data.Text("campaign"), "play-mode");
+            }
         }
     }
 

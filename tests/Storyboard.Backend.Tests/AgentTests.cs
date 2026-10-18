@@ -341,7 +341,7 @@ public sealed class AgentTests
         });
 
         var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
-        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities), fixture.Changes);
         var tools = new StoryCampaignAgentTools(
             fixture.Store,
             fixture.Agent,
@@ -482,7 +482,7 @@ public sealed class AgentTests
         ], "Bearer"));
 
         var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
-        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities), fixture.Changes);
         var tools = new StoryCampaignAgentTools(
             fixture.Store, fixture.Agent, fixture.Campaigns, fixture.Workspace, fixture.Transcript,
             fixture.Cockpit, fixture.Visibility, play, playbooks, null!, fixture.Visuals);
@@ -533,7 +533,7 @@ public sealed class AgentTests
             "Player-safe reveal", "Only this description crosses the boundary.", null, [], entity.UpdatedAt.ToString("O"), Guid.NewGuid().ToString())));
         var membership = await fixture.Campaigns.MembershipAsync(campaignId, fixture.Player.Id.ToString());
         var playbooks = new StoryAgentPlaybooks(fixture.Store, fixture.Campaigns);
-        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities));
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, new FakeWorkflowAutomations(fixture.Entities), fixture.Changes);
         var tools = new StoryCampaignAgentTools(
             fixture.Store, fixture.Agent, fixture.Campaigns, fixture.Workspace, fixture.Transcript,
             fixture.Cockpit, fixture.Visibility, play, playbooks, null!, fixture.Visuals);
@@ -596,7 +596,7 @@ public sealed class AgentTests
         Assert.NotEmpty(saved.Text("revisionHash"));
 
         var workflows = new FakeWorkflowAutomations(fixture.Entities);
-        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, workflows);
+        var play = new StoryCampaignPlay(fixture.Store, fixture.Campaigns, fixture.Agent, workflows, fixture.Changes);
         var started = StoryJson.Object(await play.SetAsync(campaign, account, new CampaignPlayWrite(true, Guid.NewGuid().ToString())));
         Assert.True(started.Flag("enabled"));
         Assert.NotEmpty(started.Text("heartbeatDiscussionId"));

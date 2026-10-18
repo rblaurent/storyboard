@@ -10,7 +10,8 @@ public sealed class StoryEntityVisibility(
     StoryStore store,
     StoryCampaigns campaigns,
     StoryWorkspace workspace,
-    IAssets assets)
+    IAssets assets,
+    StoryChanges changes)
 {
     private const string OperationStream = "entity-visibility-operations";
     public Task<object> SetAsync(string campaign, string account, string entityId, EntityVisibilityWrite input, CancellationToken ct = default)
@@ -59,6 +60,7 @@ public sealed class StoryEntityVisibility(
                         current => current?.Data.DeepClone().AsObject() ?? seed.DeepClone().AsObject(), ct);
                 }
                 await store.Entities.DeleteAsync(old.Id, ct);
+                changes.Bump(campaign, ["cockpit", .. selected.Where(valid.Contains).Distinct(StringComparer.Ordinal).Select(player => "journal:" + player)]);
             }
         }
         finally { store.Commands.Release(); }
@@ -96,6 +98,7 @@ public sealed class StoryEntityVisibility(
             return await AggregateAsync(campaign, playerContext.Entity.Id.ToString(), players, ct);
         }
 
+        var changedPlayers = new List<string>();
         await store.Commands.WaitAsync(ct);
         try
         {
@@ -147,6 +150,7 @@ public sealed class StoryEntityVisibility(
                     return next;
                 }, ct);
                 changed++;
+                changedPlayers.Add(player);
             }
             await store.Records.AppendOnceAsync(OperationStream, operation, payload, playerContext.Entity.Id, auditActor, ct);
             if (changed > 0) await store.AuditAsync(input.Visible ? "workspace.entity.revealed" : "workspace.entity.hidden", auditActor, playerContext.Entity.Id.ToString(), new JsonObject
@@ -158,6 +162,7 @@ public sealed class StoryEntityVisibility(
             }, ct);
         }
         finally { store.Commands.Release(); }
+        if (changedPlayers.Count > 0) changes.Bump(campaign, ["cockpit", .. changedPlayers.Select(player => "journal:" + player)]);
         return await AggregateAsync(campaign, playerContext.Entity.Id.ToString(), players, ct);
     }
 

@@ -399,17 +399,17 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     public async Task<object> EnqueueAsync(string campaign, string account, VisualQueueWrite input, CancellationToken ct)
     {
         await campaigns.MembershipAsync(campaign, account, true, ct); if (input is null || (string.IsNullOrWhiteSpace(input.VisualId) == string.IsNullOrWhiteSpace(input.SetId))) throw new StoryException("invalid_visual_queue_item"); var operation = StoryJson.Id(input.OperationId);
-        await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var visuals = new List<LeafEntity>(); if (!string.IsNullOrWhiteSpace(input.VisualId)) visuals.Add(await RequireVisualAsync(campaign, input.VisualId, ct)); else { await RequireSetAsync(campaign, input.SetId!, ct); visuals.AddRange((await SetItemsAsync(campaign, input.SetId!, ct)).Select(i => i.Visual)); } if (visuals.Count == 0) throw new StoryException("visual_set_empty", 409); var active = await QueueItemsAsync(campaign, ct); var position = active.Count == 0 ? 0 : active.Max(i => i.Item.Data.Number("position")) + 1; for (var i = 0; i < visuals.Count; i++) { var visual = visuals[i]; var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["visual"] = visual.Id.ToString(), ["position"] = position + i, ["active"] = true, ["created_by"] = account }, ct); await store.ChangeAsync("storyboard-visual-queue-item", "visual-queue-" + StoryJson.Hash(campaign + "|" + operation.ToString("N") + "|" + i), visual.Name, old => { if (old is not null && (old.Data.Text("campaign") != campaign || old.Data.Text("visual") != visual.Id.ToString())) throw new StoryException("operation_reused", 409); return old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(); }, ct); } return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
+        await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var visuals = new List<LeafEntity>(); if (!string.IsNullOrWhiteSpace(input.VisualId)) visuals.Add(await RequireVisualAsync(campaign, input.VisualId, ct)); else { await RequireSetAsync(campaign, input.SetId!, ct); visuals.AddRange((await SetItemsAsync(campaign, input.SetId!, ct)).Select(i => i.Visual)); } if (visuals.Count == 0) throw new StoryException("visual_set_empty", 409); var active = await QueueItemsAsync(campaign, ct); var position = active.Count == 0 ? 0 : active.Max(i => i.Item.Data.Number("position")) + 1; for (var i = 0; i < visuals.Count; i++) { var visual = visuals[i]; var data = await store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["visual"] = visual.Id.ToString(), ["position"] = position + i, ["active"] = true, ["created_by"] = account }, ct); await store.ChangeAsync("storyboard-visual-queue-item", "visual-queue-" + StoryJson.Hash(campaign + "|" + operation.ToString("N") + "|" + i), visual.Name, old => { if (old is not null && (old.Data.Text("campaign") != campaign || old.Data.Text("visual") != visual.Id.ToString())) throw new StoryException("operation_reused", 409); return old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(); }, ct); } changes.BumpGm(campaign, "visuals"); return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
     }
 
     public async Task<object> RemoveQueueItemAsync(string campaign, string account, string itemId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, true, ct); await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var item = await store.RequireAsync("storyboard-visual-queue-item", itemId, ct); if (item.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404); await PatchAsync(item, new JsonObject { ["active"] = false }, ct); return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
+        await campaigns.MembershipAsync(campaign, account, true, ct); await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var item = await store.RequireAsync("storyboard-visual-queue-item", itemId, ct); if (item.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404); await PatchAsync(item, new JsonObject { ["active"] = false }, ct); changes.BumpGm(campaign, "visuals"); return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
     }
 
     public async Task<object> ClearQueueAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, true, ct); await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); foreach (var item in await store.AllAsync("storyboard-visual-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)) await PatchAsync(item, new JsonObject { ["active"] = false }, ct); var session = await SessionEntityAsync(campaign, false, ct); if (session is not null) await PatchSessionAsync(session, new JsonObject { ["current_visual"] = "", ["current_queue_item"] = "", ["playing"] = false, ["blackout"] = false }, ct); return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
+        await campaigns.MembershipAsync(campaign, account, true, ct); await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); foreach (var item in await store.AllAsync("storyboard-visual-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)) await PatchAsync(item, new JsonObject { ["active"] = false }, ct); var session = await SessionEntityAsync(campaign, false, ct); if (session is not null) await PatchSessionAsync(session, new JsonObject { ["current_visual"] = "", ["current_queue_item"] = "", ["playing"] = false, ["blackout"] = false }, ct); changes.Bump(campaign, "visuals"); return await QueueAsync(campaign, account, ct); } finally { store.Commands.Release(); }
     }
 
     public async Task<object> SessionAsync(string campaign, string account, CancellationToken ct)
@@ -441,6 +441,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
                 ["last_operation_visual"] = visual.Id.ToString(), ["updated_by"] = account
             }, ct);
             await store.AuditAsync("visual.session.show", account, session.Id.ToString(), ct: ct);
+            changes.Bump(campaign, "visuals");
             return await SessionProjectionAsync(campaign, session, ct);
         }
         finally { store.Commands.Release(); }
@@ -473,7 +474,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             }
             else if (action == "clear") { patch["current_visual"] = ""; patch["current_queue_item"] = ""; patch["playing"] = false; patch["blackout"] = false; }
             else throw new StoryException("invalid_visual_command");
-            patch["last_operation"] = operation.ToString(); patch["updated_by"] = account; session = await PatchSessionAsync(session, patch, ct); await store.AuditAsync("visual.session." + action, account, session.Id.ToString(), ct: ct); return await SessionProjectionAsync(campaign, session, ct);
+            patch["last_operation"] = operation.ToString(); patch["updated_by"] = account; session = await PatchSessionAsync(session, patch, ct); await store.AuditAsync("visual.session." + action, account, session.Id.ToString(), ct: ct); changes.Bump(campaign, "visuals"); return await SessionProjectionAsync(campaign, session, ct);
         }
         finally { store.Commands.Release(); }
     }
@@ -571,7 +572,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             var asset = await assets.UploadIdempotentAsync(image.Content, $"storyboard-visual-{op.Id}-{index}", $"storyboard-visual-{op.Id:N}-{index}.png", image.ContentType, ct); var data = await store.ProtectAsync(new JsonObject { ["campaign"] = op.Data.Text("campaign"), ["generation"] = op.Id.ToString(), ["image_asset"] = asset.AssetId, ["prompt"] = frame.Text("prompt"), ["mood"] = frame.Text("mood"), ["tags"] = frame["tags"]?.DeepClone(), ["compute_job"] = jobId, ["promoted_visual"] = "" }, ct); var candidate = await store.ChangeAsync("storyboard-visual-candidate", $"visual-candidate-{op.Id:N}-{index}", frame.Text("title"), old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
             if (op.Data.Flag("auto_promote")) await PromoteCandidateAsync(candidate, op, op.Data.Text("account"), ct);
         }
-        await PatchAsync(op, new JsonObject { ["state"] = "completed", ["error"] = "" }, ct); await store.AuditAsync("visual.generation.completed", op.Data.Text("account"), op.Id.ToString(), new JsonObject { ["count"] = frames.Count }, ct);
+        await PatchAsync(op, new JsonObject { ["state"] = "completed", ["error"] = "" }, ct); await store.AuditAsync("visual.generation.completed", op.Data.Text("account"), op.Id.ToString(), new JsonObject { ["count"] = frames.Count }, ct); changes.BumpGm(op.Data.Text("campaign"), "visuals");
     }
 
     private async Task AdvanceTimedAsync(LeafEntity observed, CancellationToken ct)
@@ -627,6 +628,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
         var visual = await store.ChangeAsync("storyboard-visual", "visual-" + candidate.Id.ToString("N"), candidate.Name, old => old?.Data.DeepClone().AsObject() ?? data.DeepClone().AsObject(), ct);
         await PatchAsync(candidate, new JsonObject { ["promoted_visual"] = visual.Id.ToString() }, ct);
         await store.AuditAsync("visual.candidate.promoted", account, visual.Id.ToString(), ct: ct);
+        changes.BumpGm(generation.Data.Text("campaign"), "visuals");
         return visual;
     }
     private async Task<object> SetProjectionAsync(LeafEntity set, CancellationToken ct) => new { id = set.Id, name = set.Name, description = set.Data.Text("description"), imageCount = (await SetItemsAsync(set.Data.Text("campaign"), set.Id.ToString(), ct)).Count };

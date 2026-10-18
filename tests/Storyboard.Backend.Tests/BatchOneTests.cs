@@ -116,7 +116,11 @@ public sealed class BatchOneTests
         var candidate = await f.Store.ProtectAsync(new JsonObject { ["campaign"] = campaign, ["generation"] = generation.Id.ToString(), ["audio_asset"] = "generated-audio.mp3", ["cover_asset"] = "", ["duration_seconds"] = 120, ["promoted_track"] = "" });
         await f.Store.ChangeAsync("storyboard-music-candidate", "endless-candidate", "Ahead", _ => candidate);
         await music.ProjectionCommandAsync(campaign, f.Gm.Id.ToString(), new("ended", Guid.NewGuid().ToString(), (long)session.Data.Number("revision"), track.Text("id")), default);
+        var gm = await f.Campaigns.MembershipAsync(campaign, f.Gm.Id.ToString());
+        var token = (await f.Changes.WaitAsync(campaign, gm.Id.ToString(), true, null, default)).Token;
+        var musicChanged = f.Changes.WaitAsync(campaign, gm.Id.ToString(), true, token, default);
         await music.ProcessEndlessOnceAsync();
+        Assert.Equal(["music"], (await musicChanged.WaitAsync(TimeSpan.FromSeconds(1))).Topics);
         session = Assert.Single(await f.Store.AllAsync("storyboard-music-session", new Dictionary<string, object?> { ["campaign"] = campaign }));
         Assert.True(session.Data.Flag("playing"));
         Assert.False(session.Data.Flag("awaiting_endless_resume"));
