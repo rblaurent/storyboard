@@ -10,6 +10,7 @@ import { LiveFoldout } from './LiveFoldout'
 import { LiveTranscript, TranscriptWorkspace } from './Transcript'
 import { LanguageSwitch, useLocale } from './i18n'
 import { Journal, type JournalSnapshot } from './Journal'
+import { CampaignChanges, useCampaignTopic } from './Changes'
 
 function Avatar({ person }: { person: Person }) {
   const src = imageSource(person.avatar)
@@ -137,6 +138,7 @@ export function App() {
   function setLive(value: 'contracted' | 'rail') { setLiveMode(value); try { localStorage.setItem('storyboard:live-mode', value); localStorage.setItem('storyboard:live-expanded', String(value !== 'contracted')) } catch { /* Browser storage may be disabled. */ } }
   function toggleLiveModule(module: 'players' | 'transcript' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${agentDashboard ? ' agent-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel live-${liveMode}${liveMode === 'contracted' ? ' live-contracted' : ' live-expanded'}` : ''}`}>
+    {me && liveCampaignId && <CampaignChanges campaignId={liveCampaignId} />}
     <a className="skip-link" href="#main">Skip to content</a>
     {!campaignDashboard && !projection && <header className="masthead"><Link href="/" navigate={navigate} className="wordmark"><SiteIcon name="notebook" size={32} className="brand-mark" /> Storyboard<span className="wordmark-caption">THE CAMPAIGN NOTEBOOK</span></Link>
       {me ? <AccountMenu me={me} signingOut={signingOut} signout={signout} showAbout={() => setAboutOpen(true)} /> : <LanguageSwitch />}
@@ -167,12 +169,9 @@ function LivePlayMode({ campaignId, csrfToken, panelExpanded }: { campaignId: st
   const [status, setStatus] = useState<PlayModeStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  useEffect(() => {
-    let alive = true
-    const read = () => void api<PlayModeStatus>(`/campaigns/${campaignId}/play-mode`).then(value => { if (alive) { setStatus(value); setError('') } }).catch(cause => { if (alive) setError(explain(cause)) })
-    read(); const timer = window.setInterval(read, 5000)
-    return () => { alive = false; window.clearInterval(timer) }
-  }, [campaignId])
+  const read = useCallback(() => { void api<PlayModeStatus>(`/campaigns/${campaignId}/play-mode`).then(value => { setStatus(value); setError('') }).catch(cause => setError(explain(cause))) }, [campaignId])
+  useEffect(read, [read])
+  useCampaignTopic(campaignId, 'play-mode', read)
   async function toggle() {
     if (!status || busy) return
     setBusy(true); setError('')
@@ -188,16 +187,16 @@ function LivePlayMode({ campaignId, csrfToken, panelExpanded }: { campaignId: st
 
 function LivePlayers({ campaignId, open, panelExpanded, toggleFoldout }: { campaignId: string; open: boolean; panelExpanded: boolean; toggleFoldout: () => void }) {
   const [players, setPlayers] = useState<Player[]>([])
+  const read = useCallback(() => { void api<Player[]>(`/campaigns/${campaignId}/players`).then(setPlayers).catch(() => {}) }, [campaignId])
   useEffect(() => {
-    let alive = true
-    const read = () => void api<Player[]>(`/campaigns/${campaignId}/players`).then(value => { if (alive) setPlayers(value) }).catch(() => {})
     const changed = (event: Event) => {
       const detail = (event as CustomEvent<{ campaignId?: string }>).detail
       if (!detail?.campaignId || detail.campaignId === campaignId) read()
     }
-    read(); const timer = window.setInterval(read, 5000); window.addEventListener('storyboard:players-presence-changed', changed)
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:players-presence-changed', changed) }
-  }, [campaignId])
+    read(); window.addEventListener('storyboard:players-presence-changed', changed)
+    return () => window.removeEventListener('storyboard:players-presence-changed', changed)
+  }, [campaignId, read])
+  useCampaignTopic(campaignId, 'players', read)
   const present = players.filter(player => player.present)
   return <LiveFoldout module="players" label="Players" icon="players" open={open} panelExpanded={panelExpanded} toggle={toggleFoldout} className="live-players" aria-label="Live players" status={<b className="live-module-count">{present.length}</b>}>
     <span className="live-presence-compact">{present.length ? present.slice(0, 3).map(player => <Avatar key={player.id} person={player} />) : <SiteIcon name="players" />}</span>
@@ -289,26 +288,18 @@ function CampaignView({ id, tab, me, navigate, signingOut, signout, showAbout }:
     if (currentBox.left < tabsBox.left) tabs.scrollTo({ left: tabs.scrollLeft - (tabsBox.left - currentBox.left), behavior: 'auto' })
     else if (currentBox.right > tabsBox.right) tabs.scrollTo({ left: tabs.scrollLeft + (currentBox.right - tabsBox.right), behavior: 'auto' })
   }, [tab, gm])
-  useEffect(() => {
-    if (!campaign || campaign.role === 'gm') return
+  const refreshJournalAlert = useCallback(async () => {
+    if (!campaign || campaign.role === 'gm' || tab === 'journal') { setJournalAlert(''); return }
     const key = `storyboard:journal-seen:${me.id}:${id}`
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    async function poll() {
-      try {
-        const value = await api<JournalSnapshot>(`${base}/journal`)
-        if (cancelled) return
-        const latest = value.latestRevealAt || ''
-        const seen = (() => { try { return sessionStorage.getItem(key) || '' } catch { return '' } })()
-        if (tab === 'journal') {
-          if (latest) try { sessionStorage.setItem(key, latest) } catch { /* notification hints are optional */ }
-          setJournalAlert('')
-        } else if (latest && latest > seen) setJournalAlert(value.items[0]?.title || 'New discovery')
-      } catch { /* The Journal owns visible errors; notification polling stays quiet. */ }
-      if (!cancelled) timer = setTimeout(() => void poll(), 5000)
-    }
-    void poll(); return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [campaign?.role, me.id, id, base, tab])
+    try {
+      const value = await api<JournalSnapshot>(`${base}/journal`)
+      const latest = value.latestRevealAt || ''
+      const seen = (() => { try { return sessionStorage.getItem(key) || '' } catch { return '' } })()
+      if (latest && latest > seen) setJournalAlert(value.items[0]?.title || 'New discovery')
+    } catch { /* The Journal owns visible errors; notification checks stay quiet. */ }
+  }, [campaign, tab, me.id, id, base])
+  useEffect(() => { void refreshJournalAlert() }, [refreshJournalAlert])
+  useCampaignTopic(id, 'journal', () => { void refreshJournalAlert() })
   function retain(value: Receipt | null) { setReceipt(value); try { if (value) sessionStorage.setItem(receiptKey, JSON.stringify(value)); else sessionStorage.removeItem(receiptKey) } catch { /* resume hints are optional, never authority */ } }
   useEffect(() => {
     if (!receipt?.id || !gm) return
@@ -400,15 +391,15 @@ function LiveMusic({ campaignId, csrfToken, canControl, navigate, open, panelExp
     ])
     setSession(nextSession); setQueue(nextQueue)
   }, [campaignId, canControl])
+  const refresh = useCallback(() => { void read().catch(cause => setError(explain(cause))) }, [read])
   useEffect(() => {
-    let alive = true
-    const refresh = () => void read().catch(cause => { if (alive) setError(explain(cause)) })
     const changed = (event: Event) => { const detail = (event as CustomEvent<{ campaignId?: string }>).detail; if (!detail?.campaignId || detail.campaignId === campaignId) refresh() }
-    refresh(); const timer = window.setInterval(refresh, 1500)
+    refresh()
     window.addEventListener('storyboard:music-queue-changed', changed)
     window.addEventListener('storyboard:music-projection-changed', changed)
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:music-queue-changed', changed); window.removeEventListener('storyboard:music-projection-changed', changed) }
-  }, [campaignId, read])
+    return () => { window.removeEventListener('storyboard:music-queue-changed', changed); window.removeEventListener('storyboard:music-projection-changed', changed) }
+  }, [campaignId, refresh])
+  useCampaignTopic(campaignId, 'music', refresh)
   async function command(action: 'play' | 'pause' | 'next' | 'previous', trackId?: string) {
     if (!canControl || busy || !session) return
     setBusy(action); setError('')
@@ -496,12 +487,9 @@ function MusicWorkspace({ id, gm, me }: { id: string; gm: boolean; me: Account }
   const [notice, setNotice] = useState('')
   const [projection, setProjection] = useState<MusicProjectionState | null>(null)
   const visible = results.length ? results : selected ? playlistTracks : pool
-  useEffect(() => {
-    let alive = true
-    const read = () => void api<MusicProjectionState>(base + '/projection').then(value => { if (alive) setProjection(value) }).catch(() => {})
-    read(); const timer = window.setInterval(read, 5000)
-    return () => { alive = false; window.clearInterval(timer) }
-  }, [base])
+  const readProjection = useCallback(() => { void api<MusicProjectionState>(base + '/projection').then(setProjection).catch(() => {}) }, [base])
+  useEffect(readProjection, [readProjection])
+  useCampaignTopic(id, 'music', readProjection)
   useEffect(() => {
     const c = new AbortController(); setError('')
     Promise.all([api<MusicStatus>(base + '/status', '', 'GET', undefined, c.signal), api<MusicPage<MusicPlaylist>>(base + '/playlists?offset=0&limit=100', '', 'GET', undefined, c.signal), api<MusicTrack[]>(base + '/tracks', '', 'GET', undefined, c.signal)])

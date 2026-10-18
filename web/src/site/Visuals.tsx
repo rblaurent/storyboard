@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { api, ApiError, explain, imageSource, type Account, type MusicProjectionState, type Visual, type VisualGeneration, type VisualQueueItem, type VisualSession, type VisualSet } from './api'
 import { SiteIcon } from './icons'
 import { LiveFoldout } from './LiveFoldout'
 import { AgentDirection } from './AgentDirection'
 import { VisualIdentity } from './VisualIdentity'
 import { spotifyWebPlaybackSdk, type SpotifyWebPlaybackState, type SpotifyWebPlayer } from './spotify'
+import { useCampaignTopic } from './Changes'
 
 const operation = () => crypto.randomUUID()
 type ProjectionFrame = { visual: Visual; source: string; motion: number; durationSeconds: number }
@@ -62,13 +63,14 @@ export function VisualsWorkspace({ id, gm, me }: { id: string; gm: boolean; me: 
   const [busy, setBusy] = useState('')
   const generationCommand = useRef<VisualGenerationCommand | null>(resume.current?.command || null)
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     const [nextLibrary, nextSets, nextSession] = await Promise.all([
       api<Visual[]>(base + '/library'), api<VisualSet[]>(base + '/sets'), api<VisualSession>(base + '/session'),
     ])
     setLibrary(nextLibrary); setSets(nextSets); setSession(nextSession)
-  }
-  useEffect(() => { let alive = true; void refresh().catch(c => { if (alive) setError(explain(c)) }); const timer = window.setInterval(() => { void api<VisualSession>(base + '/session').then(v => { if (alive) setSession(v) }).catch(() => {}) }, 2500); return () => { alive = false; window.clearInterval(timer) } }, [base])
+  }, [base])
+  useEffect(() => { void refresh().catch(c => setError(explain(c))) }, [refresh])
+  useCampaignTopic(id, 'visuals', () => { void refresh().catch(c => setError(explain(c))) })
   useEffect(() => {
     if (!generationEntityId || generation && ['completed', 'failed'].includes(generation.state)) return
     const timer = window.setInterval(() => { void api<VisualGeneration>(`${base}/generations/${generationEntityId}`).then(setGeneration).catch(c => setError(explain(c))) }, 1800)
@@ -113,22 +115,21 @@ export function LiveVisual({ campaignId, csrfToken, canControl, navigate, open, 
   const [error, setError] = useState('')
   const [draggingOver, setDraggingOver] = useState(false)
   const [intervalDraft, setIntervalDraft] = useState('30')
-  async function read() {
+  const read = useCallback(async () => {
     const [nextSession, nextQueue] = await Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), canControl ? api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`) : Promise.resolve([])])
     setSession(nextSession); setQueue(nextQueue)
-  }
+  }, [campaignId, canControl])
   useEffect(() => {
-    let alive = true
-    const refresh = () => void Promise.all([api<VisualSession>(`/campaigns/${campaignId}/visuals/session`), canControl ? api<VisualQueueItem[]>(`/campaigns/${campaignId}/visuals/queue`) : Promise.resolve([])]).then(([nextSession, nextQueue]) => { if (alive) { setSession(nextSession); setQueue(nextQueue) } }).catch(() => {})
+    const refresh = () => void read().catch(() => {})
     const changed = (event: Event) => {
       const detail = (event as CustomEvent<{ campaignId?: string }>).detail
-      if (alive && (!detail?.campaignId || detail.campaignId === campaignId)) refresh()
+      if (!detail?.campaignId || detail.campaignId === campaignId) refresh()
     }
     refresh()
-    const timer = window.setInterval(refresh, 3000)
     window.addEventListener('storyboard:visual-queue-changed', changed)
-    return () => { alive = false; window.clearInterval(timer); window.removeEventListener('storyboard:visual-queue-changed', changed) }
-  }, [campaignId, canControl])
+    return () => window.removeEventListener('storyboard:visual-queue-changed', changed)
+  }, [campaignId, read])
+  useCampaignTopic(campaignId, 'visuals', () => { void read().catch(() => {}) })
   useEffect(() => { if (session) setIntervalDraft(String(session.intervalSeconds)) }, [session?.intervalSeconds])
   async function work(label: string, action: () => Promise<void>) {
     if (!canControl || busy) return
@@ -184,6 +185,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
   const [session, setSession] = useState<MusicProjectionState | null>(null)
   const [error, setError] = useState('')
   const [coverFailed, setCoverFailed] = useState(false)
+  const [, tick] = useState(0)
   const audio = useRef<HTMLAudioElement>(null)
   const spotify = useRef<SpotifyWebPlayer | null>(null)
   const deviceId = useRef('')
@@ -230,16 +232,14 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
       })
       void player.connect()
     }).catch(() => setError('Spotify could not prepare the slideshow output.'))
-    const heartbeat = window.setInterval(() => void register().catch(() => {}), 5000)
+    const heartbeat = window.setInterval(() => void register().catch(() => {}), 15000)
     return () => { disposed.current = true; window.clearInterval(heartbeat); spotify.current?.disconnect(); spotify.current = null; deviceId.current = ''; audio.current?.pause() }
   }, [campaignId, csrfToken])
 
-  useEffect(() => {
-    let alive = true
-    const read = () => void api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection`).then(value => { if (alive) { stateRef.current = value; setSession(value) } }).catch(cause => { if (alive) setError(explain(cause)) })
-    read(); const timer = window.setInterval(read, 1000)
-    return () => { alive = false; window.clearInterval(timer) }
-  }, [campaignId])
+  const readMusic = useCallback(() => { void api<MusicProjectionState>(`/campaigns/${campaignId}/music/projection`).then(value => { stateRef.current = value; setSession(value) }).catch(cause => setError(explain(cause))) }, [campaignId])
+  useEffect(readMusic, [readMusic])
+  useCampaignTopic(campaignId, 'music', readMusic)
+  useEffect(() => { if (!session?.playing) return; const timer = window.setInterval(() => tick(value => value + 1), 500); return () => window.clearInterval(timer) }, [session?.playing])
 
   useEffect(() => {
     const track = session?.track
@@ -268,7 +268,7 @@ function ProjectionMusic({ campaignId, csrfToken }: { campaignId: string; csrfTo
   if (!track) return error ? <p className="projection-music-error" role="alert">{error}</p> : null
   const hash = projectionHash(track.id || `${track.name}:${track.artist}`)
   const heights = Array.from({ length: 64 }, (_, index) => 22 + ((hash >>> (index % 24)) + index * 17) % 70)
-  const progress = session?.progressMs || 0
+  const progress = Math.min(track.durationMs || Number.MAX_SAFE_INTEGER, (session?.progressMs || 0) + (session?.playing ? Math.max(0, Date.now() - (session.serverTimeMs || Date.now())) : 0))
   const percentage = track.durationMs > 0 ? Math.min(100, progress / track.durationMs * 100) : 0
   const cover = imageSource(track.imageUrl)
   const wave = <>{heights.map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</>
@@ -292,7 +292,9 @@ export function ProjectionView({ campaignId, csrfToken }: { campaignId: string; 
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null)
   const currentRef = useRef<ProjectionFrame | null>(null)
   const transitionTimer = useRef<number | null>(null)
-  useEffect(() => { let alive = true; const read = () => void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { if (alive) { setSession(v); setError('') } }).catch(c => { if (alive) setError(explain(c)) }); read(); const timer = window.setInterval(read, 1500); return () => { alive = false; window.clearInterval(timer); if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current); void wakeLock.current?.release() } }, [campaignId])
+  const readVisual = useCallback(() => { void api<VisualSession>(`/campaigns/${campaignId}/visuals/session`).then(v => { setSession(v); setError('') }).catch(c => setError(explain(c))) }, [campaignId])
+  useEffect(() => { readVisual(); return () => { if (transitionTimer.current !== null) window.clearTimeout(transitionTimer.current); void wakeLock.current?.release() } }, [readVisual])
+  useCampaignTopic(campaignId, 'visuals', readVisual)
   useEffect(() => {
     const visual = session?.current
     if (!visual) { currentRef.current = null; setCurrent(null); setPrevious(null); setTransitioning(false); return }

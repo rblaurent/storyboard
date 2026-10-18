@@ -39,7 +39,7 @@ public sealed record VisualQueueWrite(string? VisualId, string? SetId, string Op
 public sealed record VisualShowWrite(string VisualId, string OperationId);
 public sealed record VisualSessionCommand(string Action, string OperationId, long ExpectedRevision, string? VisualId = null, int? IntervalSeconds = null, string? Transition = null, bool? Loop = null, bool? Blackout = null);
 
-public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, ILogger<StoryVisuals> logger) : BackgroundService
+public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, StoryChanges changes, ILogger<StoryVisuals> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
     private readonly ConcurrentDictionary<Guid, Task> generationTasks = new();
@@ -576,7 +576,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
 
     private async Task AdvanceTimedAsync(LeafEntity observed, CancellationToken ct)
     {
-        await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var session = await store.RequireAsync("storyboard-visual-session", observed.Id.ToString(), ct); if (!session.Data.Flag("playing") || session.Data.Number("next_at") > DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return; var patch = await StepAsync(session.Data.Text("campaign"), session, 1, ct); session = await PatchSessionAsync(session, patch, ct); } finally { store.Commands.Release(); }
+        await store.Commands.WaitAsync(ct); try { await store.WritableAsync(ct); var session = await store.RequireAsync("storyboard-visual-session", observed.Id.ToString(), ct); if (!session.Data.Flag("playing") || session.Data.Number("next_at") > DateTimeOffset.UtcNow.ToUnixTimeSeconds()) return; var campaign = session.Data.Text("campaign"); var patch = await StepAsync(campaign, session, 1, ct); session = await PatchSessionAsync(session, patch, ct); changes.Bump(campaign, "visuals"); } finally { store.Commands.Release(); }
     }
 
     private async Task<JsonObject> StepAsync(string campaign, LeafEntity session, int direction, CancellationToken ct)
@@ -596,9 +596,10 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
     private async Task<LeafEntity> PatchSessionAsync(LeafEntity session, JsonObject patch, CancellationToken ct) => await store.ChangeAsync(session.TypeSlug, session.Slug, session.Name, old => { var next = old!.Data.DeepClone().AsObject(); foreach (var p in patch) next[p.Key] = p.Value?.DeepClone(); next["revision"] = next.Number("revision") + 1; return next; }, ct);
     private async Task<object> SessionProjectionAsync(string campaign, LeafEntity? session, CancellationToken ct)
     {
-        if (session is null) { var profile = await identities.GetAsync(campaign, ct); return new { campaignId = campaign, revision = 0L, playing = false, blackout = false, loop = true, intervalSeconds = profile.DefaultIntervalSeconds, transition = profile.Transition, current = (object?)null, currentQueueId = "" }; }
+        var serverTimeMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (session is null) { var profile = await identities.GetAsync(campaign, ct); return new { campaignId = campaign, revision = 0L, playing = false, blackout = false, loop = true, intervalSeconds = profile.DefaultIntervalSeconds, transition = profile.Transition, current = (object?)null, currentQueueId = "", serverTimeMs, nextAtMs = 0L }; }
         object? current = null; if (session.Data.Text("current_visual") != "") { try { current = VisualProjection(await RequireVisualAsync(campaign, session.Data.Text("current_visual"), ct)); } catch (StoryException) { } }
-        return new { campaignId = campaign, revision = session.Data.Number("revision"), playing = session.Data.Flag("playing"), blackout = session.Data.Flag("blackout"), loop = session.Data.Flag("loop"), intervalSeconds = NumberOr(session.Data, "interval_seconds", 30), transition = session.Data.Text("transition", "crossfade"), current, currentQueueId = session.Data.Text("current_queue_item") };
+        return new { campaignId = campaign, revision = session.Data.Number("revision"), playing = session.Data.Flag("playing"), blackout = session.Data.Flag("blackout"), loop = session.Data.Flag("loop"), intervalSeconds = NumberOr(session.Data, "interval_seconds", 30), transition = session.Data.Text("transition", "crossfade"), current, currentQueueId = session.Data.Text("current_queue_item"), serverTimeMs, nextAtMs = (long)session.Data.Number("next_at") * 1000 };
     }
 
     private async Task<List<(LeafEntity Item, LeafEntity Visual)>> QueueItemsAsync(string campaign, CancellationToken ct)

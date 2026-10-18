@@ -24,7 +24,7 @@ public sealed record MusicGenerationWrite(string OperationId, string Situation, 
     public string? HeartbeatTurn { get; init; }
 }
 
-public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, ILogger<StoryMusic> logger) : BackgroundService
+public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaigns, StoryStore store, IAiInference ai, IComputeJobs jobs, IAssets assets, StoryChanges changes, ILogger<StoryMusic> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
     private readonly ConcurrentDictionary<string, ProjectionMusicSession> projectionSessions = new(StringComparer.Ordinal);
@@ -67,12 +67,13 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         return projectionSessions.GetOrAdd(campaign, loaded);
     }
 
-    private async Task SaveProjectionSessionAsync(string campaign, ProjectionMusicSession session, CancellationToken ct)
+    private async Task SaveProjectionSessionAsync(string campaign, ProjectionMusicSession session, CancellationToken ct, bool notify = true)
     {
         JsonObject data;
         lock (session.Gate) data = new JsonObject { ["campaign"] = campaign, ["track"] = session.TrackId, ["playing"] = session.Playing, ["progress_ms"] = session.ProgressMs, ["started_at_ms"] = session.StartedAtMs, ["revision"] = session.Revision, ["last_operation"] = session.LastOperation, ["client_id"] = session.ClientId, ["device_id"] = session.DeviceId, ["output_name"] = session.OutputName, ["output_seen_at_ms"] = session.OutputSeenAtMs, ["repeat_mode"] = session.RepeatMode, ["endless"] = session.Endless, ["endless_error"] = session.EndlessError, ["lookahead_operation"] = session.LookaheadOperation, ["account"] = session.Account, ["awaiting_endless_resume"] = session.AwaitingEndlessResume };
         data = await store.ProtectAsync(data, ct);
         await store.ChangeAsync("storyboard-music-session", "session-" + StoryJson.Hash(campaign), "Projection music session", old => old?.Data.Text("campaign") is { Length: > 0 } owner && owner != campaign ? throw new StoryException("not_found", 404) : data.DeepClone().AsObject(), ct);
+        if (notify) changes.Bump(campaign, "music");
     }
 
     public async Task<object> StatusAsync(string campaign, string account, CancellationToken ct)
@@ -301,15 +302,18 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         var device = StoryJson.Bounded(input.DeviceId, 200);
         var name = StoryJson.Bounded(input.Name, 100);
         var session = await GetProjectionSessionAsync(campaign, ct);
+        bool notify;
         lock (session.Gate)
         {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            notify = now - session.OutputSeenAtMs > 45_000 || session.ClientId != client || session.DeviceId != device;
             session.ClientId = client;
             session.DeviceId = device;
             session.OutputName = string.IsNullOrWhiteSpace(name) ? "Slideshow" : name;
-            session.OutputSeenAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            session.OutputSeenAtMs = now;
             session.Account = account;
         }
-        await SaveProjectionSessionAsync(campaign, session, ct);
+        await SaveProjectionSessionAsync(campaign, session, ct, notify);
         return await ProjectionAsync(campaign, ct);
     }
 
@@ -440,7 +444,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         lock (session.Gate)
         {
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var ready = now - session.OutputSeenAtMs <= 15_000;
+            var ready = now - session.OutputSeenAtMs <= 45_000;
             var progress = CurrentProgress(session, now);
             if (track is not null && track.Data.Number("duration_ms") > 0) progress = Math.Min(progress, track.Data.Number("duration_ms"));
             return new { campaignId = campaign, revision = session.Revision, playing = session.Playing, progressMs = progress, serverTimeMs = now, track = track is null ? null : TrackProjection(track), outputReady = ready, outputName = ready ? session.OutputName : null, spotifyReady = ready && !string.IsNullOrWhiteSpace(session.DeviceId), repeatMode = session.RepeatMode, endless = session.Endless, endlessError = session.EndlessError, lookaheadPending = session.LookaheadOperation != "" };
@@ -469,7 +473,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
     {
         lock (session.Gate)
         {
-            var fresh = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - session.OutputSeenAtMs <= 15_000;
+            var fresh = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - session.OutputSeenAtMs <= 45_000;
             if (!fresh || spotify && string.IsNullOrWhiteSpace(session.DeviceId)) throw new StoryException("projection_output_unavailable", 409);
         }
     }

@@ -3,6 +3,7 @@ import { presentWorkspaceEntity, type WorkspaceEntity } from '@redbamboo/workspa
 import { api, explain, type Player } from './api'
 import { SiteIcon } from './icons'
 import { AgentDirection } from './AgentDirection'
+import { useCampaignTopic } from './Changes'
 
 type Phase='played'|'now'|'prepared'
 type Lens='beat'|'discovery'|'belief'
@@ -29,7 +30,8 @@ export function Cockpit({campaignId,csrfToken}:{campaignId:string;csrfToken:stri
   const [busy,setBusy]=useState('')
   const mounted=useRef(true)
   const load=useCallback(async()=>{try{const value=await api<CockpitSnapshot>(base);if(mounted.current){setSnapshot(value);setError('')}}catch(cause){if(mounted.current)setError(explain(cause))}},[base])
-  useEffect(()=>{mounted.current=true;void load();const timer=window.setInterval(()=>void load(),4000);return()=>{mounted.current=false;window.clearInterval(timer)}},[load])
+  useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false}},[load])
+  useCampaignTopic(campaignId,'cockpit',()=>{void load()})
   async function search(event:FormEvent){event.preventDefault();setBusy('search');setError('');try{const value=await api<CockpitSearch>(`${base}/entities?query=${encodeURIComponent(query.trim())}`);if(mounted.current)setResults(value.items)}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
   async function pin(entityId:string,phase:Phase='prepared'){setBusy(`pin:${entityId}`);setError('');try{await api(`${base}/items`,csrfToken,'POST',{entityId,phase,operationId:crypto.randomUUID()});setResults(values=>values.filter(value=>value.id!==entityId));await load()}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}
   async function move(item:CockpitItem,phase:Phase,lens:Lens){if(item.phase===phase&&item.lens===lens)return;setBusy(`move:${item.id}`);try{await api(`${base}/items/${item.id}/move`,csrfToken,'POST',{phase,lens,operationId:crypto.randomUUID()});await load()}catch(cause){if(mounted.current)setError(explain(cause))}finally{if(mounted.current)setBusy('')}}

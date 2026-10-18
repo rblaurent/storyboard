@@ -32,6 +32,10 @@ export function route(url: URL, method: string): Route | null {
   if (p === '/api/logout') allowed = method === 'POST' && query([])
   if (p === '/api/campaigns') allowed = (method === 'GET' && query(['archived']) && (!keys.length || url.searchParams.get('archived') === 'true')) || (method === 'POST' && query([]))
   if (match(`/api/campaigns/${id}`)) allowed = ['GET', 'PUT'].includes(method) && query([])
+  if (match(`/api/campaigns/${id}/changes`)) {
+    const since = url.searchParams.get('since')
+    allowed = method === 'GET' && query(['since']) && (since === null || /^[A-Za-z0-9_-]{1,4096}$/.test(since))
+  }
   if (match(`/api/campaigns/${id}/(?:archive|restore|generate)`)) allowed = method === 'POST' && query([])
   if (match(`/api/campaigns/${id}/players`)) allowed = ['GET', 'POST'].includes(method) && query([])
   if (match(`/api/campaigns/${id}/players/${id}/presence`)) allowed = method === 'POST' && query([])

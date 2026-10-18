@@ -224,12 +224,12 @@ test('visuals generate one reusable image, keep playlists optional, curate the q
   await page.evaluate(() => { (window as Window & { __openedProjection?: string }).__openedProjection = ''; window.open = ((url?: string | URL) => { (window as Window & { __openedProjection?: string }).__openedProjection = String(url || ''); return null }) as typeof window.open })
   await liveVisuals.getByRole('button', { name: 'Start slideshow' }).click(); await expect.poll(() => s.visualSession.playing).toBe(true); expect(await page.evaluate(() => (window as Window & { __openedProjection?: string }).__openedProjection)).toBe(`/campaigns/${cid}/projection#autostart`); await expect(liveVisuals.getByRole('button', { name: 'Open slideshow' })).toBeVisible()
   const projection = await page.context().newPage(); const projectionState = await fixture(projection); projectionState.visualSession.current = projectionState.visuals[0]; await projection.goto(`/campaigns/${cid}/projection`); const firstProjection = projection.getByRole('img', { name: 'The drowned court' }); await expect(firstProjection).toBeVisible(); await expect(projection.locator('.masthead')).toHaveCount(0); await expect(projection.locator('footer')).toHaveCount(0)
-  const projectionMusic = projection.getByRole('region', { name: 'Slideshow music output' }); await expect(projectionMusic).toContainText('Lanterns Beneath the Tide'); await expect(projectionMusic).toContainText('The Quiet Cartographers'); await expect(projectionMusic.locator('.projection-wave-base i')).toHaveCount(64); await expect(projectionMusic).toContainText('0:42 / 3:34'); await expect(projectionMusic.getByRole('button', { name: /Play|Pause/ })).toHaveCount(0); await projection.screenshot({ path: path.join(evidence, 'fixture-projection-player.png') })
+  const projectionMusic = projection.getByRole('region', { name: 'Slideshow music output' }); await expect(projectionMusic).toContainText('Lanterns Beneath the Tide'); await expect(projectionMusic).toContainText('The Quiet Cartographers'); await expect(projectionMusic.locator('.projection-wave-base i')).toHaveCount(64); await expect(projectionMusic).toContainText(/0:4[2-9] \/ 3:34/); await expect(projectionMusic.getByRole('button', { name: /Play|Pause/ })).toHaveCount(0); await projection.screenshot({ path: path.join(evidence, 'fixture-projection-player.png') })
   const ambientMotion = await firstProjection.evaluate(element => ({ name: getComputedStyle(element).animationName, duration: parseFloat(getComputedStyle(element).animationDuration) })); expect(ambientMotion.name).toContain('projection-drift'); expect(ambientMotion.duration).toBeGreaterThanOrEqual(26)
   const scalePaths = await projection.evaluate(() => Array.from({ length: 6 }, (_, index) => { const probe = document.createElement('img'); probe.className = `projection-motion projection-motion-${index}`; document.body.append(probe); const style = getComputedStyle(probe); const path = { from: parseFloat(style.getPropertyValue('--motion-scale-from')), to: parseFloat(style.getPropertyValue('--motion-scale-to')) }; probe.remove(); return path })); expect(scalePaths).toHaveLength(6); expect(scalePaths.every(path => Number.isFinite(path.from) && Number.isFinite(path.to) && path.from !== path.to)).toBe(true)
-  const nextVisual = { ...projectionState.visuals[0], id: '16161616-1616-4161-8161-161616161616', name: 'The moonlit vault', imageUrl: `/api/campaigns/${cid}/visuals/images/16161616-1616-4161-8161-161616161616` }; projectionState.visuals.push(nextVisual); projectionState.visualSession.current = nextVisual; projectionState.visualSession.revision += 1
+  const nextVisual = { ...projectionState.visuals[0], id: '16161616-1616-4161-8161-161616161616', name: 'The moonlit vault', imageUrl: `/api/campaigns/${cid}/visuals/images/16161616-1616-4161-8161-161616161616` }; projectionState.visuals.push(nextVisual); projectionState.visualSession.current = nextVisual; projectionState.visualSession.revision += 1; projectionState.bumpChanges('visuals')
   const incoming = projection.getByRole('img', { name: 'The moonlit vault' }); await expect(incoming).toBeVisible({ timeout: 4000 }); await incoming.evaluate(element => { element.dataset.motionContinuity = 'preserved' }); await expect(projection.locator('.projection-layer')).toHaveCount(2); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveCount(1); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveAttribute('aria-hidden', 'true'); await expect(projection.locator('.projection-layer.is-outgoing')).toHaveCount(0, { timeout: 4000 }); await expect(incoming).toHaveAttribute('data-motion-continuity', 'preserved')
-  projectionState.visualSession.blackout = true; await expect(projection.locator('.projection-view')).toHaveClass(/is-blackout/, { timeout: 3000 }); await expect(projection.locator('.projection-blackout')).toHaveCSS('opacity', '1')
+  projectionState.visualSession.blackout = true; projectionState.bumpChanges('visuals'); await expect(projection.locator('.projection-view')).toHaveClass(/is-blackout/, { timeout: 3000 }); await expect(projection.locator('.projection-blackout')).toHaveCSS('opacity', '1')
 })
 test('projection advances Spotify only after the session track genuinely ends', async ({ page }) => {
   await page.addInitScript(() => {
@@ -248,7 +248,7 @@ test('projection advances Spotify only after the session track genuinely ends', 
   await expect(page.getByRole('region', { name: 'Slideshow music output' })).toHaveCount(0)
   await expect.poll(() => state.requests.find(request => request.method === 'POST' && request.path.endsWith('/music/projection/output') && request.body?.deviceId === 'projection-device')?.body).toMatchObject({ name: 'Slideshow' })
   expect(state.requests.some(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands'))).toBe(false)
-  state.musicProjection.track = state.queue[0].track; state.musicProjection.playing = true; state.musicProjection.progressMs = 1200; state.musicProjection.revision += 1
+  state.musicProjection.track = state.queue[0].track; state.musicProjection.playing = true; state.musicProjection.progressMs = 1200; state.musicProjection.serverTimeMs = Date.now(); state.musicProjection.revision += 1; state.bumpChanges('music')
   const player = page.getByRole('region', { name: 'Slideshow music output' }); await expect(player).toContainText('The Orrery Turns'); await expect(player).toContainText('NOW PLAYING')
   const orreryUri = state.queue[0].track.uri!; const lanternsUri = state.tracks[0].uri!
   const spotifyState = (uri: string, paused: boolean, position: number, duration = 180000) => page.evaluate(value => { const listeners = (window as any).__spotifyListeners as Map<string, (state: any) => void>; listeners.get('player_state_changed')?.(value) }, { paused, position, duration, track_window: { current_track: { uri } } })
@@ -258,6 +258,36 @@ test('projection advances Spotify only after the session track genuinely ends', 
   await spotifyState(orreryUri, false, 179000); await spotifyState(orreryUri, true, 0); await expect.poll(endedCount).toBe(1); await spotifyState(orreryUri, true, 0); await page.waitForTimeout(100); expect(endedCount()).toBe(1)
   expect(state.requests.find(request => request.method === 'POST' && request.path.endsWith('/music/projection/commands') && request.body?.action === 'ended')?.body).toMatchObject({ trackId: state.queue[0].track.id }); await expect(player).toContainText('Lanterns Beneath the Tide')
   expect(await page.evaluate(() => location.hash)).toBe('')
+})
+test('hidden campaign tab stops its shared change request until visible again', async ({ page }) => {
+  const state = await fixture(page, { player: true }); await page.goto(`/campaigns/${cid}/journal`)
+  const changeRequests = () => state.requests.filter(request => request.path.includes(`/campaigns/${cid}/changes`)).length
+  await expect.poll(changeRequests).toBeGreaterThanOrEqual(1)
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')) })
+  const hiddenCount = changeRequests(); state.bumpChanges('visuals'); await page.waitForTimeout(750); expect(changeRequests()).toBe(hiddenCount)
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')) })
+  await expect.poll(changeRequests).toBeGreaterThan(hiddenCount)
+})
+test('idle player uses at most three change requests in sixty seconds', async ({ page }) => {
+  test.setTimeout(70_000)
+  const state = await fixture(page, { player: true }); await page.goto(`/campaigns/${cid}/journal`)
+  await expect.poll(() => state.requests.filter(request => request.path.includes(`/campaigns/${cid}/changes`)).length).toBeGreaterThanOrEqual(2)
+  state.requests.length = 0
+  await page.waitForTimeout(60_500)
+  const requests = state.requests.filter(request => request.path.includes(`/campaigns/${cid}/changes`))
+  console.log('IDLE_PLAYER_CHANGE_REQUESTS', JSON.stringify({ wallClockMs: 60_500, requests: requests.length }))
+  expect(requests.length).toBeLessThanOrEqual(3)
+})
+test('projection advances its music clock and reacts to visuals without blind polling', async ({ page }) => {
+  const state = await fixture(page); state.visualSession.current = state.visuals[0]; state.musicProjection.progressMs = 0; state.musicProjection.serverTimeMs = Date.now(); state.musicProjection.playing = true
+  await page.goto(`/campaigns/${cid}/projection`)
+  const music = page.getByRole('region', { name: 'Slideshow music output' }); await expect(music).toContainText('/ 3:34'); await expect.poll(() => state.requests.filter(request => request.path.includes('/changes')).length).toBeGreaterThanOrEqual(2)
+  const musicReads = () => state.requests.filter(request => request.method === 'GET' && request.path.endsWith('/music/projection')).length
+  const visualReads = () => state.requests.filter(request => request.method === 'GET' && request.path.endsWith('/visuals/session')).length
+  const initialMusicReads = musicReads(); const initialVisualReads = visualReads(); const initialTime = await music.locator('.projection-music-time').textContent()
+  await expect.poll(() => music.locator('.projection-music-time').textContent()).not.toBe(initialTime); expect(musicReads()).toBe(initialMusicReads); expect(visualReads()).toBe(initialVisualReads)
+  const nextVisual = { ...state.visuals[0], id: '16161616-1616-4161-8161-161616161616', name: 'The moonlit vault', imageUrl: `/api/campaigns/${cid}/visuals/images/16161616-1616-4161-8161-161616161616` }; state.visualSession.current = nextVisual; state.visualSession.revision += 1; state.bumpChanges('visuals')
+  await expect(page.getByRole('img', { name: nextVisual.name })).toBeVisible(); expect(visualReads()).toBe(initialVisualReads + 1); expect(musicReads()).toBe(initialMusicReads)
 })
 test('campaign visual identity proposes reusable style, saves workflow entities and previews without changing artwork', async ({ page }) => {
   const state = await fixture(page); state.visualProfile.configured = false; state.visualProfile.artDirection = 'Cinematic campaign artwork.'; state.visualProfile.portraitDirection = ''; state.visualProfile.sceneDirection = ''

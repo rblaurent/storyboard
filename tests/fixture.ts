@@ -52,7 +52,11 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
     { cursor: { epoch: 'fixture-agent-discussion', sequence: 5 }, messageUid: 'assistant:opening', role: 'assistant', kind: 'tool_result', content: '', toolResult: JSON.stringify({ status: 'updated' }), timestamp: '2026-10-11T07:59:59Z' },
     { cursor: { epoch: 'fixture-agent-discussion', sequence: 6 }, messageUid: 'assistant:opening', role: 'assistant', kind: 'text', content: 'The observatory is ready. I have brought the impossible star map into the live plan.', timestamp: '2026-10-11T08:00:00Z', metadata: { phase: 'final_answer' } },
   ] }
-  const state = { campaign, players, tracks, playlists, queue, playback, musicProjection, musicGeneration, visuals, visualSets, visualQueue, visualSession, visualGeneration, visualProfile, imageWorkflows, artworkGeneration, transcriptSession, transcriptSessions: [transcriptSession] as TranscriptSession[], transcriptEvents, workspace, cockpit, journal, agentDiscussions, agentMessages, agentSettings, playbooks, playMode, operation: { id: oid, kind: 'image', state: 'generating', error: '', refinedPrompt: 'A quiet observatory above a vast cloud sea at dusk.', applied: false } as Operation, requests: [] as { path: string; method: string; body: Record<string, unknown> | null; csrf: string | undefined }[], audioFailures: [] as number[], conflict: false, createFail: false, generationFail: false, pollFail: false, signedOut: !!options.signedOut, meFail: false, lastGm: false }
+  let changeRevision = 0
+  const pendingTopics = new Set<string>()
+  const changeWaiters = new Set<() => void>()
+  const bumpChanges = (...topics: string[]) => { topics.forEach(topic => pendingTopics.add(topic)); changeRevision += 1; changeWaiters.forEach(resolve => resolve()); changeWaiters.clear() }
+  const state = { campaign, players, tracks, playlists, queue, playback, musicProjection, musicGeneration, visuals, visualSets, visualQueue, visualSession, visualGeneration, visualProfile, imageWorkflows, artworkGeneration, transcriptSession, transcriptSessions: [transcriptSession] as TranscriptSession[], transcriptEvents, workspace, cockpit, journal, agentDiscussions, agentMessages, agentSettings, playbooks, playMode, bumpChanges, operation: { id: oid, kind: 'image', state: 'generating', error: '', refinedPrompt: 'A quiet observatory above a vast cloud sea at dusk.', applied: false } as Operation, requests: [] as { path: string; method: string; body: Record<string, unknown> | null; csrf: string | undefined }[], audioFailures: [] as number[], conflict: false, createFail: false, generationFail: false, pollFail: false, signedOut: !!options.signedOut, meFail: false, lastGm: false }
   const art = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560"><defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#48576e"/><stop offset="1" stop-color="#d8ac7c"/></linearGradient><linearGradient id="cloud" x2="1" y2="0"><stop stop-color="#9ca9b0"/><stop offset="1" stop-color="#ddd6bf"/></linearGradient></defs><rect width="900" height="560" fill="url(#sky)"/><circle cx="710" cy="115" r="44" fill="#f5d5a0"/><path d="M0 380Q120 290 240 370T500 350T900 350V560H0Z" fill="url(#cloud)"/><path d="M0 470Q160 370 330 450T670 440T900 420V560H0Z" fill="#c6cbd0"/><path d="M310 560L395 240 565 255 640 560Z" fill="#39474b"/><path d="M370 280L405 168H560L590 280Z" fill="#b8aa88"/><path d="M390 170A85 85 0 0 1 560 170Z" fill="#2a3c49"/><path d="M450 280V215H510V280" fill="#273741"/><path d="M465 170V95L590 70" fill="none" stroke="#293842" stroke-width="13"/><path d="M395 300H565" stroke="#d0ba94" stroke-width="6"/><circle cx="155" cy="84" r="2" fill="#fff3d8"/><circle cx="290" cy="120" r="2" fill="#fff3d8"/></svg>'
   await page.route('**/api/**', async route => {
     const req = route.request(); const u = new URL(req.url()); const p = u.pathname; const method = req.method(); const body = req.postDataJSON() as Record<string, unknown> | null
@@ -62,6 +66,20 @@ export async function fixture(page: Page, options: { player?: boolean; canCreate
     if (p.endsWith('/media/cover') || p.includes('/media/characters/') || p.endsWith(`/music/candidates/${candidate}/cover`) || p.includes('/visuals/images/') || /\/visuals\/candidates\/[0-9a-f-]{36}\/image$/i.test(p) || /\/workspace\/entities\/[0-9a-f-]{36}\/images\/[a-z0-9_-]+$/i.test(p) || /\/journal\/entities\/[0-9a-f-]{36}\/image$/i.test(p)) return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'no-store' }, body: art })
     if (p.endsWith(`/music/candidates/${candidate}/audio`)) return route.fulfill({ contentType: 'audio/mpeg', headers: { 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes' }, body: Buffer.from([1, 2, 3, 4, 5, 6]) })
     if (p === '/api/me') return state.signedOut ? json({ error: 'sign_in_required' }, 401) : state.meFail ? json({ error: 'storyboard_not_configured' }, 503) : json({ id: aid, name: 'Alex Morgan', avatar: '', canCreate: options.canCreate !== false, csrfToken: csrf })
+    if (p.endsWith('/changes')) {
+      const since = u.searchParams.get('since')
+      if (!since) return json({ token: `fixture-${changeRevision}`, topics: options.player ? ['visuals', 'music', 'players', 'play-mode', `journal:${second}`] : ['visuals', 'music', 'transcript', 'cockpit', 'players', 'play-mode'] })
+      const seen = Number(since.replace('fixture-', ''))
+      if (seen === changeRevision) await new Promise<void>(resolve => {
+        const timer = setTimeout(() => { changeWaiters.delete(wake); resolve() }, 25_000); timer.unref()
+        const wake = () => { clearTimeout(timer); resolve() }
+        changeWaiters.add(wake)
+        page.once('close', wake)
+      })
+      const topics = seen === changeRevision ? [] : [...pendingTopics]
+      pendingTopics.clear()
+      try { return await json({ token: `fixture-${changeRevision}`, topics }) } catch { return }
+    }
     if (p === '/api/logout') { state.signedOut = true; return json({ ok: true }) }
     if (method !== 'GET' && req.headers()['x-csrf-token'] !== csrf) return json({ error: 'request_origin_rejected' }, 403)
     if (p === '/api/campaigns' && method === 'GET') return json(state.campaign.archived && !u.search ? [] : [state.campaign, { ...state.campaign, id: second, name: 'Letters from the Coast', image: null, summary: 'A weathered lighthouse, a town full of secrets, and letters arriving from a ship lost thirty years ago.', role: 'player', archived: false }])

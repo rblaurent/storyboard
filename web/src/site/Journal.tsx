@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, explain, imageSource } from './api'
 import { SiteIcon } from './icons'
+import { useCampaignTopic } from './Changes'
 
 export interface JournalField { key: string; name: string; fieldType: string; value: unknown }
 export interface JournalEntity { id: string; typeSlug: string; typeName: string; title: string; description: string; fields: JournalField[]; imageUrl: string | null; updatedAt: string; revealedAt: string }
@@ -14,7 +15,8 @@ export function Journal({ campaignId }: { campaignId: string }) {
     try { const value = await api<JournalSnapshot>(`/campaigns/${campaignId}/journal`); if (mounted.current) { setSnapshot(value); setError('') } }
     catch (cause) { if (mounted.current) setError(explain(cause)) }
   }, [campaignId])
-  useEffect(() => { mounted.current = true; void load(); const timer = window.setInterval(() => void load(), 5000); return () => { mounted.current = false; window.clearInterval(timer) } }, [load])
+  useEffect(() => { mounted.current = true; void load(); return () => { mounted.current = false } }, [load])
+  useCampaignTopic(campaignId, 'journal', () => { void load() })
   return <section className="journal-page">
     <header className="campaign-page-header"><div><h2>Journal</h2><p>People, places, clues, and discoveries that have become part of your story.</p></div></header>
     {error && <p className="error" role="alert">{error}</p>}
