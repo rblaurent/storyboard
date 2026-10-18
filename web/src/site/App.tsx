@@ -89,6 +89,7 @@ export function App() {
   const [path, setPath] = useState(window.location.pathname)
   const [signingOut, setSigningOut] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [playerCampaignId, setPlayerCampaignId] = useState('')
   const [liveCanControl, setLiveCanControl] = useState(false)
   const [liveMode, setLiveMode] = useState<'contracted' | 'rail'>(() => {
@@ -137,6 +138,23 @@ export function App() {
   }, [me, liveCampaignId])
   function setLive(value: 'contracted' | 'rail') { setLiveMode(value); try { localStorage.setItem('storyboard:live-mode', value); localStorage.setItem('storyboard:live-expanded', String(value !== 'contracted')) } catch { /* Browser storage may be disabled. */ } }
   function toggleLiveModule(module: 'players' | 'transcript' | 'visuals' | 'music') { setLiveModules(current => { const next = { ...current, [module]: !current[module] }; try { localStorage.setItem('storyboard:live-modules', JSON.stringify(next)) } catch { /* Browser storage may be disabled. */ }; return next }) }
+  useEffect(() => {
+    if (!liveCanControl) { setShortcutsOpen(false); return }
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')) return
+      if (event.key === 'Escape' && shortcutsOpen) { event.preventDefault(); setShortcutsOpen(false); return }
+      const key = event.key.toLowerCase()
+      if (key === '?') { event.preventDefault(); setShortcutsOpen(value => !value); return }
+      const action = event.key === 'ArrowLeft' ? 'visual-previous' : event.key === 'ArrowRight' ? 'visual-next' : key === 'b' ? 'blackout' : key === 'm' ? 'music-toggle' : key === 'n' ? 'music-next' : key === 'l' ? 'live-toggle' : ''
+      if (!action) return
+      event.preventDefault()
+      if (action === 'live-toggle') setLive(liveMode === 'contracted' ? 'rail' : 'contracted')
+      else window.dispatchEvent(new CustomEvent('storyboard:gm-shortcut', { detail: { action, campaignId: liveCampaignId } }))
+    }
+    document.addEventListener('keydown', keydown)
+    return () => document.removeEventListener('keydown', keydown)
+  }, [liveCanControl, liveMode, liveCampaignId, shortcutsOpen])
   return <div className={`storyboard-site${campaignDashboard ? ' campaign-dashboard-site' : ''}${agentDashboard ? ' agent-dashboard-site' : ''}${projection ? ' projection-site' : ''}${live ? ` with-live-panel live-${liveMode}${liveMode === 'contracted' ? ' live-contracted' : ' live-expanded'}` : ''}`}>
     {me && liveCampaignId && <CampaignChanges campaignId={liveCampaignId} />}
     <a className="skip-link" href="#main">Skip to content</a>
@@ -149,6 +167,7 @@ export function App() {
     </main>
     {live && <LivePanel mode={liveMode} setMode={setLive}>{liveCanControl && <LivePlayMode campaignId={liveCampaignId} csrfToken={me!.csrfToken} panelExpanded={liveMode !== 'contracted'} />}<LivePlayers campaignId={liveCampaignId} open={liveModules.players} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('players')} />{liveCanControl && <LiveTranscript key={liveCampaignId} campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl open={liveModules.transcript} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('transcript')} />}<LiveVisual campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.visuals} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('visuals')} /><LiveMusic campaignId={liveCampaignId} csrfToken={me!.csrfToken} canControl={liveCanControl} navigate={navigate} open={liveModules.music} panelExpanded={liveMode !== 'contracted'} toggleFoldout={() => toggleLiveModule('music')} /></LivePanel>}
     {aboutOpen && <AboutDialog close={() => setAboutOpen(false)} />}
+    {shortcutsOpen && <div className="shortcut-overlay" role="dialog" aria-modal="true" aria-labelledby="shortcut-title"><section><button type="button" aria-label="Close keyboard shortcuts" onClick={() => setShortcutsOpen(false)}><SiteIcon name="close" /></button><span className="eyebrow">GM CONTROLS</span><h2 id="shortcut-title">Keyboard shortcuts</h2><dl><div><dt>← / →</dt><dd>Previous / next visual</dd></div><div><dt>B</dt><dd>Toggle blackout</dd></div><div><dt>M</dt><dd>Play / pause music</dd></div><div><dt>N</dt><dd>Next track</dd></div><div><dt>L</dt><dd>Toggle Live rail</dd></div><div><dt>?</dt><dd>Show this help</dd></div></dl><p>Shortcuts pause while you type. Recording always requires its on-screen control.</p></section></div>}
   </div>
 }
 
@@ -409,6 +428,11 @@ function LiveMusic({ campaignId, csrfToken, canControl, navigate, open, panelExp
     } catch (cause) { setError(explain(cause)); void read().catch(() => {}) }
     finally { setBusy('') }
   }
+  useEffect(() => {
+    const shortcut = (event: Event) => { const detail = (event as CustomEvent<{ campaignId: string; action: string }>).detail; if (detail?.campaignId !== campaignId) return; if (detail.action === 'music-toggle') void command(session?.playing ? 'pause' : 'play'); if (detail.action === 'music-next') void command('next') }
+    window.addEventListener('storyboard:gm-shortcut', shortcut)
+    return () => window.removeEventListener('storyboard:gm-shortcut', shortcut)
+  })
   async function setting(action: 'repeat' | 'endless', value: string | boolean) {
     if (!canControl || busy || !session) return
     setBusy(action); setError('')

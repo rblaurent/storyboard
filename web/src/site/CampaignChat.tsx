@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
-import { getEffectiveToolName, getPartColor, projectActivityTimeline, rebuildBlocks, type MessageBlock, type MessagePart, type PersistedMessage } from '@redbamboo/chat'
+import { getEffectiveToolName, getPartColor, MarkdownRenderer, projectActivityTimeline, rebuildBlocks, type MessageBlock, type MessagePart, type PersistedMessage } from '@redbamboo/chat'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
 import { AgentSettings } from './AgentSettings'
@@ -32,6 +32,9 @@ interface AgentAdmission { messageUid: string; disposition: string }
 interface PendingMessage { id: string; content: string; messageUid?: string }
 interface AgentDiscussion { id: string; title: string; sessionId: string; status: string; lastActivity: string; messageCount: number; kind?: 'chat' | 'heartbeat'; readOnly?: boolean }
 interface AgentDiscussionIndex { agent: { id: string; name: string; avatar?: string }; discussions: AgentDiscussion[]; defaultDiscussionId: string }
+interface DiscussionTranscript { records: Map<string, AgentMessage>; cursor: AgentCursor | null; quiescent: boolean }
+const campaignTranscripts = new Map<string, Map<string, DiscussionTranscript>>()
+window.addEventListener('storyboard:signout', () => campaignTranscripts.clear())
 
 export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; csrfToken: string }) {
   const base = `/campaigns/${campaignId}/agent/discussions`
@@ -40,6 +43,7 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   const [showList, setShowList] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const transcripts = useMemo(() => { let value = campaignTranscripts.get(campaignId); if (!value) { value = new Map(); campaignTranscripts.set(campaignId, value) }; return value }, [campaignId])
 
   useEffect(() => {
     let alive = true
@@ -95,6 +99,8 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
   }
 
   const active = index?.discussions.find(item => item.id === selected) ?? null
+  let transcript: DiscussionTranscript | null = null
+  if (active) { transcript = transcripts.get(active.id) || { records: new Map(), cursor: null, quiescent: true }; transcripts.set(active.id, transcript) }
   const settings = selected === '__settings__'
   function agentChanged(agent: AgentDiscussionIndex['agent']) { setIndex(value => value ? { ...value, agent } : value) }
   return <section className={`campaign-agent-workspace${showList ? ' is-list' : ' is-chat'}`} aria-label="Campaign Agent discussions">
@@ -104,72 +110,77 @@ export function CampaignChat({ campaignId, csrfToken }: { campaignId: string; cs
     </aside>
     <div className="campaign-agent-detail">
       <button className="campaign-agent-mobile-discussions" onClick={() => setShowList(true)}><SiteIcon name="back" />Discussions</button>
-      {settings && index ? <AgentSettings campaignId={campaignId} csrfToken={csrfToken} onChanged={agentChanged} /> : active ? <CampaignDiscussion key={active.id} campaignId={campaignId} discussion={active} csrfToken={csrfToken} onTouched={touched} /> : index && <p className="campaign-agent-empty">Choose or start a discussion.</p>}
+      {settings && index ? <AgentSettings campaignId={campaignId} csrfToken={csrfToken} onChanged={agentChanged} /> : active && transcript ? <CampaignDiscussion key={active.id} campaignId={campaignId} discussion={active} transcript={transcript} csrfToken={csrfToken} onTouched={touched} /> : index && <p className="campaign-agent-empty">Choose or start a discussion.</p>}
     </div>
     {error && <p className="campaign-agent-index-error" role="alert"><SiteIcon name="warning" />{error}</p>}
   </section>
 }
 
-function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { campaignId: string; discussion: AgentDiscussion; csrfToken: string; onTouched: (id: string, title: string) => void }) {
+function CampaignDiscussion({ campaignId, discussion, transcript, csrfToken, onTouched }: { campaignId: string; discussion: AgentDiscussion; transcript: DiscussionTranscript; csrfToken: string; onTouched: (id: string, title: string) => void }) {
   const base = `/campaigns/${campaignId}/agent/discussions/${encodeURIComponent(discussion.id)}/chat`
-  const records = useRef(new Map<string, AgentMessage>())
-  const cursor = useRef<AgentCursor | null>(null)
   const loading = useRef(false)
   const mounted = useRef(true)
   const end = useRef<HTMLDivElement | null>(null)
+  const scroller = useRef<HTMLDivElement | null>(null)
+  const stickToBottom = useRef(true)
   const [revision, setRevision] = useState(0)
-  const [quiescent, setQuiescent] = useState(true)
+  const [quiescent, setQuiescent] = useState(transcript.quiescent)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState<PendingMessage[]>([])
   const [error, setError] = useState('')
 
-  const load = useCallback(async (fresh = false) => {
+  const load = useCallback(async () => {
     if (loading.current) return
     loading.current = true
     try {
-      const after = fresh ? null : cursor.current
+      const after = transcript.cursor
       const query = after ? `?afterEpoch=${encodeURIComponent(after.epoch)}&afterSequence=${after.sequence}` : ''
       let page = await api<AgentChatPage>(base + query)
-      if (fresh) records.current.clear()
       while (true) {
-        const previousEpoch = cursor.current?.epoch
+        const previousEpoch = transcript.cursor?.epoch
         const nextEpoch = page.messages[0]?.cursor.epoch
-        if (!fresh && previousEpoch && nextEpoch && previousEpoch !== nextEpoch) records.current.clear()
-        for (const message of page.messages) records.current.set(`${message.cursor.epoch}:${message.cursor.sequence}`, message)
-        cursor.current = page.cursor
-        setQuiescent(page.isQuiescent)
+        if (previousEpoch && nextEpoch && previousEpoch !== nextEpoch) transcript.records.clear()
+        for (const message of page.messages) transcript.records.set(`${message.cursor.epoch}:${message.cursor.sequence}`, message)
+        transcript.cursor = page.cursor
+        transcript.quiescent = page.isQuiescent
+        setQuiescent(transcript.quiescent)
         if (!page.hasMore || !page.cursor) break
         page = await api<AgentChatPage>(`${base}?afterEpoch=${encodeURIComponent(page.cursor.epoch)}&afterSequence=${page.cursor.sequence}`)
       }
-      const canonical = new Set([...records.current.values()].map(message => message.messageUid))
+      const canonical = new Set([...transcript.records.values()].map(message => message.messageUid))
       setPending(values => values.filter(value => !value.messageUid || !canonical.has(value.messageUid)))
       setError('')
+      const node = scroller.current
+      stickToBottom.current = !node || node.scrollHeight - node.scrollTop - node.clientHeight < 80
       setRevision(value => value + 1)
     } catch (cause) {
       if (mounted.current) setError(explain(cause))
     } finally {
       loading.current = false
     }
-  }, [base])
+  }, [base, transcript])
 
   useEffect(() => {
     mounted.current = true
-    records.current.clear(); cursor.current = null
-    void load(true)
+    void load()
     return () => { mounted.current = false }
   }, [load])
 
   useEffect(() => {
-    const timer = window.setInterval(() => void load(false), quiescent ? 3000 : 900)
-    return () => window.clearInterval(timer)
+    let timer: number | undefined
+    const schedule = () => { window.clearTimeout(timer); timer = window.setTimeout(tick, quiescent ? 3000 : 900) }
+    const tick = () => { if (!document.hidden) void load().finally(schedule); else schedule() }
+    const visibility = () => { if (!document.hidden) void load() }
+    schedule(); document.addEventListener('visibilitychange', visibility)
+    return () => { window.clearTimeout(timer); document.removeEventListener('visibilitychange', visibility) }
   }, [load, quiescent])
 
   useEffect(() => {
-    end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+    if (stickToBottom.current) end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
   }, [revision, pending.length, quiescent])
 
   const messages = useMemo(() => {
-    const persisted: PersistedMessage[] = [...records.current.values()].map(message => ({
+    const persisted: PersistedMessage[] = [...transcript.records.values()].map(message => ({
       id: `${message.cursor.epoch}:${message.cursor.sequence}`,
       role: message.role,
       eventType: message.kind === 'commentary' ? 'text' : message.kind,
@@ -194,6 +205,7 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
     const content = draft.trim()
     if (!content) return
     const id = crypto.randomUUID()
+    stickToBottom.current = true
     setDraft(''); setError(''); setPending(values => [...values, { id, content }])
     try {
       const admission = await api<AgentAdmission & { title?: string }>(base, csrfToken, 'POST', { content, operationId: id })
@@ -201,7 +213,8 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
       setPending(values => values.map(value => value.id === id ? { ...value, messageUid: admission.messageUid } : value))
       setQuiescent(false)
       onTouched(discussion.id, admission.title || discussion.title)
-      await load(false)
+      stickToBottom.current = true
+      await load()
     } catch (cause) {
       if (!mounted.current) return
       setPending(values => values.filter(value => value.id !== id))
@@ -211,7 +224,7 @@ function CampaignDiscussion({ campaignId, discussion, csrfToken, onTouched }: { 
   }
 
   return <section className="campaign-agent-chat" aria-label={`Discussion: ${discussion.title || 'New discussion'}`}>
-    <div className="campaign-agent-messages" aria-live="polite">
+    <div className="campaign-agent-messages" aria-live="polite" ref={scroller}>
       {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">{discussion.readOnly ? 'Play-mode work will appear here when the campaign heartbeat runs.' : 'Ask for preparation, challenge a plan, or work through what the table may need next.'}</p>}
       {timeline.map((row, index) => row.kind === 'activity'
         ? <AgentActivityRow key={row.key} parts={row.block.parts} active={!quiescent && index === lastActivity} />
@@ -241,7 +254,7 @@ function ChatBlock({ message }: { message: MessageBlock }) {
   if (message.parts.length === 0) return null
   return <article className={`campaign-agent-message is-${message.role}`}>
     {message.parts.map((part, index) => {
-      if (part.type === 'text') return <p className={part.phase === 'commentary' ? 'is-commentary' : ''} key={index}>{part.content}</p>
+      if (part.type === 'text') return <div className={part.phase === 'commentary' ? 'is-commentary markdown-body' : 'markdown-body'} key={index}><MarkdownRenderer content={part.content || ''} /></div>
       return null
     })}
   </article>
