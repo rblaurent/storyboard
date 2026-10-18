@@ -242,7 +242,12 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             if (type.System || entity.TypeSlug == "page") throw new StoryException("workspace_entity_read_only", 409);
             var next = entity.Data.DeepClone().AsObject();
             foreach (var field in type.Fields.Where(f => !f.Sensitive))
-                if (input.Data.TryGetPropertyValue(field.Key, out var value)) next[field.Key] = value?.DeepClone();
+                if (input.Data.TryGetPropertyValue(field.Key, out var value))
+                {
+                    if (ImageField(field) && !JsonNode.DeepEquals(entity.Data[field.Key], value))
+                        await ValidateImageValueAsync(campaign, value, ct);
+                    next[field.Key] = value?.DeepClone();
+                }
             foreach (var key in ProtectedKeys) if (entity.Data.TryGetPropertyValue(key, out var value)) next[key] = value?.DeepClone(); else next.Remove(key);
             LeafEntity? saved;
             try { saved = await store.Entities.CompareExchangeCanonicalAsync(entity.Id, StoryJson.Bounded(input.Name, 300, true), next, expected, ct); }
@@ -276,8 +281,16 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
             var data = new JsonObject { ["parent"] = parentEntity.Id.ToString() };
             foreach (var field in type.Fields.Where(f => !f.Sensitive))
             {
-                if (input.Data?.TryGetPropertyValue(field.Key, out var value) == true) data[field.Key] = value?.DeepClone();
-                else if (field.DefaultValue is not null) data[field.Key] = field.DefaultValue.DeepClone();
+                if (input.Data?.TryGetPropertyValue(field.Key, out var value) == true)
+                {
+                    if (ImageField(field)) await ValidateImageValueAsync(campaign, value, ct);
+                    data[field.Key] = value?.DeepClone();
+                }
+                else if (field.DefaultValue is not null)
+                {
+                    if (ImageField(field)) await ValidateImageValueAsync(campaign, field.DefaultValue, ct);
+                    data[field.Key] = field.DefaultValue.DeepClone();
+                }
             }
             LeafEntity saved;
             try { saved = await store.Entities.CreateAsync(type.Slug, StoryJson.Bounded(input.Name, 300, true), data, ct); }
@@ -470,6 +483,45 @@ public sealed class StoryWorkspace(StoryStore store, StoryCampaigns campaigns)
         return (field.FieldType is "string" or "text")
                && field.Key is ("image" or "image_url" or "portrait" or "avatar" or "cover" or "artwork");
     }
+
+    private async Task ValidateImageValueAsync(string campaign, JsonNode? value, CancellationToken ct)
+    {
+        if (value is null) return;
+        if (value is not JsonValue scalar || !scalar.TryGetValue<string>(out var asset)) throw new StoryException("campaign_asset_required", 409);
+        if (string.IsNullOrWhiteSpace(asset)) return;
+        await RequireCampaignAssetAsync(campaign, asset, ct);
+    }
+
+    internal async Task RequireCampaignAssetAsync(string campaign, string asset, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(asset)) return;
+        var legacy = System.Text.RegularExpressions.Regex.Match(asset,
+            @"^/api/campaigns/(?<campaign>[0-9a-f-]{36})/visuals/candidates/(?<id>[0-9a-f-]{36})/image$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        if (legacy.Success)
+        {
+            if (!string.Equals(legacy.Groups["campaign"].Value, campaign, StringComparison.OrdinalIgnoreCase)) throw new StoryException("campaign_asset_required", 409);
+            var candidate = await store.RequireAsync("storyboard-visual-candidate", legacy.Groups["id"].Value, ct);
+            if (candidate.Data.Text("campaign") != campaign) throw new StoryException("campaign_asset_required", 409);
+            return;
+        }
+
+        async Task<bool> Any(string type, params string[] fields)
+            => (await store.AllAsync(type, new Dictionary<string, object?> { ["campaign"] = campaign }, ct))
+                .Any(entity => fields.Any(field => entity.Data.Text(field) == asset));
+
+        var campaignEntity = await store.RequireAsync("storyboard-campaign", campaign, ct);
+        if (campaignEntity.Data.Text("cover_asset") == asset
+            || await Any("storyboard-character", "portrait")
+            || await Any("storyboard-visual", "image_asset")
+            || await Any("storyboard-visual-candidate", "image_asset")
+            || await Any("storyboard-music-candidate", "cover_asset")
+            || await Any("music-track", "cover_asset")
+            || (await store.AllAsync("storyboard-generation", new Dictionary<string, object?> { ["campaign"] = campaign }, ct))
+                .Any(entity => entity.Data.Text("kind") == "image" && entity.Data.Text("result") == asset)) return;
+        throw new StoryException("campaign_asset_required", 409);
+    }
+
     private static JsonNode? Parse(JsonNode? node)
     {
         if (node is not JsonValue value || !value.TryGetValue<string>(out var text)) return node?.DeepClone();

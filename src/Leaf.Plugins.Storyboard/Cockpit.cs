@@ -142,7 +142,7 @@ public sealed class StoryCockpit(StoryStore store, StoryCampaigns campaigns, Sto
         if (input.Decision == "accept" && suggestion.Data.Text("entity") != "")
         {
             if (suggestion.Data.Text("action", "pin") == "reveal")
-                await visibility.SetAsync(campaign, account, suggestion.Data.Text("entity"), new EntityVisibilityWrite(suggestion.Data.Flag("everyone"), Strings(suggestion.Data["players"]), true, operation), ct);
+                await visibility.SetAsync(campaign, account, suggestion.Data.Text("entity"), new EntityVisibilityWrite(input.Everyone == true, input.PlayerIds ?? [], true, operation), ct);
             else
                 await PinAsync(campaign, account, new CockpitPinWrite(suggestion.Data.Text("entity"), "now", operation), ct);
         }

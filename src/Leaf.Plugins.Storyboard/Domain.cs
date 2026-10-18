@@ -25,6 +25,7 @@ public sealed record PresenceWrite(bool Present);
 public sealed record GenerationWrite(string Kind,string Prompt,long ExpectedRevision,string OperationId);
 public sealed record TranscriptSessionWrite(string Name,string RoleplayTime,string OperationId);
 public sealed record TranscriptEndWrite(string OperationId);
+public sealed record TranscriptRecorderWrite(string ClientId,string Label,string MicLabel,bool Takeover=false,string State="recording",string? Warning=null);
 public sealed record TranscriptRoleplayTimeWrite(string RoleplayTime,string OperationId);
 public sealed record TranscriptActorWrite(string Type,string Name,string? Id=null,string? Avatar=null,string? CharacterId=null);
 public sealed record TranscriptEventWrite(string Kind,string Channel,string Text,TranscriptActorWrite Actor,string OperationId,string? RoleplayTime=null,string? RoleplayConfidence=null,string? Corrects=null,bool Speak=false,string? Voice=null,string? Language=null);
@@ -33,4 +34,4 @@ public sealed record TranscriptSpeakerWrite(string ClusterId,TranscriptActorWrit
 public sealed record CockpitPinWrite(string EntityId,string Phase,string OperationId,string? Lens=null);
 public sealed record CockpitMoveWrite(string Phase,string OperationId,string? Lens=null);
 public sealed record CockpitObserveWrite(string SessionId,string ObservationCursor);
-public sealed record CockpitDecisionWrite(string Decision,string OperationId);
+public sealed record CockpitDecisionWrite(string Decision,string OperationId,bool? Everyone=null,string[]? PlayerIds=null);

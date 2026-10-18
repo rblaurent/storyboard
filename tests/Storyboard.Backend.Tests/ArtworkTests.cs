@@ -150,10 +150,9 @@ public sealed class ArtworkTests
         Assert.DoesNotContain("Glass Observatory", fixture.Compute.Requests.Single().Prompt);
         Assert.DoesNotContain("A brass observatory above the cloud line", fixture.Compute.Requests.Single().Prompt);
         await fixture.Entities.PatchAsync(place.Id, new JsonObject { ["image"] = "fixture-cover.png" });
-        var media = await fixture.Visuals.WorkspaceArtworkMediaAsync(
-            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), place.Id.ToString(), "image", default);
-        Assert.NotNull(media);
-        Assert.Equal("image/png", media.Value.ContentType);
+        var unowned = await Assert.ThrowsAsync<StoryException>(() => fixture.Visuals.WorkspaceArtworkMediaAsync(
+            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), place.Id.ToString(), "image", default));
+        Assert.Equal("campaign_asset_required", unowned.Code);
         var wrongField = await Assert.ThrowsAsync<StoryException>(() => fixture.Visuals.ArtworkBriefAsync(
             fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(),
             new ArtworkBriefWrite("entity", place.Id.ToString(), "description", "Paint it.", 3), default));
@@ -162,5 +161,20 @@ public sealed class ArtworkTests
             fixture.Campaign.Id.ToString(), fixture.Player.Id.ToString(),
             new ArtworkBriefWrite("entity", place.Id.ToString(), "image", "Paint it.", 3), default));
         Assert.Equal("game_master_required", denied.Code);
+
+        var otherCampaign = await fixture.Campaigns.CreateAsync(fixture.Gm.Id.ToString(), new("Other campaign", Guid.NewGuid().ToString()));
+        var foreign = await fixture.Store.ProtectAsync(new JsonObject
+        {
+            ["campaign"] = otherCampaign.Id.ToString(), ["image_asset"] = "foreign-campaign.png"
+        });
+        await fixture.Store.ChangeAsync("storyboard-visual", "foreign-visual", "Foreign visual", _ => foreign);
+        var smuggle = await Assert.ThrowsAsync<StoryException>(() => fixture.Workspace.SaveAsync(
+            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), place.Id.ToString(),
+            new WorkspaceEntityWrite(place.Name, new JsonObject { ["image"] = "foreign-campaign.png" }, place.UpdatedAt.ToString("O"))));
+        Assert.Equal("campaign_asset_required", smuggle.Code);
+        await fixture.Entities.PatchAsync(place.Id, new JsonObject { ["image"] = "foreign-campaign.png" });
+        var crossCampaignRead = await Assert.ThrowsAsync<StoryException>(() => fixture.Visuals.WorkspaceArtworkMediaAsync(
+            fixture.Campaign.Id.ToString(), fixture.Gm.Id.ToString(), place.Id.ToString(), "image", default));
+        Assert.Equal("campaign_asset_required", crossCampaignRead.Code);
     }
 }

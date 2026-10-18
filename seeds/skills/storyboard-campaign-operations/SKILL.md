@@ -49,8 +49,10 @@ in the heartbeat discussion or use a cockpit proposal. Never delete workspace en
 - In an interactive GM discussion, reveal or hide an entity directly with
   `POST .../agent/workspace/entities/{entity}/visibility` and
   `{everyone,playerIds,visible,operationId}`. `everyone:true` targets all active players; otherwise `playerIds` contains
-  Storyboard player-membership ids from the roster. A reveal adds the entity to each recipient's Journal and triggers
-  their in-app discovery notice. It does not project the entity into the room.
+  Storyboard player-membership ids from the roster. Each recipient gets an independent reveal record. Players who join
+  later are not added automatically; reveal to that new membership explicitly. Re-revealing an already-visible record
+  is a no-op and does not trigger another discovery notice. A reveal adds the entity to each recipient's Journal and
+  triggers their in-app discovery notice. It does not project the entity into the room.
 - During a heartbeat, visibility may change directly only in active play mode when the Information playbook enables
   autonomous drafts. Otherwise create a reveal proposal for GM approval. Hiding follows the same authority rule.
 - Find existing music with `POST .../agent/music/find`; find an existing visual with `POST .../agent/visuals/match`.

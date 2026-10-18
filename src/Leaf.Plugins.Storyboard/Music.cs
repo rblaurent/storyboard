@@ -16,7 +16,7 @@ public sealed record MusicPlaylistTrackWrite(string TrackId);
 public sealed record MusicQueueWrite(string? TrackId, string? PlaylistId, string OperationId);
 public sealed record MusicCommand(string Action, string? Uri, string? ContextUri, string[]? TrackUris, string? DeviceId, string? TrackId = null);
 public sealed record MusicProjectionOutputWrite(string ClientId, string? DeviceId, string? Name);
-public sealed record MusicProjectionCommand(string Action, string OperationId, long ExpectedRevision, string? TrackId = null);
+public sealed record MusicProjectionCommand(string Action, string OperationId, long ExpectedRevision, string? TrackId = null, string? RepeatMode = null, bool? Endless = null);
 public sealed record MusicBriefWrite(string Title, string Prompt, string Style, string NegativeTags, string Mood, string Energy, string Tempo, string[] Instruments, string NarrativeArc, int DurationSeconds, bool Instrumental);
 public sealed record MusicGenerationWrite(string OperationId, string Situation, MusicBriefWrite Brief, bool Confirmed)
 {
@@ -28,6 +28,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
     private readonly ConcurrentDictionary<string, ProjectionMusicSession> projectionSessions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Guid, Task> generationTasks = new();
     private IMusicPlayback Playback => services.GetService<IMusicPlayback>() ?? throw new StoryException("music_service_unavailable", 503);
 
     private sealed class ProjectionMusicSession
@@ -43,11 +44,40 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         public string DeviceId { get; set; } = "";
         public string OutputName { get; set; } = "Slideshow";
         public long OutputSeenAtMs { get; set; }
+        public string RepeatMode { get; set; } = "off";
+        public bool Endless { get; set; }
+        public string EndlessError { get; set; } = "";
+        public string LookaheadOperation { get; set; } = "";
+        public string Account { get; set; } = "";
+        public bool AwaitingEndlessResume { get; set; }
+    }
+
+    private async Task<ProjectionMusicSession> GetProjectionSessionAsync(string campaign, CancellationToken ct)
+    {
+        if (projectionSessions.TryGetValue(campaign, out var cached)) return cached;
+        var saved = await store.Entities.GetBySlugAsync("storyboard-music-session", "session-" + StoryJson.Hash(campaign), ct);
+        if (saved is not null) await store.CheckProtectionAsync(saved, ct);
+        var loaded = new ProjectionMusicSession();
+        if (saved is not null && saved.Data.Text("campaign") == campaign)
+        {
+            loaded.TrackId = saved.Data.Text("track"); loaded.ProgressMs = (long)saved.Data.Number("progress_ms"); loaded.Revision = (long)saved.Data.Number("revision"); loaded.LastOperation = saved.Data.Text("last_operation"); loaded.ClientId = saved.Data.Text("client_id"); loaded.DeviceId = saved.Data.Text("device_id"); loaded.OutputName = saved.Data.Text("output_name", "Slideshow"); loaded.OutputSeenAtMs = (long)saved.Data.Number("output_seen_at_ms"); loaded.RepeatMode = saved.Data.Text("repeat_mode", "off"); loaded.Endless = saved.Data.Flag("endless"); loaded.EndlessError = saved.Data.Text("endless_error"); loaded.LookaheadOperation = saved.Data.Text("lookahead_operation"); loaded.Account = saved.Data.Text("account"); loaded.AwaitingEndlessResume = saved.Data.Flag("awaiting_endless_resume");
+            // A process restart never claims playback is still active; resume is paused at the saved position.
+            loaded.Playing = false; loaded.StartedAtMs = 0;
+        }
+        return projectionSessions.GetOrAdd(campaign, loaded);
+    }
+
+    private async Task SaveProjectionSessionAsync(string campaign, ProjectionMusicSession session, CancellationToken ct)
+    {
+        JsonObject data;
+        lock (session.Gate) data = new JsonObject { ["campaign"] = campaign, ["track"] = session.TrackId, ["playing"] = session.Playing, ["progress_ms"] = session.ProgressMs, ["started_at_ms"] = session.StartedAtMs, ["revision"] = session.Revision, ["last_operation"] = session.LastOperation, ["client_id"] = session.ClientId, ["device_id"] = session.DeviceId, ["output_name"] = session.OutputName, ["output_seen_at_ms"] = session.OutputSeenAtMs, ["repeat_mode"] = session.RepeatMode, ["endless"] = session.Endless, ["endless_error"] = session.EndlessError, ["lookahead_operation"] = session.LookaheadOperation, ["account"] = session.Account, ["awaiting_endless_resume"] = session.AwaitingEndlessResume };
+        data = await store.ProtectAsync(data, ct);
+        await store.ChangeAsync("storyboard-music-session", "session-" + StoryJson.Hash(campaign), "Projection music session", old => old?.Data.Text("campaign") is { Length: > 0 } owner && owner != campaign ? throw new StoryException("not_found", 404) : data.DeepClone().AsObject(), ct);
     }
 
     public async Task<object> StatusAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var playback = services.GetService<IMusicPlayback>();
         if (playback is null) return new { available = false, connected = false, displayName = (string?)null, error = "Music service is not installed." };
         try
@@ -72,7 +102,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<object> PlaylistAsync(string campaign, string account, string playlist, int offset, int limit, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var entity = await store.RequireAsync("storyboard-music-playlist", playlist, ct);
         if (entity.Data.Text("campaign") != campaign || !entity.Data.Flag("active")) throw new StoryException("not_found", 404);
         offset = Math.Max(0, offset); limit = Math.Clamp(limit, 1, 100);
@@ -84,14 +114,14 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<object> TracksAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var tracks = await store.AllAsync("music-track", new Dictionary<string, object?> { ["campaign"] = campaign }, ct);
         return tracks.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase).Select(TrackProjection).ToArray();
     }
 
     public async Task<object> SearchAsync(string campaign, string account, MusicSearchWrite input, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var query = StoryJson.Bounded(input?.Query, 180, true);
         // Spotify Search accepts at most ten results per type since February 2026.
         try { return new { query, tracks = (await Playback.SearchTracksAsync(query, 10, ct)).Items.Select(SpotifyProjection).ToArray() }; }
@@ -227,7 +257,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<MusicPlaybackState> StateAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         try { return await Playback.GetPlaybackAsync(ct); }
         catch (Exception e) { return new(false, false, null, 0, null, null, 0, e.Message); }
     }
@@ -245,8 +275,22 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<object> ProjectionStateAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
-        return await ProjectionAsync(campaign, ct);
+        var membership = await campaigns.MembershipAsync(campaign, account, ct: ct);
+        if (membership.Data.Text("role") == "gm") return await ProjectionAsync(campaign, ct);
+        var session = await GetProjectionSessionAsync(campaign, ct);
+        Leaf.Sdk.LeafEntity? track = null;
+        string trackId;
+        lock (session.Gate) trackId = session.TrackId;
+        if (!string.IsNullOrWhiteSpace(trackId))
+        {
+            try { track = await RequireTrackAsync(campaign, trackId, ct); }
+            catch (StoryException e) when (e.Status == 404) { }
+        }
+        lock (session.Gate)
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return new { campaignId = campaign, revision = session.Revision, playing = session.Playing, progressMs = CurrentProgress(session, now), serverTimeMs = now, track = track is null ? null : new { name = track.Name, artist = track.Data.Text("artist") } };
+        }
     }
 
     public async Task<object> RegisterProjectionOutputAsync(string campaign, string account, MusicProjectionOutputWrite input, CancellationToken ct)
@@ -256,14 +300,16 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         var client = StoryJson.Bounded(input.ClientId, 100, true);
         var device = StoryJson.Bounded(input.DeviceId, 200);
         var name = StoryJson.Bounded(input.Name, 100);
-        var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+        var session = await GetProjectionSessionAsync(campaign, ct);
         lock (session.Gate)
         {
             session.ClientId = client;
             session.DeviceId = device;
             session.OutputName = string.IsNullOrWhiteSpace(name) ? "Slideshow" : name;
             session.OutputSeenAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            session.Account = account;
         }
+        await SaveProjectionSessionAsync(campaign, session, ct);
         return await ProjectionAsync(campaign, ct);
     }
 
@@ -275,28 +321,64 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         await store.Commands.WaitAsync(ct);
         try
         {
-            var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+            var session = await GetProjectionSessionAsync(campaign, ct);
+            lock (session.Gate) session.Account = account;
             string action;
             string trackId;
             string deviceId;
+            string repeatMode;
             bool duplicate;
+            bool staleEnded = false;
             lock (session.Gate)
             {
                 duplicate = session.LastOperation == operation;
-                if (duplicate) { action = ""; trackId = session.TrackId; deviceId = session.DeviceId; }
+                if (duplicate) { action = ""; trackId = session.TrackId; deviceId = session.DeviceId; repeatMode = session.RepeatMode; }
                 else
                 {
-                    if (session.Revision != input.ExpectedRevision) throw new StoryException("music_session_changed", 409);
                     action = StoryJson.Bounded(input.Action, 20, true);
+                    if (session.Revision != input.ExpectedRevision)
+                    {
+                        if (action == "ended" && !string.IsNullOrWhiteSpace(input.TrackId) && input.TrackId != session.TrackId) staleEnded = true;
+                        else throw new StoryException("music_session_changed", 409);
+                    }
                     trackId = input.TrackId ?? session.TrackId;
                     deviceId = session.DeviceId;
+                    repeatMode = session.RepeatMode;
                 }
             }
-            if (duplicate) return await ProjectionAsync(campaign, ct);
+            if (duplicate || staleEnded) return await ProjectionAsync(campaign, ct);
 
+            if (action == "repeat")
+            {
+                var mode = input.RepeatMode?.Trim().ToLowerInvariant();
+                if (mode is not ("off" or "queue" or "track")) throw new StoryException("invalid_music_repeat");
+                lock (session.Gate) { session.RepeatMode = mode; session.Revision++; session.LastOperation = operation; }
+                await SaveProjectionSessionAsync(campaign, session, ct);
+                return await ProjectionAsync(campaign, ct);
+            }
+            if (action == "endless")
+            {
+                if (input.Endless is null) throw new StoryException("invalid_music_endless");
+                lock (session.Gate) { session.Endless = input.Endless.Value; if (!session.Endless) session.AwaitingEndlessResume = false; session.EndlessError = ""; session.Revision++; session.LastOperation = operation; }
+                await SaveProjectionSessionAsync(campaign, session, ct);
+                return await ProjectionAsync(campaign, ct);
+            }
+            var shouldPlay = action is "play" or "next" or "previous";
             if (action is "next" or "previous") trackId = await AdjacentQueueTrackAsync(campaign, trackId, action == "next", ct);
+            if (action == "ended")
+            {
+                string current;
+                lock (session.Gate) current = session.TrackId;
+                if (string.IsNullOrWhiteSpace(input.TrackId) || input.TrackId != current) return await ProjectionAsync(campaign, ct);
+                if (repeatMode == "track") { trackId = current; shouldPlay = true; }
+                else
+                {
+                    var next = await NextQueueTrackAsync(campaign, current, repeatMode == "queue", ct);
+                    if (next is not null) { trackId = next; shouldPlay = true; }
+                }
+            }
             var track = string.IsNullOrWhiteSpace(trackId) ? null : await RequireTrackAsync(campaign, trackId, ct);
-            if (action is "play" or "next" or "previous")
+            if (shouldPlay)
             {
                 if (track is null) throw new StoryException("music_track_required", 409);
                 EnsureProjectionOutput(session, track.Data.Text("source_kind") == "spotify");
@@ -320,18 +402,19 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             {
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 session.ProgressMs = CurrentProgress(session, now);
-                if (action is "play" or "next" or "previous")
+                if (shouldPlay)
                 {
-                    var changed = session.TrackId != trackId;
                     session.TrackId = trackId;
-                    session.ProgressMs = changed ? 0 : session.ProgressMs;
+                    session.ProgressMs = 0;
                     session.StartedAtMs = now;
                     session.Playing = true;
+                    session.AwaitingEndlessResume = false;
                 }
-                else { session.Playing = false; session.StartedAtMs = 0; }
+                else { session.Playing = false; session.StartedAtMs = 0; session.AwaitingEndlessResume = action == "ended" && session.Endless; }
                 session.Revision++;
                 session.LastOperation = operation;
             }
+            await SaveProjectionSessionAsync(campaign, session, ct);
             await store.AuditAsync("music.projection.commanded", account, campaign, new JsonObject { ["action"] = action, ["track"] = trackId }, ct);
             return await ProjectionAsync(campaign, ct);
         }
@@ -340,7 +423,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     private async Task<object> ProjectionAsync(string campaign, CancellationToken ct)
     {
-        var session = projectionSessions.GetOrAdd(campaign, _ => new ProjectionMusicSession());
+        var session = await GetProjectionSessionAsync(campaign, ct);
         Leaf.Sdk.LeafEntity? track = null;
         string trackId;
         lock (session.Gate) trackId = session.TrackId;
@@ -360,7 +443,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
             var ready = now - session.OutputSeenAtMs <= 15_000;
             var progress = CurrentProgress(session, now);
             if (track is not null && track.Data.Number("duration_ms") > 0) progress = Math.Min(progress, track.Data.Number("duration_ms"));
-            return new { campaignId = campaign, revision = session.Revision, playing = session.Playing, progressMs = progress, serverTimeMs = now, track = track is null ? null : TrackProjection(track), outputReady = ready, outputName = ready ? session.OutputName : null, spotifyReady = ready && !string.IsNullOrWhiteSpace(session.DeviceId) };
+            return new { campaignId = campaign, revision = session.Revision, playing = session.Playing, progressMs = progress, serverTimeMs = now, track = track is null ? null : TrackProjection(track), outputReady = ready, outputName = ready ? session.OutputName : null, spotifyReady = ready && !string.IsNullOrWhiteSpace(session.DeviceId), repeatMode = session.RepeatMode, endless = session.Endless, endlessError = session.EndlessError, lookaheadPending = session.LookaheadOperation != "" };
         }
     }
 
@@ -372,6 +455,14 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
         if (index < 0) index = next ? -1 : 0;
         index = next ? (index + 1) % queue.Length : (index - 1 + queue.Length) % queue.Length;
         return queue[index].Data.Text("track");
+    }
+
+    private async Task<string?> NextQueueTrackAsync(string campaign, string current, bool wrap, CancellationToken ct)
+    {
+        var queue = (await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id).ToArray();
+        var index = Array.FindIndex(queue, item => item.Data.Text("track") == current);
+        if (index >= 0 && index + 1 < queue.Length) return queue[index + 1].Data.Text("track");
+        return wrap && queue.Length > 0 ? queue[0].Data.Text("track") : null;
     }
 
     private static void EnsureProjectionOutput(ProjectionMusicSession session, bool spotify)
@@ -387,7 +478,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<object> QueueAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var queue = (await store.AllAsync("storyboard-music-queue-item", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct)).OrderBy(e => e.Data.Number("position")).ThenBy(e => e.Id).ToArray();
         var items = new List<object>();
         foreach (var item in queue) items.Add(new { queueId = item.Id, track = TrackProjection(await RequireTrackAsync(campaign, item.Data.Text("track"), ct)) });
@@ -557,7 +648,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<(byte[] Bytes, string ContentType)?> CandidateMediaAsync(string campaign, string account, string candidateId, bool cover, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var candidate = await store.RequireAsync("storyboard-music-candidate", candidateId, ct);
         if (candidate.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404);
         var id = candidate.Data.Text(cover ? "cover_asset" : "audio_asset");
@@ -568,7 +659,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<(byte[] Bytes, string ContentType)?> TrackMediaAsync(string campaign, string account, string trackId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var track = await store.RequireAsync("music-track", trackId, ct);
         if (track.Data.Text("campaign") != campaign || track.Data.Text("source_kind") != "generated") throw new StoryException("not_found", 404);
         var file = await assets.ReadAsync(track.Data.Text("audio_asset"), ct);
@@ -577,6 +668,11 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await Task.WhenAll(GenerationLoopAsync(stoppingToken), ProjectionLoopAsync(stoppingToken));
+    }
+
+    private async Task GenerationLoopAsync(CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -584,13 +680,79 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
                 if (await store.ConfigAsync(stoppingToken) is not null)
                     foreach (var state in ActiveGenerationStates)
                         foreach (var op in await store.AllAsync("storyboard-music-generation", new Dictionary<string, object?> { ["state"] = state }, stoppingToken))
-                            try { await RunGenerationAsync(op, stoppingToken); }
-                            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; }
-                            catch (Exception e) { logger.LogWarning("Storyboard music generation {Operation} failed: {Type}", op.Id, e.GetType().Name); await SetAsync(op, new JsonObject { ["state"] = "failed", ["error"] = "Music generation failed. No existing tracks were changed." }, stoppingToken); }
+                            if (generationTasks.Count < 3) generationTasks.TryAdd(op.Id, RunGenerationSafeAsync(op, stoppingToken));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception e) { logger.LogWarning("Storyboard music worker unavailable: {Type}", e.GetType().Name); }
             try { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+        }
+    }
+
+    private async Task RunGenerationSafeAsync(Leaf.Sdk.LeafEntity op, CancellationToken ct)
+    {
+        try { await RunGenerationAsync(op, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception e) { logger.LogWarning("Storyboard music generation {Operation} failed: {Type}", op.Id, e.GetType().Name); try { await SetAsync(op, new JsonObject { ["state"] = "failed", ["error"] = "Music generation failed. No existing tracks were changed." }, ct); } catch { } }
+        finally { generationTasks.TryRemove(op.Id, out _); }
+    }
+
+    private async Task ProjectionLoopAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try { await ProcessEndlessOnceAsync(stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception e) { logger.LogWarning("Storyboard endless music tick failed: {Type}", e.GetType().Name); }
+            try { await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken); } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+        }
+    }
+
+    public async Task ProcessEndlessOnceAsync(CancellationToken ct = default)
+    {
+        var saved = await store.AllAsync("storyboard-music-session", ct: ct);
+        foreach (var entity in saved)
+        {
+            var campaign = entity.Data.Text("campaign"); if (campaign == "") continue;
+            var session = await GetProjectionSessionAsync(campaign, ct);
+            string trackId, operation, account; bool endless, playing;
+            lock (session.Gate) { trackId = session.TrackId; operation = session.LookaheadOperation; account = session.Account; endless = session.Endless; playing = session.Playing; }
+            if (!endless || trackId == "" || account == "") continue;
+            if (operation == "")
+            {
+                if (!playing || await NextQueueTrackAsync(campaign, trackId, false, ct) is not null) continue;
+                var operationId = Guid.NewGuid();
+                var claimed = false;
+                lock (session.Gate)
+                {
+                    if (session.LookaheadOperation == "") { session.LookaheadOperation = operationId.ToString(); claimed = true; }
+                }
+                if (!claimed) continue;
+                await SaveProjectionSessionAsync(campaign, session, ct);
+                try
+                {
+                    var campaignEntity = await store.RequireAsync("storyboard-campaign", campaign, ct);
+                    var snapshot = await new StoryAgentPlaybooks(store, campaigns).SnapshotAsync(campaign, ct);
+                    var musicDirection = snapshot.Items.OfType<JsonObject>().FirstOrDefault(item => item.Text("capability") == "music");
+                    var situation = "Continue the current table soundtrack seamlessly. Campaign: " + campaignEntity.Name + ". " + campaignEntity.Data.Text("description") + ". Direction: " + musicDirection?.Text("direction") + ". Avoid: " + musicDirection?.Text("avoid");
+                    var raw = JsonSerializer.SerializeToNode(await BriefAsync(campaign, account, new MusicSituationWrite(situation), ct), StoryJson.Options)!.AsObject();
+                    var brief = new MusicBriefWrite(raw.Text("title"), raw.Text("prompt"), raw.Text("style"), raw.Text("negativeTags"), raw.Text("mood"), raw.Text("energy"), raw.Text("tempo"), raw["instruments"]?.Deserialize<string[]>(StoryJson.Options) ?? [], raw.Text("narrativeArc"), (int)raw.Number("durationSeconds"), true);
+                    await StartGenerationAsync(campaign, account, new MusicGenerationWrite(operationId.ToString(), situation, brief, true) { PlaybookHash = snapshot.Hash, HeartbeatTurn = "endless:" + operationId.ToString("N") }, ct);
+                }
+                catch (Exception e) { lock (session.Gate) { session.RepeatMode = "queue"; session.Endless = false; session.EndlessError = "Could not generate the next track; the current queue will loop."; session.LookaheadOperation = ""; } await SaveProjectionSessionAsync(campaign, session, ct); logger.LogWarning("Endless music look-ahead failed for {Campaign}: {Type}", campaign, e.GetType().Name); }
+                continue;
+            }
+            var generation = (await store.AllAsync("storyboard-music-generation", new Dictionary<string, object?> { ["campaign"] = campaign, ["operation_id"] = operation }, ct)).SingleOrDefault();
+            if (generation is null) continue;
+            if (generation.Data.Text("state") == "failed") { bool resume; long revision; lock (session.Gate) { session.RepeatMode = "queue"; session.Endless = false; session.EndlessError = "Could not generate the next track; the current queue will loop."; session.LookaheadOperation = ""; resume = session.AwaitingEndlessResume; revision = session.Revision; } await SaveProjectionSessionAsync(campaign, session, ct); if (resume) await ProjectionCommandAsync(campaign, account, new("play", Guid.NewGuid().ToString(), revision, trackId), ct); continue; }
+            if (generation.Data.Text("state") != "completed") continue;
+            var candidate = (await store.AllAsync("storyboard-music-candidate", new Dictionary<string, object?> { ["campaign"] = campaign, ["generation"] = generation.Id.ToString() }, ct)).OrderBy(value => value.CreatedAt).FirstOrDefault();
+            if (candidate is null) continue;
+            var promoted = JsonSerializer.SerializeToNode(await PromoteAsync(campaign, account, candidate.Id.ToString(), ct), StoryJson.Options)!.AsObject();
+            await EnqueueAsync(campaign, account, new MusicQueueWrite(promoted.Text("id"), null, operation), ct);
+            bool shouldResume; long expectedRevision;
+            lock (session.Gate) { session.LookaheadOperation = ""; session.EndlessError = ""; shouldResume = session.AwaitingEndlessResume; expectedRevision = session.Revision; }
+            await SaveProjectionSessionAsync(campaign, session, ct);
+            if (shouldResume) await ProjectionCommandAsync(campaign, account, new("play", Guid.NewGuid().ToString(), expectedRevision, promoted.Text("id")), ct);
         }
     }
 
@@ -644,7 +806,7 @@ public sealed class StoryMusic(IServiceProvider services, StoryCampaigns campaig
 
     public async Task<(byte[] Bytes, string ContentType)?> TrackCoverMediaAsync(string campaign, string account, string trackId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         var track = await RequireTrackAsync(campaign, trackId, ct);
         if (track.Data.Text("source_kind") != "generated" || track.Data.Text("cover_asset") == "") return null;
         var file = await assets.ReadAsync(track.Data.Text("cover_asset"), ct);

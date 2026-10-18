@@ -574,7 +574,7 @@ public sealed class AgentTests
         Assert.Equal("agent_capability_disabled", denied.Code);
 
         await playbooks.SaveAsync(campaignId, fixture.Gm.Id.ToString(), "information", new CampaignPlaybookWrite(true, true, 60, ["transcript-change"], "Reveal only explicit discoveries.", "Never reveal GM-only facts.", 0, Guid.NewGuid().ToString()));
-        await tools.RevealAsync(campaignId, entity.Id.ToString(), heartbeatContext, new(false, [], false, Guid.NewGuid().ToString()), default);
+        await tools.RevealAsync(campaignId, entity.Id.ToString(), heartbeatContext, new(true, [], false, Guid.NewGuid().ToString()), default);
         Assert.Empty(StoryJson.Object(await fixture.Visibility.JournalAsync(campaignId, fixture.Player.Id.ToString()))["items"]!.AsArray());
         Assert.Equal("Player-safe reveal", prepared["playerView"]!.AsObject().Text("title"));
     }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Leaf.Sdk;
@@ -41,13 +42,14 @@ public sealed record VisualSessionCommand(string Action, string OperationId, lon
 public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, StoryWorkspace workspace, StoryVisualIdentity identities, IAiInference ai, IComfyUiWorkflows workflows, IComputeJobs jobs, IAssets assets, ILogger<StoryVisuals> logger) : BackgroundService
 {
     private static readonly string[] ActiveGenerationStates = ["pending", "generating", "ingesting"];
+    private readonly ConcurrentDictionary<Guid, Task> generationTasks = new();
     private const int ProjectionWidth = 1280;
     private const int ProjectionHeight = 720;
     private const string ProjectionComposition = "Format: 16:9 widescreen projection. Keep essential subjects and focal details inside a generous inner safe area with breathing room at every edge for subtle slow pan and zoom. No lettering or interface elements.";
 
     public async Task<object> ProfileAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         return identities.Projection(await identities.GetAsync(campaign, ct));
     }
 
@@ -144,7 +146,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
 
     public async Task<object> LibraryAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct);
         return (await store.AllAsync("storyboard-visual", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct))
             .OrderByDescending(v => v.UpdatedAt).ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase).Select(VisualProjection).ToArray();
     }
@@ -285,6 +287,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             @"^/api/campaigns/[0-9a-f-]{36}/visuals/candidates/(?<id>[0-9a-f-]{36})/image$",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         if (legacyCandidate.Success) return await CandidateMediaAsync(campaign, account, legacyCandidate.Groups["id"].Value, ct);
+        await workspace.RequireCampaignAssetAsync(campaign, context.ImageAssetId, ct);
         var file = await assets.ReadAsync(context.ImageAssetId, ct);
         return file is null ? null : (file.Bytes, file.ContentType);
     }
@@ -365,13 +368,13 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
 
     public async Task<object> SetsAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct); var sets = await store.AllAsync("storyboard-visual-set", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct); var sets = await store.AllAsync("storyboard-visual-set", new Dictionary<string, object?> { ["campaign"] = campaign, ["active"] = true }, ct);
         var result = new List<object>(); foreach (var set in sets.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)) result.Add(await SetProjectionAsync(set, ct)); return result;
     }
 
     public async Task<object> SetAsync(string campaign, string account, string setId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct); var set = await RequireSetAsync(campaign, setId, ct); var items = await SetItemsAsync(campaign, setId, ct);
+        await campaigns.MembershipAsync(campaign, account, true, ct); var set = await RequireSetAsync(campaign, setId, ct); var items = await SetItemsAsync(campaign, setId, ct);
         return new { set = await SetProjectionAsync(set, ct), items = items.Select(i => VisualProjection(i.Visual)).ToArray() };
     }
 
@@ -390,7 +393,7 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
 
     public async Task<object> QueueAsync(string campaign, string account, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct); return (await QueueItemsAsync(campaign, ct)).Select(i => new { queueId = i.Item.Id, visual = VisualProjection(i.Visual) }).ToArray();
+        await campaigns.MembershipAsync(campaign, account, true, ct); return (await QueueItemsAsync(campaign, ct)).Select(i => new { queueId = i.Item.Id, visual = VisualProjection(i.Visual) }).ToArray();
     }
 
     public async Task<object> EnqueueAsync(string campaign, string account, VisualQueueWrite input, CancellationToken ct)
@@ -477,15 +480,27 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
 
     public async Task<(byte[] Bytes, string ContentType)?> VisualMediaAsync(string campaign, string account, string visualId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct); var visual = await RequireVisualAsync(campaign, visualId, ct); var file = await assets.ReadAsync(visual.Data.Text("image_asset"), ct); return file is null ? null : (file.Bytes, file.ContentType);
+        var membership = await campaigns.MembershipAsync(campaign, account, ct: ct); var visual = await RequireVisualAsync(campaign, visualId, ct);
+        if (membership.Data.Text("role") != "gm")
+        {
+            var session = await SessionEntityAsync(campaign, false, ct);
+            if (session?.Data.Text("current_visual") != visual.Id.ToString()) throw new StoryException("not_found", 404);
+        }
+        await workspace.RequireCampaignAssetAsync(campaign, visual.Data.Text("image_asset"), ct);
+        var file = await assets.ReadAsync(visual.Data.Text("image_asset"), ct); return file is null ? null : (file.Bytes, file.ContentType);
     }
 
     public async Task<(byte[] Bytes, string ContentType)?> CandidateMediaAsync(string campaign, string account, string candidateId, CancellationToken ct)
     {
-        await campaigns.MembershipAsync(campaign, account, ct: ct); var candidate = await store.RequireAsync("storyboard-visual-candidate", candidateId, ct); if (candidate.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404); var file = await assets.ReadAsync(candidate.Data.Text("image_asset"), ct); return file is null ? null : (file.Bytes, file.ContentType);
+        await campaigns.MembershipAsync(campaign, account, true, ct); var candidate = await store.RequireAsync("storyboard-visual-candidate", candidateId, ct); if (candidate.Data.Text("campaign") != campaign) throw new StoryException("not_found", 404); await workspace.RequireCampaignAssetAsync(campaign, candidate.Data.Text("image_asset"), ct); var file = await assets.ReadAsync(candidate.Data.Text("image_asset"), ct); return file is null ? null : (file.Bytes, file.ContentType);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await Task.WhenAll(GenerationLoopAsync(stoppingToken), TimerLoopAsync(stoppingToken));
+    }
+
+    private async Task GenerationLoopAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -493,13 +508,38 @@ public sealed class StoryVisuals(StoryStore store, StoryCampaigns campaigns, Sto
             {
                 if (await store.ConfigAsync(stoppingToken) is not null)
                 {
-                    foreach (var state in ActiveGenerationStates) foreach (var op in await store.AllAsync("storyboard-visual-generation", new Dictionary<string, object?> { ["state"] = state }, stoppingToken)) try { await RunGenerationAsync(op, stoppingToken); } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { throw; } catch (StoryException e) when (e.Code == "writes_fenced") { break; } catch (Exception e) { logger.LogWarning("Storyboard visual generation {Operation} failed: {Type}", op.Id, e.GetType().Name); await PatchAsync(op, new JsonObject { ["state"] = "failed", ["error"] = "Visual generation failed. Existing images were kept." }, stoppingToken); }
-                    foreach (var session in await store.AllAsync("storyboard-visual-session", new Dictionary<string, object?> { ["playing"] = true }, stoppingToken)) if (session.Data.Number("next_at") > 0 && session.Data.Number("next_at") <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()) await AdvanceTimedAsync(session, stoppingToken);
+                    foreach (var state in ActiveGenerationStates) foreach (var op in await store.AllAsync("storyboard-visual-generation", new Dictionary<string, object?> { ["state"] = state }, stoppingToken)) if (generationTasks.Count < 3) generationTasks.TryAdd(op.Id, RunGenerationSafeAsync(op, stoppingToken));
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; } catch (Exception e) { logger.LogWarning("Storyboard visuals worker unavailable: {Type}", e.GetType().Name); }
             try { await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
+    }
+
+    private async Task RunGenerationSafeAsync(LeafEntity op, CancellationToken ct)
+    {
+        try { await RunGenerationAsync(op, ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (StoryException e) when (e.Code == "writes_fenced") { }
+        catch (Exception e) { logger.LogWarning("Storyboard visual generation {Operation} failed: {Type}", op.Id, e.GetType().Name); try { await PatchAsync(op, new JsonObject { ["state"] = "failed", ["error"] = "Visual generation failed. Existing images were kept." }, ct); } catch { } }
+        finally { generationTasks.TryRemove(op.Id, out _); }
+    }
+
+    private async Task TimerLoopAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try { await AdvanceSessionsOnceAsync(stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception e) { logger.LogWarning("Storyboard slideshow timer unavailable: {Type}", e.GetType().Name); }
+            try { await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken); } catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+        }
+    }
+
+    public async Task AdvanceSessionsOnceAsync(CancellationToken ct = default)
+    {
+        foreach (var session in await store.AllAsync("storyboard-visual-session", new Dictionary<string, object?> { ["playing"] = true }, ct))
+            if (session.Data.Number("next_at") > 0 && session.Data.Number("next_at") <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()) await AdvanceTimedAsync(session, ct);
     }
 
     public async Task RunGenerationAsync(LeafEntity operation, CancellationToken ct)

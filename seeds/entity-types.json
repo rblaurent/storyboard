@@ -144,6 +144,17 @@
   },
   {
     "typeSlug": "entity-type",
+    "slug": "storyboard-music-session",
+    "name": "Storyboard music session",
+    "data": {
+      "icon": "ph-bold ph-speaker-high",
+      "color": "orange",
+      "versioning": true,
+      "description": "Durable projection music transport and repeat settings for one campaign."
+    }
+  },
+  {
+    "typeSlug": "entity-type",
     "slug": "storyboard-music-queue-item",
     "name": "Storyboard music queue item",
     "data": {
