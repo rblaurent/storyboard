@@ -574,11 +574,17 @@ body { margin: 0; }
 .storyboard-site .campaign-agent-activity-dialog { width: min(620px,calc(100vw - 32px)); max-height: 76dvh; padding: 0; color: var(--ink); border: 1px solid var(--ink); border-radius: var(--radius-control); background: var(--ivory); box-shadow: 0 24px 80px #20252a44; }
 .storyboard-site .campaign-agent-activity-dialog::backdrop { background: #20252a66; }
 .storyboard-site .campaign-agent-activity-dialog > div { display: grid; gap: 0; }
-.storyboard-site .campaign-agent-activity-dialog header { min-height: 64px; display: grid; grid-template-columns: 12px minmax(0,1fr) 36px; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--rule); }
+.storyboard-site .campaign-agent-activity-dialog header { min-height: 64px; display: grid; grid-template-columns: 12px minmax(0,1fr); grid-auto-flow: column; grid-auto-columns: auto; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--rule); }
 .storyboard-site .campaign-agent-activity-dialog header > i { width: 12px; height: 12px; border: 1px solid var(--activity-color); border-radius: 2px; background: transparent; }
 .storyboard-site .campaign-agent-activity-dialog h2 { font-size: 24px; letter-spacing: -.02em; }
 .storyboard-site .campaign-agent-activity-dialog header > button { width: 36px; min-width: 36px; height: 36px; min-height: 36px; padding: 0; color: var(--muted); border: 0; background: transparent; }
 .storyboard-site .campaign-agent-activity-dialog header > button:hover { color: var(--ink); background: var(--paper); }
+.storyboard-site .campaign-agent-activity-nav { display: flex; align-items: center; gap: var(--space-1); }
+.storyboard-site .campaign-agent-activity-nav button { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; color: var(--muted); border: 0; background: transparent; }
+.storyboard-site .campaign-agent-activity-nav button:hover { color: var(--ink); background: var(--paper); }
+.storyboard-site .campaign-agent-activity-nav button[aria-disabled='true'] { cursor: default; opacity: .35; }
+.storyboard-site .campaign-agent-activity-nav button[aria-disabled='true']:hover { color: var(--muted); background: transparent; }
+.storyboard-site .campaign-agent-activity-nav span { min-width: 52px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: .04em; text-align: center; white-space: nowrap; }
 .storyboard-site .campaign-agent-activity-dialog section { padding: var(--space-5); border-bottom: 1px solid var(--rule); }
 .storyboard-site .campaign-agent-activity-dialog section:last-child { border-bottom: 0; }
 .storyboard-site .campaign-agent-activity-dialog section > span { display: block; margin-bottom: var(--space-3); color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .15em; }

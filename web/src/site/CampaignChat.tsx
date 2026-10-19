@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react'
-import { getEffectiveToolName, getPartColor, MarkdownRenderer, projectActivityTimeline, rebuildBlocks, type MessageBlock, type MessagePart, type PersistedMessage } from '@redbamboo/chat'
+import { getEffectiveToolName, getPartColor, isInspectablePart, MarkdownRenderer, projectActivityTimeline, rebuildBlocks, squarePosition, squareSequence, stepSquare, type MessageBlock, type MessagePart, type PersistedMessage, type SquareRef, type SquareRow } from '@redbamboo/chat'
 import { api, explain } from './api'
 import { SiteIcon } from './icons'
 import { AgentSettings } from './AgentSettings'
@@ -199,6 +199,10 @@ function CampaignDiscussion({ campaignId, discussion, transcript, csrfToken, onT
   }, [revision])
   const timeline = useMemo(() => projectActivityTimeline(messages), [messages])
   const lastActivity = timeline.reduce((last, row, index) => row.kind === 'activity' ? index : last, -1)
+  // One dialog for the whole discussion, so its arrows can step past commentary
+  // into the neighbouring activity rows.
+  const squareRows = useMemo<SquareRow[]>(() => timeline.filter(row => row.kind === 'activity').map(row => ({ id: row.key, parts: row.block.parts })), [timeline])
+  const [inspected, setInspected] = useState<SquareRef | null>(null)
 
   async function send(event: FormEvent) {
     event.preventDefault()
@@ -227,12 +231,13 @@ function CampaignDiscussion({ campaignId, discussion, transcript, csrfToken, onT
     <div className="campaign-agent-messages" aria-live="polite" ref={scroller}>
       {messages.length === 0 && pending.length === 0 && <p className="campaign-agent-empty">{discussion.readOnly ? 'Play-mode work will appear here when the campaign heartbeat runs.' : 'Ask for preparation, challenge a plan, or work through what the table may need next.'}</p>}
       {timeline.map((row, index) => row.kind === 'activity'
-        ? <AgentActivityRow key={row.key} parts={row.block.parts} active={!quiescent && index === lastActivity} />
+        ? <AgentActivityRow key={row.key} parts={row.block.parts} active={!quiescent && index === lastActivity} inspect={partIndex => setInspected({ rowId: row.key, index: partIndex })} />
         : <ChatBlock key={row.key} message={row.block} />)}
       {pending.map(message => <article className="campaign-agent-message is-user is-pending" key={message.id}><p>{message.content}</p><small>{message.messageUid ? 'Saved, waiting for the Agent' : 'Sending'}</small></article>)}
       {!quiescent && <p className="campaign-agent-working"><i />Agent is working</p>}
       <div ref={end} aria-hidden="true" />
     </div>
+    {inspected && <AgentActivityDialog rows={squareRows} square={inspected} step={setInspected} close={() => setInspected(null)} />}
     {error && <p className="campaign-agent-error" role="alert"><SiteIcon name="warning" />{error}</p>}
     {discussion.readOnly ? <div className="campaign-agent-heartbeat-note"><SiteIcon name="agent" />The Agent works here while play mode is active.</div> : <form className="campaign-agent-composer" onSubmit={send}>
       <textarea value={draft} onChange={event => setDraft(event.target.value)} placeholder="Message the Agent…" rows={2} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }} />
@@ -260,43 +265,83 @@ function ChatBlock({ message }: { message: MessageBlock }) {
   </article>
 }
 
-function AgentActivityRow({ parts, active }: { parts: MessagePart[]; active: boolean }) {
-  const [selected, setSelected] = useState<{ part: MessagePart; result?: MessagePart } | null>(null)
-  const visible = parts.filter(part => part.type !== 'tool_result')
+function AgentActivityRow({ parts, active, inspect }: { parts: MessagePart[]; active: boolean; inspect: (index: number) => void }) {
+  // Keep each square's index into `parts`: its paired result is looked up there.
+  const squares = parts.flatMap((part, index) => isInspectablePart(part) ? [index] : [])
   return <div className="campaign-agent-activity" role="group" aria-label="Agent activity">
-    {visible.map((part, index) => {
+    {squares.map((partIndex, position) => {
+      const part = parts[partIndex]
       const label = activityLabel(part)
-      const color = getPartColor(part)
       return <button
         type="button"
-        className={`campaign-agent-activity-square${active && index === visible.length - 1 ? ' is-active' : ''}`}
-        style={{ '--activity-color': color } as CSSProperties}
+        className={`campaign-agent-activity-square${active && position === squares.length - 1 ? ' is-active' : ''}`}
+        style={{ '--activity-color': getPartColor(part) } as CSSProperties}
         aria-label={label}
         title={label}
-        key={`${part.messageId || part.toolName || part.type}:${index}`}
-        onClick={() => setSelected({ part, result: part.type === 'tool_use' ? pairedResult(parts, index) : undefined })}
+        key={`${part.messageId || part.toolName || part.type}:${partIndex}`}
+        onClick={() => inspect(partIndex)}
       />
     })}
-    {selected && <AgentActivityDialog selection={selected} close={() => setSelected(null)} />}
   </div>
 }
 
-function AgentActivityDialog({ selection, close }: { selection: { part: MessagePart; result?: MessagePart }; close: () => void }) {
+function AgentActivityDialog({ rows, square, step, close }: { rows: SquareRow[]; square: SquareRef; step: (square: SquareRef) => void; close: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
-  const label = activityLabel(selection.part)
+  // The dialog is centred, so a shorter activity would pull the arrows out from
+  // under the pointer. Hold the tallest height reached while stepping.
+  const [minHeight, setMinHeight] = useState(0)
   useEffect(() => { const node = dialog.current; if (node && !node.open) node.showModal(); return () => { if (node?.open) node.close() } }, [])
-  return <dialog className="campaign-agent-activity-dialog" ref={dialog} aria-labelledby={titleId} onClose={close} onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close() }}>
+  const parts = rows.find(row => row.id === square.rowId)?.parts
+  const part = parts?.[square.index]
+  const sequence = squareSequence(rows)
+  const position = squarePosition(sequence, square)
+  useEffect(() => { if (!part) dialog.current?.close() }, [part])
+  if (!parts || !part) return null
+  const result = part.type === 'tool_use' ? pairedResult(parts, square.index) : undefined
+  const label = activityLabel(part)
+  const move = (direction: -1 | 1) => {
+    const next = stepSquare(rows, square, direction)
+    if (!next) return
+    setMinHeight(height => Math.max(height, dialog.current?.offsetHeight ?? 0))
+    step(next)
+  }
+  const atStart = position <= 0
+  const atEnd = position === sequence.length - 1
+  return <dialog
+    className="campaign-agent-activity-dialog"
+    ref={dialog}
+    aria-labelledby={titleId}
+    style={minHeight ? { minHeight: `min(${minHeight}px, 76dvh)` } : undefined}
+    onClose={close}
+    onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close() }}
+    onKeyDown={event => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      event.preventDefault()
+      move(event.key === 'ArrowLeft' ? -1 : 1)
+    }}
+  >
     <div>
-      <header><i style={{ '--activity-color': getPartColor(selection.part) } as CSSProperties} /><h2 id={titleId}>{label}</h2><button type="button" aria-label="Close activity details" onClick={() => dialog.current?.close()}><SiteIcon name="close" /></button></header>
-      {selection.part.type === 'thinking' && <section><span>PUBLIC REASONING</span><p>{selection.part.content || 'No public summary was emitted.'}</p></section>}
-      {selection.part.type === 'tool_use' && <><section><span>REQUEST</span><pre>{formatPayload(selection.part.toolInput)}</pre></section>{selection.result && <section><span>RESULT</span><pre>{formatPayload(selection.result.content)}</pre></section>}</>}
-      {selection.part.type === 'error' && <section><span>ERROR</span><p>{selection.part.content || 'The action failed.'}</p></section>}
+      <header>
+        <i style={{ '--activity-color': getPartColor(part) } as CSSProperties} />
+        <h2 id={titleId}>{label}</h2>
+        {sequence.length > 1 && position !== -1 && <div className="campaign-agent-activity-nav" role="group" aria-label="Activity navigation">
+          {/* aria-disabled keeps focus, and the arrow keys, inside the dialog at either end. */}
+          <button type="button" aria-label="Previous activity" title="Previous (←)" aria-disabled={atStart || undefined} onClick={() => { if (!atStart) move(-1) }}><SiteIcon name="previousItem" /></button>
+          <span>{position + 1} / {sequence.length}</span>
+          <button type="button" aria-label="Next activity" title="Next (→)" aria-disabled={atEnd || undefined} onClick={() => { if (!atEnd) move(1) }}><SiteIcon name="nextItem" /></button>
+        </div>}
+        <button type="button" aria-label="Close activity details" onClick={() => dialog.current?.close()}><SiteIcon name="close" /></button>
+      </header>
+      {part.type === 'thinking' && <section><span>PUBLIC REASONING</span><p>{part.content || 'No public summary was emitted.'}</p></section>}
+      {part.type === 'tool_use' && <><section><span>REQUEST</span><pre>{formatPayload(part.toolInput)}</pre></section>{result && <section><span>RESULT</span><pre>{formatPayload(result.content)}</pre></section>}</>}
+      {part.type === 'error' && <section><span>ERROR</span><p>{part.content || 'The action failed.'}</p></section>}
     </div>
   </dialog>
 }
 
-function pairedResult(parts: MessagePart[], index: number) {
+function pairedResult(parts: readonly MessagePart[], index: number) {
   for (let cursor = index + 1; cursor < parts.length; cursor++) {
     if (parts[cursor].type === 'tool_result') return parts[cursor]
     if (parts[cursor].type === 'tool_use') return undefined

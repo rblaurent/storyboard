@@ -87,6 +87,8 @@ const icons = {
   fullscreen: CornersOutIcon,
   expandPanel: CaretLeftIcon,
   collapsePanel: CaretRightIcon,
+  previousItem: CaretLeftIcon,
+  nextItem: CaretRightIcon,
   workspace: FolderOpenIcon,
   info: InfoIcon,
   microphone: MicrophoneIcon,
