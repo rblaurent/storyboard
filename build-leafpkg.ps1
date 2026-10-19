@@ -56,7 +56,9 @@ try{
  [IO.Compression.ZipFile]::CreateFromDirectory($package,$pkg)
  $hash=(Get-FileHash -LiteralPath $pkg -Algorithm SHA256).Hash.ToLowerInvariant()
  Set-Content -LiteralPath "$pkg.sha256" -Value $hash -Encoding utf8
- $sourceHashes=@(& rg --files --hidden -g '!.git/**' -g '!**/node_modules/**' -g '!**/dist/**' -g '!**/site-dist/**' -g '!**/bin/**' -g '!**/obj/**' -g '!**/.wrangler/**' -g '!.dev.vars' | Sort-Object | ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()}})
+ $sourceFiles=@(& git -C $root ls-files --cached --others --exclude-standard)
+ if($LASTEXITCODE -ne 0){throw 'Could not list source files.'}
+ $sourceHashes=@($sourceFiles | Where-Object{$_ -notmatch '(^|/)(node_modules|dist|site-dist|bin|obj|\.wrangler)/' -and $_ -ne '.dev.vars' -and (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)} | ForEach-Object{$_.Replace('/','\')} | Sort-Object | ForEach-Object{[ordered]@{path=$_;sha256=(Get-FileHash -LiteralPath (Join-Path $root $_) -Algorithm SHA256).Hash.ToLowerInvariant()}})
  $artifactHashes=@(Get-ChildItem -LiteralPath $package -File -Recurse | ForEach-Object{[ordered]@{path=[IO.Path]::GetRelativePath($package,$_.FullName);sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}})
  $commit=& git rev-parse --verify HEAD 2>$null
  if($LASTEXITCODE -ne 0){$commit=$null}
