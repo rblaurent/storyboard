@@ -47,7 +47,7 @@ try{
  Copy-Item -LiteralPath (Join-Path $root 'seeds') -Destination $package -Recurse
  # Operator code is deliberately outside the runtime package; private plans and
  # exports never enter an artifact. Nova executes it separately after approval.
- foreach($file in @('backend/Leaf.Plugins.Storyboard.dll','backend/site/index.html','web/dist/plugin.js','web/dist/plugin.css','web/dist/remoteEntry.js','seeds/entity-types.json','seeds/field-definitions.json','seeds/skills/storyboard-campaign-operations/SKILL.md')){
+ foreach($file in @('backend/Leaf.Plugins.Storyboard.dll','backend/site/index.html','web/dist/plugin.js','web/dist/plugin.css','web/dist/remoteEntry.js','seeds/entity-types.json','seeds/field-definitions.json','seeds/node-types.json','seeds/skills/storyboard-campaign-operations/SKILL.md')){
   if(-not (Test-Path -LiteralPath (Join-Path $package $file))){throw "Missing package contract: $file"}
  }
  $manifest=Get-Content -LiteralPath (Join-Path $root 'plugin.json') -Raw | ConvertFrom-Json

@@ -1,0 +1,50 @@
+[
+  {
+    "typeSlug": "node-type",
+    "slug": "storyboard-campaign-heartbeat",
+    "name": "Storyboard Campaign Heartbeat",
+    "data": {
+      "icon": "ph-bold ph-film-strip",
+      "category": "Storyboard",
+      "description": "Runs one play-mode heartbeat for a campaign's agent. Skips silently when play mode is inactive.",
+      "input_ports": [
+        {
+          "id": "campaign",
+          "label": "Campaign",
+          "widget": "entity",
+          "field_type": "entity_ref",
+          "constraints": { "target_type": "storyboard-campaign" },
+          "config_path": "action_config",
+          "description": "Campaign whose play-mode agent receives the heartbeat."
+        }
+      ],
+      "output_ports": [
+        { "id": "summary", "type": "string", "label": "Summary" },
+        { "id": "discussionId", "type": "string", "label": "Discussion" },
+        { "id": "sessionId", "type": "string", "label": "Session" },
+        { "id": "skipped", "type": "boolean", "label": "Skipped" },
+        { "id": "silent", "type": "boolean", "label": "Silent" }
+      ],
+      "config_schema": {
+        "type": "object",
+        "required": ["action_config"],
+        "properties": {
+          "source_automation_id": {
+            "type": "string",
+            "description": "Stable source automation identity for legacy reviewed revisions."
+          },
+          "automation_slug": { "type": "string" },
+          "automation_name": { "type": "string" },
+          "action_config": {
+            "type": "object",
+            "widget": "json",
+            "required": ["campaign"],
+            "properties": {
+              "campaign": { "type": "string", "description": "Storyboard campaign id." }
+            }
+          }
+        }
+      }
+    }
+  }
+]
