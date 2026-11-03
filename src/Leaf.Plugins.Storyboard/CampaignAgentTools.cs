@@ -166,11 +166,11 @@ public sealed class StoryCampaignAgentTools(
         var actor = conversation.Campaign.Data.Text("creator");
         return new
         {
-            profile = await visuals.ProfileAsync(campaign, actor, ct),
-            library = await visuals.LibraryAsync(campaign, actor, ct),
-            sets = await visuals.SetsAsync(campaign, actor, ct),
-            queue = await visuals.QueueAsync(campaign, actor, ct),
-            session = await visuals.SessionAsync(campaign, actor, ct),
+            profile = await Capture(() => visuals.ProfileAsync(campaign, actor, ct)),
+            library = await Capture(() => visuals.LibraryAsync(campaign, actor, ct)),
+            sets = await Capture(() => visuals.SetsAsync(campaign, actor, ct)),
+            queue = await Capture(() => visuals.QueueAsync(campaign, actor, ct)),
+            session = await Capture(() => visuals.SessionAsync(campaign, actor, ct)),
         };
     }
 

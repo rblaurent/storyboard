@@ -518,6 +518,8 @@ public sealed class AgentTests
         var library = (JsonArray)JsonSerializer.SerializeToNode(await fixture.Visuals.LibraryAsync(
             campaignId, fixture.Gm.Id.ToString(), default))!;
         Assert.Single(library);
+        var overview = StoryJson.Object(await tools.VisualsAsync(campaignId, context, default));
+        foreach (var part in new[] { "profile", "library", "sets", "queue", "session" }) Assert.NotNull(overview[part]);
     }
 
     [Fact]
