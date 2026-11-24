@@ -568,6 +568,7 @@
     "slug": "nonce",
     "name": "Sign-in Nonce",
     "fieldType": "secret",
+    "displayHints": "{\"secretVisibility\": \"internal\"}",
     "sortOrder": 5
   },
   {
@@ -575,6 +576,7 @@
     "slug": "verifier",
     "name": "PKCE Verifier",
     "fieldType": "secret",
+    "displayHints": "{\"secretVisibility\": \"internal\"}",
     "sortOrder": 6
   },
   {
