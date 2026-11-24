@@ -73,14 +73,14 @@
   {
     "parentType": "storyboard-config",
     "slug": "google_client_secret",
-    "name": "google client secret",
+    "name": "Google Client Secret",
     "fieldType": "secret",
     "sortOrder": 7
   },
   {
     "parentType": "storyboard-config",
     "slug": "proxy_secret",
-    "name": "proxy secret",
+    "name": "Proxy Secret",
     "fieldType": "secret",
     "sortOrder": 8
   },
@@ -566,14 +566,14 @@
   {
     "parentType": "storyboard-session",
     "slug": "nonce",
-    "name": "nonce",
+    "name": "Sign-in Nonce",
     "fieldType": "secret",
     "sortOrder": 5
   },
   {
     "parentType": "storyboard-session",
     "slug": "verifier",
-    "name": "verifier",
+    "name": "PKCE Verifier",
     "fieldType": "secret",
     "sortOrder": 6
   },
@@ -894,7 +894,7 @@
   {
     "parentType": "storyboard-portal",
     "slug": "portal_secret",
-    "name": "portal_secret",
+    "name": "Portal Secret",
     "fieldType": "secret",
     "sortOrder": 117
   },
