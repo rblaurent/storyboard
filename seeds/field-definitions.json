@@ -568,16 +568,16 @@
     "slug": "nonce",
     "name": "Sign-in Nonce",
     "fieldType": "secret",
-    "displayHints": "{\"secretVisibility\": \"internal\"}",
-    "sortOrder": 5
+    "sortOrder": 5,
+    "displayHints": "{\"secretVisibility\": \"internal\"}"
   },
   {
     "parentType": "storyboard-session",
     "slug": "verifier",
     "name": "PKCE Verifier",
     "fieldType": "secret",
-    "displayHints": "{\"secretVisibility\": \"internal\"}",
-    "sortOrder": 6
+    "sortOrder": 6,
+    "displayHints": "{\"secretVisibility\": \"internal\"}"
   },
   {
     "parentType": "storyboard-session",
